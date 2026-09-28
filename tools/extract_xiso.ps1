@@ -12,7 +12,7 @@ param(
   [switch]$OnlyXex
 )
 $ErrorActionPreference = "Stop"
-$SECTOR = 2048
+$SectorSize = 2048
 $MAGIC = [Text.Encoding]::ASCII.GetBytes("MICROSOFT*XBOX*MEDIA")
 
 $fs = [IO.File]::Open((Resolve-Path $Iso), 'Open', 'Read', 'Read')
@@ -29,12 +29,12 @@ function Test-Magic([long]$pos) {
 # Game partition offsets: plain XISO, XGD3, XGD2, XGD1.
 $partition = $null
 foreach ($off in @(0, 0x2080000, 0xFD90000, 0x18300000)) {
-  if (Test-Magic ($off + 32 * $SECTOR)) { $partition = [long]$off; break }
+  if (Test-Magic ($off + 32 * $SectorSize)) { $partition = [long]$off; break }
 }
 if ($null -eq $partition) { throw "No XDVDFS volume found: is this an Xbox 360 disc image?" }
 Write-Host ("Game partition at 0x{0:X}" -f $partition)
 
-$vd = Read-At ($partition + 32 * $SECTOR + 20) 8
+$vd = Read-At ($partition + 32 * $SectorSize + 20) 8
 $rootSector = [BitConverter]::ToUInt32($vd, 0)
 $rootSize = [BitConverter]::ToUInt32($vd, 4)
 
@@ -70,7 +70,7 @@ $dirs = New-Object Collections.Stack
 $dirs.Push(@($rootSector, $rootSize, ""))
 while ($dirs.Count -gt 0) {
   $d = $dirs.Pop()
-  $data = Read-At ($partition + [long]$d[0] * $SECTOR) ([int]$d[1])
+  $data = Read-At ($partition + [long]$d[0] * $SectorSize) ([int]$d[1])
   $nodes = New-Object Collections.Stack
   $nodes.Push(0)
   $seen = @{}
@@ -100,7 +100,7 @@ while ($dirs.Count -gt 0) {
         $dest = Join-Path $outRoot $rel
         New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
         Write-Host ("  {0} ({1:N1} MB)" -f $rel, ($size / 1MB))
-        Copy-File ($partition + [long]$sector * $SECTOR) $size $dest
+        Copy-File ($partition + [long]$sector * $SectorSize) $size $dest
       }
     }
   }
