@@ -299,7 +299,15 @@ set(SDL_DUMMYVIDEO OFF CACHE BOOL "" FORCE)
 
 # Linux video and audio backends. Both video drivers are always built so the
 # one in use stays a runtime choice.
-if(UNIX AND NOT APPLE)
+# REXGLUE_HEADLESS_HOST: build machines without X11/Wayland/Pulse dev packages
+# (CI, containers) that only need the code generator.
+option(REXGLUE_HEADLESS_HOST "Linux host without desktop dev packages: build SDL without X11/Wayland/Pulse/PipeWire" OFF)
+if(UNIX AND NOT APPLE AND REXGLUE_HEADLESS_HOST)
+    foreach(_opt SDL_X11 SDL_WAYLAND SDL_PULSEAUDIO SDL_PIPEWIRE SDL_JACK SDL_SNDIO)
+        set(${_opt} OFF CACHE BOOL "" FORCE)
+    endforeach()
+    set(SDL_DUMMYVIDEO ON CACHE BOOL "" FORCE)
+elseif(UNIX AND NOT APPLE)
     set(SDL_X11               ON  CACHE BOOL "" FORCE)
     set(SDL_WAYLAND           ON  CACHE BOOL "" FORCE)
     set(SDL_ALSA              ON  CACHE BOOL "" FORCE)
