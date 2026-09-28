@@ -44,16 +44,25 @@ $listing = New-Object Collections.Generic.List[string]
 $buffer = New-Object byte[] (4MB)
 
 function Copy-File([long]$pos, [long]$size, [string]$dest) {
-  $fs.Position = $pos
+  $imageLength = $fs.Length
+  if ($pos + $size -gt $imageLength) {
+    throw ("File data out of range: offset 0x{0:X} + {1} bytes, image is {2} bytes" -f $pos, $size, $imageLength)
+  }
+  $in = [IO.File]::Open((Resolve-Path $Iso), 'Open', 'Read', 'Read')
   $o = [IO.File]::Create($dest)
   try {
-    $left = $size
-    while ($left -gt 0) {
-      $n = $fs.Read($buffer, 0, [int][Math]::Min($buffer.Length, $left))
-      if ($n -le 0) { throw "Unexpected end of image" }
-      $o.Write($buffer, 0, $n); $left -= $n
+    [void]$in.Seek($pos, [IO.SeekOrigin]::Begin)
+    [long]$remaining = $size
+    while ($remaining -gt 0) {
+      [int]$want = $buffer.Length
+      if ($remaining -lt $want) { $want = [int]$remaining }
+      [int]$n = $in.Read($buffer, 0, $want)
+      if ($n -le 0) {
+        throw ("Read returned 0 at offset 0x{0:X} (image {1} bytes, {2} bytes left)" -f $in.Position, $imageLength, $remaining)
+      }
+      $o.Write($buffer, 0, $n); $remaining -= $n
     }
-  } finally { $o.Close() }
+  } finally { $o.Close(); $in.Close() }
 }
 
 # Each directory is a binary tree of entries; offsets are in 4-byte units from the start of the directory.
