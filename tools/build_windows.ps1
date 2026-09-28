@@ -85,7 +85,7 @@ try {
   $HostDir = Join-Path $Root "out\host"
   Run cmake @("-S", "$Root\sdk", "-B", $HostDir, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
       "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++",
-      "-DCMAKE_C_FLAGS=$Flags", "-DCMAKE_CXX_FLAGS=$Flags", "-DREXGLUE_ENABLE_TRACY=OFF") "host_configure.log"
+      "-DCMAKE_C_FLAGS=$Flags", "-DCMAKE_CXX_FLAGS=$Flags", "-DREXGLUE_ENABLE_TRACY=OFF", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5") "host_configure.log"
   Run cmake @("--build", $HostDir, "--target", "rexglue") "host_build.log"
   $Rexglue = Get-ChildItem -Path "$Root\sdk\out" -Recurse -Filter rexglue.exe | Select-Object -First 1
   if (-not $Rexglue) { throw "rexglue.exe was not produced." }
@@ -107,7 +107,7 @@ try {
   Run cmake @("-S", "$Root\fh1", "-B", $AppDir, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=$Config",
       "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++",
       "-DCMAKE_C_FLAGS=$Flags", "-DCMAKE_CXX_FLAGS=$Flags", "-DREXGLUE_ENABLE_TRACY=OFF",
-      "-DREXSDK_DIR=$Root\sdk") "app_configure.log"
+      "-DREXSDK_DIR=$Root\sdk", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5") "app_configure.log"
   Run cmake @("--build", $AppDir) "app_build.log"
 
   $Exe = Get-ChildItem -Path $AppDir, "$Root\sdk\out" -Recurse -Filter fh1.exe -ErrorAction SilentlyContinue | Select-Object -First 1
