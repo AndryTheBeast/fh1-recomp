@@ -28,6 +28,29 @@ def remove_readonly(func, path, _):
     func(path)
 
 
+def resolve_link_stub(path, limit=8):
+    """On Windows, git checks symlinks out as small text files holding the target path.
+    Follow such stubs (and real symlinks) to the file they point to; None if it is not one."""
+    for _ in range(limit):
+        if os.path.islink(path):
+            target = os.path.join(os.path.dirname(path), os.readlink(path))
+        else:
+            try:
+                if os.path.getsize(path) > 400:
+                    return path
+                text = open(path, 'rb').read().decode('utf-8')
+            except (OSError, UnicodeDecodeError):
+                return path
+            if '\n' in text.strip() or not text.strip() or text.strip().startswith(('#', '/*', '//')):
+                return path
+            target = os.path.join(os.path.dirname(path), text.strip())
+        target = os.path.normpath(target)
+        if not os.path.isfile(target) and not os.path.islink(target):
+            return path if not os.path.islink(path) else None
+        path = target
+    return path
+
+
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     target = os.path.join(root, 'sdk', 'thirdparty')
@@ -39,7 +62,7 @@ def main():
         run('git', 'checkout', '-q', 'FETCH_HEAD', cwd=work)
         run('git', 'submodule', 'update', '--init', '--recursive', cwd=work)
         source = os.path.join(work, 'thirdparty')
-        copied = kept = 0
+        copied = kept = repaired = 0
         for dirpath, dirnames, filenames in os.walk(source):
             dirnames[:] = [d for d in dirnames if d != '.git']
             for name in filenames:
@@ -47,17 +70,20 @@ def main():
                     continue
                 src = os.path.join(dirpath, name)
                 dst = os.path.join(target, os.path.relpath(src, source))
+                real = resolve_link_stub(src)
+                if real is None:
+                    continue  # dangling link (MoltenVK headers outside macOS)
+                if real != src and os.path.isfile(dst) and not os.path.islink(dst) \
+                        and os.path.getsize(dst) <= 400 and os.path.getsize(real) > 400:
+                    # A stub copied by an earlier run on Windows: replace it with the real file.
+                    shutil.copyfile(real, dst)
+                    repaired += 1
+                    continue
                 if os.path.lexists(dst):
                     kept += 1
                     continue
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
-                if os.path.islink(src):
-                    # Keep symlinks as symlinks: some upstream ones (MoltenVK) dangle outside macOS.
-                    if not os.path.lexists(dst):
-                        os.symlink(os.readlink(src), dst)
-                    copied += 1
-                    continue
-                shutil.copy2(src, dst)
+                shutil.copyfile(real, dst)
                 copied += 1
         # sdk/thirdparty/CMakeLists.txt checks each submodule for a .git entry. Mark the folders we filled.
         for name in os.listdir(source):
@@ -65,7 +91,7 @@ def main():
                 marker = os.path.join(target, name, '.git')
                 if os.path.isdir(os.path.join(target, name)) and not os.path.lexists(marker):
                     open(marker, 'w').write('gitdir: fetched-by-tools/fetch_thirdparty.py\n')
-        print(f'{copied} files copied into sdk/thirdparty, {kept} files of this port kept')
+        print(f'{copied} files copied into sdk/thirdparty, {kept} files of this port kept, {repaired} link stubs repaired')
     finally:
         if sys.version_info >= (3, 12):
             shutil.rmtree(work, onexc=remove_readonly)
