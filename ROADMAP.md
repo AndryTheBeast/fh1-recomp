@@ -4,9 +4,12 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
 
 ## Stage 1 — Translate the game on PC
 - [x] Build the ReXGlue code generator (`rexglue`)
-- [ ] Extract `default.xex` (NTSC-U, with title update if available) into `fh1/assets/game_root`
-- [ ] `rexglue init` the `fh1/` project and run the first codegen
+- [x] Extract `default.xex` (NTSC-U, Title ID 4D5309C9, v0.0.0.10) with `tools/extract_xex.bat`
+- [x] `rexglue init` the `fh1/` project and run the first codegen (passes: 16 tail-call targets declared in `fh1/overrides.toml`)
 - [ ] Fix what the translation misses: missing functions, jump tables, split functions (`tools/huecos.py`, `fh1/overrides.toml`)
+  - [ ] `0x8241A370` analysed as one 2.5 MB function: almost certainly several functions merged
+  - [ ] `bdz` at `0x82AD8138`/`0x82AD813C` branches outside its function to `0x82AD836C`
+  - [ ] Unresolved `b 0x830ED910` from `0x830EBE90`
 
 ## Stage 2 — Boot on Windows with ReXGlue's own graphics
 - [ ] Build the Windows runtime (D3D12 backend; GTX 1050 target)

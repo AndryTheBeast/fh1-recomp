@@ -1,0 +1,35 @@
+# ============================================================================
+#  Forza Horizon (NTSC-U, Title ID 4D5309C9, default.xex v0.0.0.10) — manual
+#  declarations for the codegen. Included from fh1_manifest.toml.
+#  Flat schema: sections at the root. Format explained in
+#  reference/nfsmw-app/overrides.toml.
+# ============================================================================
+
+[functions]
+
+# Tail calls (b) whose targets automatic discovery never turned into
+# functions. The first codegen failed Validate with
+#   UnresolvedCall: <target> - target not in any function
+# Declaring each target as an entry point is enough; Discover finds the bounds.
+# If any of them turns out to read registers set by the function that jumps
+# to it, it needs share_registers = true (see tools/lee_antes.py).
+
+# 0x82B1ABD0..0x82B1AC08: a run of 8-byte stubs, jumped to from 0x82B13498..0x82B13588.
+"0x82B1ABD0" = { }
+"0x82B1ABE8" = { }
+"0x82B1ABF0" = { }
+"0x82B1ABF8" = { }
+"0x82B1AC00" = { }
+"0x82B1AC08" = { }
+
+"0x82CF87F8" = { }   # from 0x82CED38C
+"0x82F1ED30" = { }   # from 0x82F1EF58 and 0x82F029F4
+"0x82F5CCDC" = { }   # from 0x82F5CCEC
+"0x82F761F4" = { }   # from 0x82F76204
+"0x82F7630C" = { }   # from 0x82F7631C
+
+# Second level: the stubs above jump on into another run of 8-byte stubs.
+"0x82B3B8B0" = { }   # from 0x82B1ABEC
+"0x82B3B8B8" = { }   # from 0x82B1ABF4
+"0x82B3B8C0" = { }   # from 0x82B1ABFC
+"0x82B3B8C8" = { }   # from 0x82B1AC04
