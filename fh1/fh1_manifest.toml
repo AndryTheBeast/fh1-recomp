@@ -8,4 +8,4 @@ game_root = "assets/game_root"
 [entrypoint]
 file_path = "assets/game_root/default.xex"
 out_directory_path = "generated/default"
-includes = ["overrides.toml"]
+includes = ["overrides.toml", "huecos.toml"]

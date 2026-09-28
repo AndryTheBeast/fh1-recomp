@@ -33,3 +33,20 @@
 "0x82B3B8B8" = { }   # from 0x82B1ABF4
 "0x82B3B8C0" = { }   # from 0x82B1ABFC
 "0x82B3B8C8" = { }   # from 0x82B1AC04
+
+# ---------------------------------------------------------------------------
+#  Function bounds
+# ---------------------------------------------------------------------------
+
+# A switch built from a chain of bdz; two cases jump to 0x82AD836C, the last
+# instruction before the next function (0x82AD8370). Discover ended the
+# function one instruction early, so the codegen emitted
+#   "bdz at 82AD8138 branches outside function to 82AD836C" -> return;
+# and those cases returned silently.
+"0x82AD80D0" = { end = 0x82AD8370 }
+
+# 0x830ED900 ends in bl KeBugCheck, which never returns. Discover did not know
+# that and ran on into the next function, so "b 0x830ED910" from the stub at
+# 0x830EBE90 pointed into the middle of 0x830ED900 (REX_FATAL at run time).
+"0x830ED900" = { end = 0x830ED910 }
+"0x830ED910" = { }
