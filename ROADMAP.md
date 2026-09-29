@@ -46,6 +46,12 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         it compiled pipelines for ~65 s before the first frame and made draws ~15x slower. Host render
         targets (RTV) are now the default everywhere; clears render correctly. Logos 50 -> 60 fps.
   - [x] Tear lines: the D3D12 presenter allowed tearing by default; now off (vblank-synced).
+  - [x] Unattended testing: --fh1_autoplay scripted pad + tools/auto_test.ps1 reach the intro drive
+  - [x] Missing geometry (car side mirrors): draws with an "invalid" vertex fetch constant were
+        dropped; gpu_allow_invalid_fetch_constants now defaults to true
+  - [ ] Glitches still seen in the intro cutscene: dark square in the bottom-right corner, hard-edged
+        rectangular car shadow
+  - [ ] Intro drive on the HD 630: ~7 fps, ~90 ms per frame of host-GPU work (needs ~4x less for 30)
   - [ ] forza_tone.wmv / title scene: ~40 ms per frame of host-GPU work on the HD 630 (18 fps)
   - [x] "Audio cut" in the intro video is the video playing slowly (19 fps): its audio runs in real
         time and ends first. Should go away with the frame rate.
