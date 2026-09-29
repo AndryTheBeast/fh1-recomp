@@ -63,7 +63,6 @@
 "0x881F18F0" = { }   # 8 bytes, tras 0x881F1898
 "0x881F1C48" = { }   # 8 bytes, tras 0x881F1C20
 "0x882435D8" = { }   # 16 bytes, tras 0x88242BC0
-"0x88243600" = { }   # 1536 bytes, tras 0x882435E8
 # Continuations (tools/fusionar_continuaciones.py)
 "0x88063590" = { end = 0x880636B8 }
 "0x88131478" = { end = 0x88132628 }

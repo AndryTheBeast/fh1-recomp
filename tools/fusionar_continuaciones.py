@@ -90,11 +90,16 @@ marker = '# Continuations (tools/fusionar_continuaciones.py)'
 existing = {}
 if marker in out:
     k = out.index(marker)
+    rest = []
     for l in out[k + 1:]:
         m = re.match(r'"0x([0-9A-F]+)" = \{ end = 0x([0-9A-F]+) \}', l)
         if m:
             existing[int(m.group(1), 16)] = int(m.group(2), 16)
-    out = out[:k]
+        else:
+            rest.append(l)  # anything else written after the block (e.g. thunk runs) stays
+    out = out[:k] + rest
+    while out and out[-1] == '':
+        out.pop()
 for lo, end in merges.items():
     existing[lo] = max(existing.get(lo, 0), end)
 out += [marker]

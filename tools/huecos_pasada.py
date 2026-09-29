@@ -4,7 +4,7 @@
     python tools/huecos_pasada.py fh1 --gen generated/default --huecos huecos.toml [--excluir fh1/huecos_excluir.txt]
 
 1. Data: removes entries the codegen reported as "function 0x... not in any code region"
-   (data embedded in .text) and appends them to the exclusion list, if one is given.
+   (data embedded in .text) or "outranked by import" (the import thunk area) and appends them to the exclusion list, if one is given.
 2. Thunk runs: a gap declared as one function whose emitted body is just
    "addi r3,r3,N; b target" but whose gap is longer is a run of 8-byte this-adjusting
    thunks (C++ multiple inheritance). Declares every remaining 8-byte slot.
@@ -31,6 +31,8 @@ lo_mod, hi_mod = starts[0], starts[-1] + 0x100000
 
 # 1. Data
 datos = {int(a, 16) for a in re.findall(r'function 0x([0-9A-Fa-f]+) not in any code region', log)}
+# The import thunk area: registered but never emitted, so the link fails with "undefined symbol".
+datos |= {int(a, 16) for a in re.findall(r'\[functions\] 0x([0-9A-Fa-f]+) outranked by import', log)}
 datos = {a for a in datos if lo_mod <= a < hi_mod}
 kept, removed = [], 0
 for l in lines:

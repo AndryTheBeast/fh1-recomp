@@ -108,4 +108,45 @@
 "0x892024E8" = { }   # 8 bytes, tras 0x89201318
 "0x892035B8" = { }   # 8 bytes, tras 0x892034F0
 "0x892043B0" = { }   # 8 bytes, tras 0x89204388
+
+
+# Thunk runs split by tools/huecos_pasada.py
+"0x890B2DE0" = { }   # thunk
+"0x890B2DF8" = { }   # thunk
+"0x890B2E00" = { }   # thunk
+"0x890B2E08" = { }   # thunk
+"0x890B2E10" = { }   # thunk
+"0x890B2E18" = { }   # thunk
+"0x890B2E20" = { }   # thunk
+"0x890B2E38" = { }   # thunk
+"0x890B2E40" = { }   # thunk
+"0x890B2E48" = { }   # thunk
+"0x890B2E70" = { }   # thunk
+"0x890B4010" = { }   # thunk
+"0x890B4018" = { }   # thunk
+"0x890BA910" = { }   # thunk
+"0x890BBE68" = { }   # thunk
+"0x890BBE70" = { }   # thunk
+"0x890BBE78" = { }   # thunk
+"0x890BBE80" = { }   # thunk
+"0x890BBE88" = { }   # thunk
+"0x890BC370" = { }   # thunk
+"0x890BC378" = { }   # thunk
+"0x890BC380" = { }   # thunk
+"0x890BC388" = { }   # thunk
+"0x890BC390" = { }   # thunk
+"0x890BC398" = { }   # thunk
+"0x890E3588" = { }   # thunk
+"0x890E3590" = { }   # thunk
+"0x890E3598" = { }   # thunk
+"0x890E35A0" = { }   # thunk
+"0x890E3678" = { }   # thunk
+"0x890E3680" = { }   # thunk
+"0x890E3688" = { }   # thunk
+"0x890E3690" = { }   # thunk
+"0x890E3698" = { }   # thunk
+"0x8912AED8" = { }   # thunk
+"0x8912AF28" = { }   # thunk
+"0x8912AF30" = { }   # thunk
+"0x8912AF38" = { }   # thunk
 # Continuations (tools/fusionar_continuaciones.py)
