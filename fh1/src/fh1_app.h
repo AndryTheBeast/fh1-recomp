@@ -4,9 +4,20 @@
 
 #pragma once
 
+#include <rex/cvar.h>
+#include <rex/input/device_assignment.h>
+#include <rex/input/input_system.h>
 #include <rex/rex_app.h>
+#include <rex/runtime.h>
 
 #include "fh1_crash_report.h"
+
+// Forza Horizon is single player. By default every controller drives player 1: tools like
+// DSX / DS4Windows show one pad twice (the real one and a virtual Xbox 360 pad), and with
+// the SDK's one-device-per-slot routing Start could land on player 2, who has no profile
+// ("No Gamer Profiles"). --fh1_merge_controllers=false restores one controller per player.
+REXCVAR_DEFINE_BOOL(fh1_merge_controllers, true, "FH1",
+                    "Every controller drives player 1 (single player)");
 
 class Fh1App : public rex::ReXApp {
  public:
@@ -28,7 +39,13 @@ class Fh1App : public rex::ReXApp {
   }
   // void OnLoadXexImage(std::string& xex_image) override {}
   // void OnPostLoadXexImage() override {}
-  // void OnPostSetup() override {}
+  void OnPostSetup() override {
+    if (!REXCVAR_GET(fh1_merge_controllers)) return;
+    auto* input = dynamic_cast<rex::input::InputSystem*>(runtime()->input_system());
+    if (input) {
+      input->SetDeviceAssignment(std::make_unique<rex::input::SharedAssignment>());
+    }
+  }
   // void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {}
   // std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;
   // std::unique_ptr<rex::ui::AchievementNotificationDialog>
