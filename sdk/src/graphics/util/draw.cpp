@@ -826,6 +826,9 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
     y1 += pa_sc_window_offset.window_y_offset;
   }
 
+  // Rectangle before the scissor, for the "Resolve region is empty" diagnostic below.
+  const int32_t unclipped_x0 = x0, unclipped_y0 = y0, unclipped_x1 = x1, unclipped_y1 = y1;
+
   // Apply the scissor and prevent negative origin (behind the EDRAM base).
   Scissor scissor;
   // False because clamping to the surface pitch will be done later (it will be
@@ -884,7 +887,14 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
 
   assert_true(x0 < x1 && y0 < y1);
   if (x0 >= x1 || y0 >= y1) {
-    REXGPU_ERROR("Resolve region is empty");
+    REXGPU_ERROR(
+        "Resolve region is empty: rectangle ({},{})-({},{}) before the scissor, scissor "
+        "({},{}) {}x{}, window offset ({},{}) {}, surface pitch {}, dest base {:08X}",
+        unclipped_x0, unclipped_y0, unclipped_x1, unclipped_y1, scissor.offset[0], scissor.offset[1],
+        scissor.extent[0], scissor.extent[1], int32_t(pa_sc_window_offset.window_x_offset),
+        int32_t(pa_sc_window_offset.window_y_offset),
+        regs.Get<reg::PA_SU_SC_MODE_CNTL>().vtx_window_offset_enable ? "applied" : "not applied",
+        uint32_t(rb_surface_info.surface_pitch), regs[XE_GPU_REG_RB_COPY_DEST_BASE]);
     return false;
   }
 

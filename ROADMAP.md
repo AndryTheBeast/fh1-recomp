@@ -50,7 +50,13 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
   - [x] Missing geometry (car side mirrors): draws with an "invalid" vertex fetch constant were
         dropped; gpu_allow_invalid_fetch_constants now defaults to true
   - [ ] Glitches still seen in the intro cutscene: dark square in the bottom-right corner, hard-edged
-        rectangular car shadow
+        rectangular car shadow. The dark square only appears with host render targets (RTV); the
+        ROV path draws that corner correctly (same frames compared). It sits in the bottom strip of
+        FH1's 3-strip predicated tiling (rows 0-256, 256-512, 512-720, window offsets 0/-256/-512;
+        the ~6 "Resolve region is empty" errors per frame are just the other strips' resolves being
+        scissored away). --native_stencil_value_output_d3d12_intel=true is much worse (green
+        wheels, bright band at the bottom): Intel's PS stencil reference output is still broken.
+        Next: RenderDoc capture of the cutscene frame to find the pass that writes that corner.
   - [ ] Intro drive on the HD 630: ~7 fps, ~90 ms per frame of host-GPU work (needs ~4x less for 30)
   - [ ] forza_tone.wmv / title scene: ~40 ms per frame of host-GPU work on the HD 630 (18 fps)
   - [x] "Audio cut" in the intro video is the video playing slowly (19 fps): its audio runs in real
