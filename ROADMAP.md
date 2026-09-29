@@ -22,6 +22,9 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
 - [x] First frame: trademark screens with audio (2026-09-29)
 - [x] Intro video and the title screen ("PRESS START") render with the xenos GPU plugin (2026-09-29)
 - [ ] Past Start: profile sign-in, save device, main menu
+  - Press Start -> XamShowDeviceSelectorUI (returns dummy device 1) -> ~130 ms later a guest
+    null read (0x00000000) on the main thread. Crash reports (fh1/src/fh1_crash_report.cpp,
+    `build_logs\run-*.log.crash.txt`) added to find the function.
 - [ ] First drive
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
