@@ -29,6 +29,13 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         SwitchToFiber (0x830ED910), which saves/loads full register contexts and cannot work as
         translated code. The fiber family is now hooked to the SDK's host fibers ([rexcrt] in
         fh1/overrides.toml).
+  - [x] Fiber fix works: Start -> device selector -> the playable intro drive (2026-09-29), but at
+        1-2 frames per second (xenos GPU emulation on a GTX 1050; the native renderer is Stage 4).
+  - [x] Leaving the intro drive: the game unloads XMediaFacade and loads it again. The SDK's
+        UnloadUserModule looked the module's translated code up by its resolved "\Device\..." path,
+        which never matches the manifest's guest path, so the old entry stayed and the reload was
+        refused -> XamShowDirtyDiscErrorUI -> the game's fatal handler (sub_82C09F00, error 255,
+        which spins forever by design and compiles to a trap). Fixed in sdk/src/system/kernel_state.cpp.
 - [ ] First drive
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 

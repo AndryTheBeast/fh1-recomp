@@ -118,6 +118,8 @@ u32 XexLoadImage_entry(mapped_string module_name, u32 module_flags, u32 min_vers
 
   *hmodule_ptr = hmodule;
 
+  REXKRNL_DEBUG("XexLoadImage({}, {:08X}) -> {:08X}, hmodule {:08X}", module_name.value(),
+                module_flags, result, hmodule);
   return result;
 }
 
@@ -139,6 +141,7 @@ u32 XexUnloadImage_entry(mapped_void hmodule) {
     last_ref = (--ldr_data->load_count == 0);
   }
 
+  REXKRNL_DEBUG("XexUnloadImage({}){}", module->path(), last_ref ? " - last reference, unloading" : "");
   if (last_ref) {
     module->Release();
     REX_KERNEL_STATE()->UnloadUserModule(

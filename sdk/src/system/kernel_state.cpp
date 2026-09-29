@@ -795,6 +795,7 @@ object_ref<UserModule> KernelState::LoadUserModule(const std::string_view raw_na
           auto lib_it = module_libraries_.find(lib_key);
           assert_true(lib_it != module_libraries_.end());
           lib_it->second = std::move(library_local);
+          recomp_keys_by_path_[module->path()] = lib_key;
           wired_recomp = true;
         }
       }
@@ -853,7 +854,18 @@ void KernelState::UnloadUserModule(const object_ref<UserModule>& module, bool ca
   {
     auto global_lock = global_critical_region_.Acquire();
 
-    auto recomp = FindRecompiledModule(module->path());
+    // Use the key recorded at load: module->path() is the resolved "\Device\..." path, which
+    // does not normalize to the manifest's guest path, so FindRecompiledModule(path()) missed
+    // and left module_libraries_ behind; the next XexLoadImage of the module was then refused.
+    std::optional<std::string> recomp_key;
+    auto key_it = recomp_keys_by_path_.find(module->path());
+    if (key_it != recomp_keys_by_path_.end()) {
+      recomp_key = key_it->second;
+      recomp_keys_by_path_.erase(key_it);
+    } else if (auto recomp = FindRecompiledModule(module->path())) {
+      recomp_key = recomp->guest_path;
+    }
+    auto recomp = recomp_key ? FindRecompiledModule(*recomp_key) : std::nullopt;
     if (recomp) {
       const std::string& key = recomp->guest_path;
       auto cleared_range = function_dispatcher_->UnregisterModule(key);

@@ -380,6 +380,10 @@ class KernelState {
   std::vector<TerminateNotification> terminate_notifications_;
   std::vector<RecompiledModuleInfo> recompiled_modules_;
   std::unordered_map<std::string, rex::platform::DynamicLibrary> module_libraries_;
+  // Loaded module's resolved path (UserModule::path()) -> module_libraries_ key. The key comes
+  // from the path the guest passed to XexLoadImage (e.g. "game:\Foo.xex" -> "foo.xex"), which
+  // the resolved "\Device\..." path no longer normalizes to, so unload must look it up here.
+  std::unordered_map<std::string, std::string> recomp_keys_by_path_;
   // FreeLibrary deferred to teardown so guest threads still in unloaded code
   // don't return into freed pages. Drained at the end of ~KernelState.
   std::vector<rex::platform::DynamicLibrary> deferred_unload_libraries_;

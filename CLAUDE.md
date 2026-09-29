@@ -11,8 +11,9 @@ worked example.
 
 Status (2026-09-29): the Windows build boots through the trademark screens, intro video and
 the title screen ("PRESS START") with audio, using the SDK's xenos GPU emulation (D3D12).
-Pressing Start crashed inside the XDK fiber code; the fiber functions are now hooked to the
-SDK's host fibers (commit dc8f275) — **the next run after that fix has not been tested yet**.
+With the XDK fiber functions hooked to the SDK's host fibers (commit dc8f275), Start leads to
+the playable intro drive (1-2 fps on the GTX 1050). Leaving it crashed because the SDK refused to
+reload XMediaFacade after an unload; fixed in `sdk/src/system/kernel_state.cpp` — **not tested yet**.
 
 ## Legal rule (never break it)
 
@@ -83,12 +84,16 @@ Codegen: `rexglue codegen fh1_manifest.toml` from `fh1/` (~3 min). After editing
 - Gaps: "not in any code region" = data; "outranked by import" = import thunk area (declaring
   it causes "undefined symbol"). Several small functions can share one gap.
 - The game links the XDK fiber functions; they must be hooked as a family via `[rexcrt]`.
+- A crash with exception 0x80000003 in sub_82C09F00 is the game's own fatal handler (an
+  intentional `b .` loop, compiled to a trap). Look just before it in the log for the reason,
+  e.g. `XamShowDirtyDiscErrorUI` = a file or module load failed.
+- XexLoadImage/XexUnloadImage now log at debug level; module reload problems show up there.
 - Staging files to the user's PC through the bridge sometimes delivers a stale copy: check the
   size on the device after writing, and use a new staged file name if it did not change.
 
 ## Next steps
 
-1. Test the fiber fix: Start -> storage device selector -> profile -> main menu.
+1. Test the XMediaFacade reload fix: finish/leave the intro drive -> profile -> main menu.
 2. Keep fixing run-time crashes and missing kernel/XAM behaviour until a race is drivable.
 3. Then the Switch: SDK Horizon layer, native renderer (`reference/nfsmw-app/src/nfsmw_nativo_*`),
    shader library via XenosRecomp, performance (see `docs/porting-another-game.md`).
