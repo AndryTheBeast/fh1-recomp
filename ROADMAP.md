@@ -36,6 +36,10 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         which never matches the manifest's guest path, so the old entry stayed and the reload was
         refused -> XamShowDirtyDiscErrorUI -> the game's fatal handler (sub_82C09F00, error 255,
         which spins forever by design and compiles to a trap). Fixed in sdk/src/system/kernel_state.cpp.
+        Verified 2026-09-29: XMediaFacade and SpeechFacade unload and reload cleanly.
+  - [ ] Audio cuts out partway through an intro video and returns in gameplay (WMV decoded by the
+        game through XMediaFacade; probably falls behind at this frame rate)
+  - [ ] Frame rate: `[fps]` log lines every 10 s measure it and say whether the GPU thread is the limit
 - [ ] First drive
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
