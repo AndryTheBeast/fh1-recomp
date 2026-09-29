@@ -12,12 +12,19 @@ untouched until then. The base is the nfsmw-nx
 project (NFS Most Wanted for Switch); its game-specific app lives in `reference/nfsmw-app/` as a
 worked example.
 
-Status (2026-09-29): the Windows build boots through the trademark screens, intro video and
-the title screen ("PRESS START") with audio, using the SDK's xenos GPU emulation (D3D12).
-With the XDK fiber functions hooked to the SDK's host fibers (commit dc8f275), Start leads to
-the playable intro drive (1-2 fps on the GTX 1050). Leaving it crashed because the SDK refused to
-reload XMediaFacade after an unload; fixed in `sdk/src/system/kernel_state.cpp` (verified: both
-modules unload and reload cleanly). Open: frame rate (was running on the Intel iGPU; fixed, untested).
+Status (2026-09-30): the Windows build boots through the logos, title screen, intro video and
+the in-engine cutscene into the intro drive, and leaves/reloads the XMedia/Speech modules without
+crashing. Rendering uses the SDK's xenos GPU emulation (D3D12, host render targets). Everything
+since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
+
+Performance (Intel HD 630 - the GTX 1050 was not usable, see below): logos 60 fps, title/intro
+video ~19 fps, intro drive ~7 fps. GPU time per drive frame 137 ms: 54 draws, 30 EDRAM render
+target transfers, 26 resolves, 19 textures. EDRAM emulation is ~55% of it, so 30 fps needs the
+native renderer.
+
+**Decision (user, 2026-09-30): make the game fully working with the current GPU emulation first,
+then build the native renderer on PC.** Work was interrupted by a Windows reinstall (the GTX 1050
+stopped initializing - no code cause; Windows never listed it as a DXGI adapter).
 
 ## Legal rule (never break it)
 
@@ -133,7 +140,17 @@ Use it for every graphics/performance change instead of asking the user to play.
 
 ## Next steps
 
-1. Test the XMediaFacade reload fix: finish/leave the intro drive -> profile -> main menu.
-2. Keep fixing run-time crashes and missing kernel/XAM behaviour until a race is drivable.
-3. Then the Switch: SDK Horizon layer, native renderer (`reference/nfsmw-app/src/nfsmw_nativo_*`),
-   shader library via XenosRecomp, performance (see `docs/porting-another-game.md`).
+0. After the reinstall: follow "Fresh PC setup", then check the run log's `DXGI adapter:` line says
+   the GTX 1050 and re-run the unattended cutscene/drive test to get new `[fps]` numbers.
+1. Finish the log health check (unattended run, list distinct warnings/errors). Already judged
+   harmless: failed opens of media\effects\, stringtables\en\, colourgradingmaps\, db\patch\,
+   BadgesAndTitles\ (not on the disc); Kinect XAM message app FE msg 2B003; XamXStudioRequest
+   spam. Open: the game opens `cache:\` (Xbox cache partition) and the SDK has no such device
+   (runtime.cpp only links game:, d:, update:) - find out whether FH1 streams through it and, if
+   so, mount a host folder for it as Xenia does.
+2. Glitches: dark square in the bottom-right corner (RTV path on Intel only; ROV is correct) and
+   the hard-edged car shadow. Use RenderDoc on the cutscene frame. Re-check both on the GTX 1050.
+3. Play past the intro drive (festival, menus, first races): autoplay cannot steer, so ask the
+   user to play and send logs, or extend fh1_autoplay.
+4. Then the native renderer on PC (`reference/nfsmw-app/src/nfsmw_nativo_*`, XenosRecomp shaders).
+   The Switch port is a separate repository, later.
