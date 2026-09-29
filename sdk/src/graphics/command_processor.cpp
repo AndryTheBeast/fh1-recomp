@@ -104,13 +104,14 @@ struct FrameStats {
 };
 FrameStats frame_stats_;
 
-void LogFrameStatsOnSwap() {
+void LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
   uint64_t now = rex::chrono::Clock::QueryHostTickCount();
   uint64_t freq = rex::chrono::Clock::QueryHostTickFrequency();
   FrameStats& s = frame_stats_;
   if (!s.window_start) {
     s.window_start = s.last_swap = now;
     s.idle_ticks = 0;
+    host_gpu_wait_ticks = 0;
     return;
   }
   s.worst_ticks = std::max(s.worst_ticks, now - s.last_swap);
@@ -130,9 +131,12 @@ void LogFrameStatsOnSwap() {
               s.frames / seconds, seconds, s.frames, 1000.0 * seconds / s.frames,
               1000.0 * double(s.worst_ticks) / double(freq), busy);
   REXGPU_INFO("[fps] per frame: {:.1f} ms waiting for the game (idle), {:.1f} ms in WAIT_REG_MEM, "
-              "{:.1f} ms in {} draws ({} failed), {:.1f} ms presenting",
+              "{:.1f} ms in {} draws ({} failed), {:.1f} ms presenting; {:.1f} ms of all that "
+              "blocked on the host GPU",
               ms_per_frame(s.idle_ticks), ms_per_frame(s.wait_reg_ticks), ms_per_frame(s.draw_ticks),
-              s.draws / s.frames, s.failed_draws / s.frames, ms_per_frame(s.swap_ticks));
+              s.draws / s.frames, s.failed_draws / s.frames, ms_per_frame(s.swap_ticks),
+              ms_per_frame(host_gpu_wait_ticks));
+  host_gpu_wait_ticks = 0;
   s = FrameStats{};
   s.window_start = s.last_swap = now;
 }
@@ -1057,7 +1061,7 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
   }
 #endif
   rex::perf::Profiler::Flip();
-  LogFrameStatsOnSwap();
+  LogFrameStatsOnSwap(stats_host_gpu_wait_ticks_);
 
   // Xenia-specific VdSwap hook.
   // VdSwap will post this to tell us we need to swap the screen/fire an

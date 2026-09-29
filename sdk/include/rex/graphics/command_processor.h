@@ -244,6 +244,9 @@ class CommandProcessor {
   std::vector<uint32_t> me_bin_;
 
   uint32_t counter_ = 0;
+  // Host ticks spent blocked on the host GPU (fence waits) since the last [fps] log line;
+  // backends add to it, ExecutePacketType3_XE_SWAP reports and clears it.
+  uint64_t stats_host_gpu_wait_ticks_ = 0;
 
   uint32_t primary_buffer_ptr_ = 0;
   uint32_t primary_buffer_size_ = 0;

@@ -16,6 +16,7 @@
 #include <utility>
 
 #include <rex/assert.h>
+#include <rex/chrono/clock.h>
 #include <rex/cvar.h>
 #include <rex/dbg.h>
 #include <rex/perf/counter.h>
@@ -3118,7 +3119,9 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
                     SUCCEEDED(queue_operations_since_submission_fence_->SetEventOnCompletion(
                         fence_value, fence_completion_event_)))) {
         PROFILE_CMD_BUFFER_STALL();
+        uint64_t wait_start = rex::chrono::Clock::QueryHostTickCount();
         WaitForSingleObject(fence_completion_event_, INFINITE);
+        stats_host_gpu_wait_ticks_ += rex::chrono::Clock::QueryHostTickCount() - wait_start;
         queue_operations_done_since_submission_signal_ = false;
       } else {
         REXGPU_ERROR(
@@ -3137,7 +3140,9 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
     if (SUCCEEDED(
             submission_fence_->SetEventOnCompletion(await_submission, fence_completion_event_))) {
       PROFILE_CMD_BUFFER_STALL();
+      uint64_t wait_start = rex::chrono::Clock::QueryHostTickCount();
       WaitForSingleObject(fence_completion_event_, INFINITE);
+      stats_host_gpu_wait_ticks_ += rex::chrono::Clock::QueryHostTickCount() - wait_start;
       submission_completed_ = submission_fence_->GetCompletedValue();
     }
   }
