@@ -41,7 +41,6 @@
 "0x88105720" = { }   # 64 bytes, tras 0x88105518
 "0x88105A48" = { }   # 64 bytes, tras 0x88105760
 "0x88121B20" = { }   # 80 bytes, tras 0x881219C0
-"0x8812F2C4" = { }   # 44 bytes, tras 0x8812ECC8
 "0x88130B44" = { }   # 212 bytes, tras 0x8812F2F0
 "0x88132EB8" = { }   # 48 bytes, tras 0x88132948
 "0x88138D08" = { }   # 64 bytes, tras 0x881387C0
@@ -63,8 +62,75 @@
 "0x881F18F0" = { }   # 8 bytes, tras 0x881F1898
 "0x881F1C48" = { }   # 8 bytes, tras 0x881F1C20
 "0x882435D8" = { }   # 16 bytes, tras 0x88242BC0
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x88063888" = { }   # rest
+"0x880678F8" = { }   # rest
+"0x880D2F38" = { }   # rest
+"0x880F4464" = { }   # rest
+"0x88105730" = { }   # rest
+"0x88105A58" = { }   # rest
+"0x88121B64" = { }   # rest
+"0x88130C10" = { }   # rest
+"0x88132ED0" = { }   # rest
+"0x88138D14" = { }   # rest
+"0x8813F78C" = { }   # rest
+"0x88155C78" = { }   # rest
+"0x881A6158" = { }   # rest
+"0x881A6480" = { }   # rest
+"0x881EC4CC" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x88063890" = { }   # rest
+"0x88067918" = { }   # rest
+"0x88105758" = { }   # rest
+"0x88105A80" = { }   # rest
+"0x88121B5C" = { }   # rest
+"0x88138D24" = { }   # rest
+"0x8813F798" = { }   # rest
+"0x88155C8C" = { }   # rest
+"0x881A6180" = { }   # rest
+"0x881A64A8" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x88063898" = { }   # rest
+"0x88067938" = { }   # rest
+"0x8813F7A4" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x880638A0" = { }   # rest
+"0x88067958" = { }   # rest
+"0x8813F7B0" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x880638A8" = { }   # rest
+"0x88067978" = { }   # rest
+"0x8813F7BC" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x880638B0" = { }   # rest
+"0x88067998" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x880679B8" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x880679D8" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x880679F8" = { }   # rest
 # Continuations (tools/fusionar_continuaciones.py)
 "0x88063590" = { end = 0x880636B8 }
+"0x8812ECC8" = { end = 0x8812F2F0 }
 "0x88131478" = { end = 0x88132628 }
 "0x8817C398" = { end = 0x8817C440 }
 "0x88216BA8" = { end = 0x882171F8 }

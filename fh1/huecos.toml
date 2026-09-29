@@ -275,7 +275,6 @@
 "0x82B2ECDC" = { }   # 76 bytes, tras 0x82B2ECA8
 "0x82B2ED74" = { }   # 108 bytes, tras 0x82B2ED28
 "0x82B2EF04" = { }   # 92 bytes, tras 0x82B2EDE0
-"0x82B2F180" = { }   # 104 bytes, tras 0x82B2F008
 "0x82B3B9F8" = { }   # 8 bytes, tras 0x82B3B9E8
 "0x82B570E8" = { }   # 8 bytes, tras 0x82B570C8
 "0x82B708A8" = { }   # 8 bytes, tras 0x82B70840
@@ -398,7 +397,6 @@
 "0x82F9D5D0" = { }   # 192 bytes, tras 0x82F9D258
 "0x82F9FDA4" = { }   # 100 bytes, tras 0x82F9FA10
 "0x82FB94CC" = { }   # 244 bytes, tras 0x82FB9090
-"0x82FBBDC4" = { }   # 100 bytes, tras 0x82FBBB40
 "0x82FBE71C" = { }   # 196 bytes, tras 0x82FBE488
 "0x82FBF148" = { }   # 64 bytes, tras 0x82FBEC58
 "0x82FD25A4" = { }   # 100 bytes, tras 0x82FD22F0
@@ -407,7 +405,6 @@
 "0x82FE5AC4" = { }   # 44 bytes, tras 0x82FE5918
 "0x82FF0670" = { }   # 96 bytes, tras 0x82FF0060
 "0x82FF0818" = { }   # 144 bytes, tras 0x82FF06D0
-"0x82FF2684" = { }   # 196 bytes, tras 0x82FF23B0
 "0x82FF2EA4" = { }   # 52 bytes, tras 0x82FF2DF0
 "0x82FF8304" = { }   # 100 bytes, tras 0x82FF81C0
 "0x82FF872C" = { }   # 100 bytes, tras 0x82FF85E8
@@ -418,7 +415,6 @@
 "0x830040C8" = { }   # 96 bytes, tras 0x83003850
 "0x83007B8C" = { }   # 100 bytes, tras 0x830077E8
 "0x8300863C" = { }   # 196 bytes, tras 0x830083A8
-"0x83008EC0" = { }   # 288 bytes, tras 0x83008D00
 "0x830092D4" = { }   # 196 bytes, tras 0x83009020
 "0x8300A8D0" = { }   # 192 bytes, tras 0x8300A508
 "0x83016D94" = { }   # 68 bytes, tras 0x83016C60
@@ -443,7 +439,6 @@
 "0x830C7CE0" = { }   # 8 bytes, tras 0x830C7CD8
 "0x830C82D0" = { }   # 8 bytes, tras 0x830C82C8
 "0x830C82E0" = { }   # 8 bytes, tras 0x830C82D8
-"0x830D89BC" = { }   # 44 bytes, tras 0x830D83E8
 "0x830DEC50" = { }   # 64 bytes, tras 0x830DE708
 "0x830E1008" = { }   # 8 bytes, tras 0x830E0FD8
 "0x830E2160" = { }   # 8 bytes, tras 0x830E2138
@@ -666,6 +661,162 @@
 "0x83150E40" = { }   # thunk
 "0x83150E48" = { }   # thunk
 "0x83150E70" = { }   # thunk
+
+
+# Thunk runs split by tools/huecos_pasada.py
+"0x83150ED8" = { }   # thunk
+"0x83150EE0" = { }   # thunk
+"0x83150F08" = { }   # thunk
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x824705F0" = { }   # rest
+"0x8247A5C8" = { }   # rest
+"0x8249C440" = { }   # rest
+"0x8249CA20" = { }   # rest
+"0x8249D660" = { }   # rest
+"0x824A13C0" = { }   # rest
+"0x8257F9B8" = { }   # rest
+"0x82583E10" = { }   # rest
+"0x827A87F8" = { }   # rest
+"0x829CBBE8" = { }   # rest
+"0x829DA6AC" = { }   # rest
+"0x82A1D2B0" = { }   # rest
+"0x82A447B8" = { }   # rest
+"0x82A72604" = { }   # rest
+"0x82A93674" = { }   # rest
+"0x82A93D08" = { }   # rest
+"0x82AAB000" = { }   # rest
+"0x82ABCA68" = { }   # rest
+"0x82ABD16C" = { }   # rest
+"0x82AE97A0" = { }   # rest
+"0x82AEA558" = { }   # rest
+"0x82B107D8" = { }   # rest
+"0x82B2EC1C" = { }   # rest
+"0x82B2ECA0" = { }   # rest
+"0x82B2ED1C" = { }   # rest
+"0x82B2EDC8" = { }   # rest
+"0x82B2EF14" = { }   # rest
+"0x82C48150" = { }   # rest
+"0x82DBC3B0" = { }   # rest
+"0x82DBC3F8" = { }   # rest
+"0x82DBC4F8" = { }   # rest
+"0x82DBC800" = { }   # rest
+"0x82DBCF98" = { }   # rest
+"0x82F25A48" = { }   # rest
+"0x82F85FEC" = { }   # rest
+"0x82F8B4AC" = { }   # rest
+"0x82F9CEEC" = { }   # rest
+"0x82F9FDF8" = { }   # rest
+"0x82FBE74C" = { }   # rest
+"0x82FBF170" = { }   # rest
+"0x82FD9240" = { }   # rest
+"0x82FDC4D8" = { }   # rest
+"0x82FF06B4" = { }   # rest
+"0x82FF0864" = { }   # rest
+"0x82FF834C" = { }   # rest
+"0x82FF8778" = { }   # rest
+"0x82FFB190" = { }   # rest
+"0x83007BD8" = { }   # rest
+"0x8300867C" = { }   # rest
+"0x8300A94C" = { }   # rest
+"0x83016DA4" = { }   # rest
+"0x830B5374" = { }   # rest
+"0x830B5394" = { }   # rest
+"0x830B53B4" = { }   # rest
+"0x830B65CC" = { }   # rest
+"0x830B662C" = { }   # rest
+"0x830B666C" = { }   # rest
+"0x830BF370" = { }   # rest
+"0x830DEC5C" = { }   # rest
+"0x830FE898" = { }   # rest
+"0x83100998" = { }   # rest
+"0x8314F088" = { }   # rest
+"0x83155CC8" = { }   # rest
+"0x83155E18" = { }   # rest
+
+
+# Thunk runs split by tools/huecos_pasada.py
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x8247A5E0" = { }   # rest
+"0x8249C450" = { }   # rest
+"0x8249CA30" = { }   # rest
+"0x824A13D0" = { }   # rest
+"0x827A8808" = { }   # rest
+"0x829DA6D4" = { }   # rest
+"0x82A93690" = { }   # rest
+"0x82AE97B4" = { }   # rest
+"0x82AEA568" = { }   # rest
+"0x82B2EF24" = { }   # rest
+"0x82DBC410" = { }   # rest
+"0x82DBC520" = { }   # rest
+"0x82F85FFC" = { }   # rest
+"0x82F9CEFC" = { }   # rest
+"0x82FBE7A0" = { }   # rest
+"0x82FD924C" = { }   # rest
+"0x82FF0898" = { }   # rest
+"0x830086E0" = { }   # rest
+"0x83016DB4" = { }   # rest
+"0x830DEC6C" = { }   # rest
+"0x83155CD0" = { }   # rest
+
+
+# Thunk runs split by tools/huecos_pasada.py
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x8249C460" = { }   # rest
+"0x8249CA40" = { }   # rest
+"0x824A13E0" = { }   # rest
+"0x827A8818" = { }   # rest
+"0x82B2EF34" = { }   # rest
+"0x82FBE7B0" = { }   # rest
+"0x82FD9260" = { }   # rest
+"0x83016DC4" = { }   # rest
+
+
+# Thunk runs split by tools/huecos_pasada.py
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x8249CA50" = { }   # rest
+"0x824A13F0" = { }   # rest
+"0x82B2EF44" = { }   # rest
+"0x82FBE7D0" = { }   # rest
+
+
+# Thunk runs split by tools/huecos_pasada.py
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x8249CA60" = { }   # rest
+"0x824A1400" = { }   # rest
+"0x82B2EF54" = { }   # rest
+
+
+# Thunk runs split by tools/huecos_pasada.py
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x8249CA70" = { }   # rest
+"0x824A1410" = { }   # rest
+
+
+# Thunk runs split by tools/huecos_pasada.py
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x8249CA80" = { }   # rest
+"0x824A1420" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x8249CA90" = { }   # rest
+"0x824A1430" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x8249CAA0" = { }   # rest
+"0x824A1440" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x824A1450" = { }   # rest
 # Continuations (tools/fusionar_continuaciones.py)
 "0x829C2A48" = { end = 0x829C2AA0 }
 "0x829CBE14" = { end = 0x829CBE50 }
@@ -674,6 +825,7 @@
 "0x829E0118" = { end = 0x829E05F8 }
 "0x82B2EB1C" = { end = 0x82B2EB78 }
 "0x82B2EF60" = { end = 0x82B2F008 }
+"0x82B2F180" = { end = 0x82B2F1E8 }
 "0x82B37400" = { end = 0x82B39960 }
 "0x82C0DA10" = { end = 0x82C0DB00 }
 "0x82C0DB00" = { end = 0x82C0DBC8 }
@@ -685,6 +837,7 @@
 "0x82F9F688" = { end = 0x82F9FA10 }
 "0x82FA7C78" = { end = 0x82FA8078 }
 "0x82FA88F0" = { end = 0x82FA8FD0 }
+"0x82FBBB40" = { end = 0x82FBBE28 }
 "0x82FBDF10" = { end = 0x82FBE478 }
 "0x82FBE9D0" = { end = 0x82FBEC58 }
 "0x82FD7590" = { end = 0x82FD8F38 }
@@ -706,6 +859,7 @@
 "0x82FED9A8" = { end = 0x82FEE0D0 }
 "0x82FEE770" = { end = 0x82FEEB28 }
 "0x82FEEB40" = { end = 0x82FEFB98 }
+"0x82FF2684" = { end = 0x82FF2748 }
 "0x82FF3750" = { end = 0x82FF4058 }
 "0x82FF4938" = { end = 0x82FF4EC0 }
 "0x82FF8DC8" = { end = 0x82FF98B8 }
@@ -715,9 +869,12 @@
 "0x83002C20" = { end = 0x830031B8 }
 "0x83007F8C" = { end = 0x83007FF0 }
 "0x83008700" = { end = 0x83008D00 }
+"0x83008EC0" = { end = 0x83008FE0 }
 "0x8301AF88" = { end = 0x8301B350 }
 "0x8301B350" = { end = 0x8301B7D0 }
 "0x8301CBA4" = { end = 0x8301CC08 }
+"0x830D83E8" = { end = 0x830D89E8 }
 "0x830D89E8" = { end = 0x830D9DB8 }
 "0x83102238" = { end = 0x83102258 }
 "0x83150E50" = { end = 0x83150E70 }
+"0x83150EE8" = { end = 0x83150F08 }

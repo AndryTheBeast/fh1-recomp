@@ -149,4 +149,26 @@
 "0x8912AF28" = { }   # thunk
 "0x8912AF30" = { }   # thunk
 "0x8912AF38" = { }   # thunk
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x890BAE98" = { }   # rest
+"0x890C5980" = { }   # rest
+"0x8919E828" = { }   # rest
+"0x891EBDEC" = { }   # rest
+"0x891F166C" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x890C5998" = { }   # rest
+"0x8919E840" = { }   # rest
+"0x891EBE08" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x891EBE38" = { }   # rest
+
+
+# Rests of gaps (tools/huecos_pasada.py --restos)
+"0x891EBE60" = { }   # rest
 # Continuations (tools/fusionar_continuaciones.py)
