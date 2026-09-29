@@ -1,6 +1,10 @@
 # Forza Horizon (Xbox 360) — recompilation port
 
-An in-progress, unofficial port of **Forza Horizon** (2012, Xbox 360) to Windows and, later, the Nintendo Switch.
+An in-progress, unofficial port of **Forza Horizon** (2012, Xbox 360) to **Windows (PC)**.
+
+This repository is the PC port only. The Nintendo Switch port will live in a separate repository, started from
+this one once the game is fully playable on PC. The Switch-side pieces inherited from nfsmw-nx (`sdk/` Horizon
+layer, `shaders/`, `mesa/`, `tools/switch/`, `reference/`) stay here until then and are not built for PC.
 
 The game's PowerPC program (`default.xex`) is statically recompiled to C++ with
 [ReXGlue](https://github.com/rexglue/rexglue-sdk). The project is built on the SDK, tools and documentation of
@@ -13,7 +17,8 @@ Switch-side problems (memory, threads, Vulkan on NVK, shader pre-translation).
 
 ## Status
 
-See [ROADMAP.md](ROADMAP.md). Current stage: **1 — getting the code generator to translate the game on PC.**
+See [ROADMAP.md](ROADMAP.md). The game boots on Windows through the title screen and into the intro drive;
+current work is crash fixes and performance.
 
 ## Layout
 
@@ -27,13 +32,11 @@ See [ROADMAP.md](ROADMAP.md). Current stage: **1 — getting the code generator 
 | `docs/` | nfsmw-nx's documentation. Start with `docs/porting-another-game.md` |
 | `reference/` | nfsmw-nx's game-specific app, kept as a worked example (native renderer, hooks, audio) |
 
-## Building the code generator
+## Building on Windows
 
-```sh
-python tools/fetch_thirdparty.py
-cmake -S sdk -B out/host -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-cmake --build out/host --target rexglue
-```
+1. `tools\setup_windows.bat` installs the tools (Git, CMake, Ninja, Python, LLVM, VS 2022 Build Tools).
+2. Put your ISO, `toolsuild_fh1.bat` and `toolsun_fh1.bat` in one folder next to this clone.
+3. `run_fh1.bat` once extracts the disc; `build_fh1.bat` builds `fh1.exe`; `run_fh1.bat` plays it.
 
 ## Credits
 

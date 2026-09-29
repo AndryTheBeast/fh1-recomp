@@ -5,7 +5,10 @@ Handoff notes for any Claude session working on this repo. Read this first, then
 ## Goal and current state
 
 Port Forza Horizon 1 (Xbox 360, NTSC-U, Title ID 4D5309C9, default.xex v0.0.0.10) to Windows
-first, then the Nintendo Switch, by static recompilation with ReXGlue. The base is the nfsmw-nx
+first, then the Nintendo Switch, by static recompilation with ReXGlue. **This repo is the PC port
+only**; the Switch port will be a separate repo started from this one once PC is fully playable.
+Keep the inherited Switch pieces (sdk Horizon layer, shaders/, mesa/, tools/switch, reference/)
+untouched until then. The base is the nfsmw-nx
 project (NFS Most Wanted for Switch); its game-specific app lives in `reference/nfsmw-app/` as a
 worked example.
 
