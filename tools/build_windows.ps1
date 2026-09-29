@@ -91,10 +91,15 @@ try {
   if (-not $Rexglue) { throw "rexglue.exe was not produced." }
   Write-Host "rexglue: $($Rexglue.FullName)"
 
-  Step "Copying default.xex"
+  Step "Copying the game executables"
   $Assets = Join-Path $Root "fh1\assets\game_root"
   New-Item -ItemType Directory -Force -Path $Assets | Out-Null
-  Copy-Item $Xex (Join-Path $Assets "default.xex") -Force
+  # default.xex plus the modules it loads at run time (fh1_manifest.toml [[modules]]).
+  foreach ($x in "default.xex", "XMediaFacade_default.xex", "SpeechFacade_default.xex") {
+    $src = Join-Path $GameRoot $x
+    if (-not (Test-Path $src)) { throw "$x not found in $GameRoot. Extract the full disc first (run_fh1.bat does it)." }
+    Copy-Item $src (Join-Path $Assets $x) -Force
+  }
 
   if (-not $SkipCodegen) {
     Step "Translating the game to C++ (a few minutes)"

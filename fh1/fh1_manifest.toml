@@ -9,3 +9,18 @@ game_root = "assets/game_root"
 file_path = "assets/game_root/default.xex"
 out_directory_path = "generated/default"
 includes = ["overrides.toml", "huecos.toml"]
+
+# Loaded at run time with XexLoadImage from the disc root: media/video playback.
+# The first run died calling 0x88050800 inside it ("function not in function table").
+[[modules]]
+guest_path = "XMediaFacade_default.xex"
+file_path = "assets/game_root/XMediaFacade_default.xex"
+out_directory_path = "generated/xmediafacade_default"
+includes = ["xmediafacade_overrides.toml"]
+
+# Kinect speech recognition, loaded the same way.
+[[modules]]
+guest_path = "SpeechFacade_default.xex"
+file_path = "assets/game_root/SpeechFacade_default.xex"
+out_directory_path = "generated/speechfacade_default"
+includes = ["speechfacade_overrides.toml"]

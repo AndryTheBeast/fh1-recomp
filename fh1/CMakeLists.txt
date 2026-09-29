@@ -21,7 +21,8 @@ else()
     add_executable(fh1 ${FH1_SOURCES})
 endif()
 
-rexglue_setup_target(fh1)
+# GPU_PLUGINS xenos builds the SDK's Xbox 360 GPU emulation and stages it next to fh1.exe.
+rexglue_setup_target(fh1 GPU_PLUGINS xenos)
 
 # With the SDK built as a subdirectory (REXSDK_DIR, as tools/build_windows.ps1 does),
 # rex_app.cpp and main.cpp include imgui.h, but rexruntime links imgui privately, so its

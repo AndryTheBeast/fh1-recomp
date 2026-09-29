@@ -15,7 +15,10 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         Codegen is clean: no unresolved branches, no `REX_FATAL` stubs. 321 gaps left, mostly data.
 
 ## Stage 2 — Boot on Windows with ReXGlue's own graphics
-- [ ] Build the Windows runtime (D3D12 backend; GTX 1050 target)
+- [x] Build the Windows runtime (`tools/build_fh1.bat`; needs the VC++ 2015-2022 redistributable to run)
+- [x] First run: boots, loads `XMediaFacade_default.xex` at run time and dies calling into it.
+      Both run-time modules (XMediaFacade, SpeechFacade) are now `[[modules]]` in the manifest.
+- [x] Turn on the `xenos` GPU plugin (the nfsmw-nx SDK defaults to no GPU emulation)
 - [ ] Reach the first frame, then menus, then a drive
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 

@@ -1,0 +1,5 @@
+# SpeechFacade_default.xex — manual declarations for the codegen.
+[functions]
+
+# Tail call from 0x890E2FBC whose target Discover never made a function.
+"0x890E2FA0" = { }

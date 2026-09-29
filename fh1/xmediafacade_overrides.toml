@@ -1,0 +1,6 @@
+# XMediaFacade_default.xex (loaded at 0x88000000) — manual declarations for the codegen.
+[functions]
+
+# Tail call from 0x880503D0 whose target Discover never made a function
+# ("UnresolvedCall ... target not in any function").
+"0x88055B80" = { }
