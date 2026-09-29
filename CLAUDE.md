@@ -14,7 +14,7 @@ the title screen ("PRESS START") with audio, using the SDK's xenos GPU emulation
 With the XDK fiber functions hooked to the SDK's host fibers (commit dc8f275), Start leads to
 the playable intro drive (1-2 fps on the GTX 1050). Leaving it crashed because the SDK refused to
 reload XMediaFacade after an unload; fixed in `sdk/src/system/kernel_state.cpp` (verified: both
-modules unload and reload cleanly). Open: 1-2 fps, and the audio cuts out mid intro video.
+modules unload and reload cleanly). Open: frame rate (was running on the Intel iGPU; fixed, untested).
 
 ## Legal rule (never break it)
 
@@ -89,8 +89,10 @@ Codegen: `rexglue codegen fh1_manifest.toml` from `fh1/` (~3 min). After editing
   intentional `b .` loop, compiled to a trap). Look just before it in the log for the reason,
   e.g. `XamShowDirtyDiscErrorUI` = a file or module load failed.
 - XexLoadImage/XexUnloadImage now log at debug level; module reload problems show up there.
-- `[fps]` lines (every 10 s, sdk/src/graphics/command_processor.cpp) give the real frame rate
-  and "GPU thread busy": near 100% = GPU command translation is the bottleneck, low = game CPU code.
+- `[fps]` lines (every 10 s, sdk/src/graphics/command_processor.cpp) give the real frame rate and
+  a per-frame breakdown of the GPU thread (idle / WAIT_REG_MEM / draws / presenting).
+- The user's PC is a laptop with switchable graphics (Intel HD 630 + GTX 1050). Check the
+  `DXGI adapter:` log line before trusting any performance numbers.
 - Staging files to the user's PC through the bridge sometimes delivers a stale copy: check the
   size on the device after writing, and use a new staged file name if it did not change.
 
