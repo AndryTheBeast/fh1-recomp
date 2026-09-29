@@ -95,6 +95,11 @@ struct FrameStats {
   uint64_t last_swap = 0;
   uint64_t idle_ticks = 0;
   uint64_t worst_ticks = 0;
+  uint64_t wait_reg_ticks = 0;  // inside WAIT_REG_MEM (game told the GPU to wait for a value)
+  uint64_t draw_ticks = 0;      // inside IssueDraw (translating + recording host draws)
+  uint64_t swap_ticks = 0;      // inside IssueSwap (presenting the frame)
+  uint32_t draws = 0;
+  uint32_t failed_draws = 0;
   uint32_t frames = 0;
 };
 FrameStats frame_stats_;
@@ -117,10 +122,17 @@ void LogFrameStatsOnSwap() {
   }
   double seconds = double(elapsed) / double(freq);
   double busy = 100.0 * (1.0 - std::min(1.0, double(s.idle_ticks) / double(elapsed)));
+  auto ms_per_frame = [&](uint64_t ticks) {
+    return 1000.0 * double(ticks) / double(freq) / double(s.frames);
+  };
   REXGPU_INFO("[fps] {:.1f} fps over {:.1f} s ({} frames), average {:.1f} ms, worst {:.1f} ms; "
               "GPU thread busy {:.0f}%",
               s.frames / seconds, seconds, s.frames, 1000.0 * seconds / s.frames,
               1000.0 * double(s.worst_ticks) / double(freq), busy);
+  REXGPU_INFO("[fps] per frame: {:.1f} ms waiting for the game (idle), {:.1f} ms in WAIT_REG_MEM, "
+              "{:.1f} ms in {} draws ({} failed), {:.1f} ms presenting",
+              ms_per_frame(s.idle_ticks), ms_per_frame(s.wait_reg_ticks), ms_per_frame(s.draw_ticks),
+              s.draws / s.frames, s.failed_draws / s.frames, ms_per_frame(s.swap_ticks));
   s = FrameStats{};
   s.window_start = s.last_swap = now;
 }
@@ -1060,7 +1072,9 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
   uint32_t frontbuffer_height = reader->ReadAndSwap<uint32_t>();
   reader->AdvanceRead((count - 4) * sizeof(uint32_t));
 
+  uint64_t swap_start = rex::chrono::Clock::QueryHostTickCount();
   IssueSwap(frontbuffer_ptr, frontbuffer_width, frontbuffer_height);
+  frame_stats_.swap_ticks += rex::chrono::Clock::QueryHostTickCount() - swap_start;
 
   ++counter_;
   return true;
@@ -1090,6 +1104,12 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
   uint32_t wait = reader->ReadAndSwap<uint32_t>();
 
   bool is_memory = (wait_info & 0x10) != 0;
+
+  uint64_t wait_start = rex::chrono::Clock::QueryHostTickCount();
+  struct WaitTimer {
+    uint64_t start;
+    ~WaitTimer() { frame_stats_.wait_reg_ticks += rex::chrono::Clock::QueryHostTickCount() - start; }
+  } wait_timer{wait_start};
 
   bool matched = false;
   do {
@@ -1480,8 +1500,12 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
 
       bool major_mode_explicit =
           xenos::IsMajorModeExplicit(vgt_draw_initiator.major_mode, vgt_draw_initiator.prim_type);
+      uint64_t draw_start = rex::chrono::Clock::QueryHostTickCount();
       draw_succeeded = IssueDraw(vgt_draw_initiator.prim_type, vgt_draw_initiator.num_indices,
                                  is_indexed ? &index_buffer_info : nullptr, major_mode_explicit);
+      frame_stats_.draw_ticks += rex::chrono::Clock::QueryHostTickCount() - draw_start;
+      ++frame_stats_.draws;
+      frame_stats_.failed_draws += draw_succeeded ? 0 : 1;
       if (!draw_succeeded) {
         auto vgt_output_path_cntl = register_file_->Get<reg::VGT_OUTPUT_PATH_CNTL>();
         auto vgt_hos_cntl = register_file_->Get<reg::VGT_HOS_CNTL>();
