@@ -50,3 +50,25 @@
 # 0x830EBE90 pointed into the middle of 0x830ED900 (REX_FATAL at run time).
 "0x830ED900" = { end = 0x830ED910 }
 "0x830ED910" = { }
+
+# ---------------------------------------------------------------------------
+#  Xbox SDK fibers -> host fibers (sdk/src/kernel/crt/threading.cpp)
+# ---------------------------------------------------------------------------
+# The game links the XDK's fiber functions (xapilib). Its SwitchToFiber saves every
+# register into the current fiber and jumps into the target fiber's saved context,
+# which translated code cannot do: the call returned with garbage non-volatile
+# registers (r20 = 0 after sub_8310C640 -> 0x830EBE90 -> 0x830ED910), and pressing
+# Start crashed on a null read in sub_8310C340. The SDK replaces the whole family
+# with real host fibers; they must be hooked together because SwitchToFiber only
+# knows fibers created by the SDK's CreateFiber / ConvertThreadToFiber.
+# Identified by reading the generated code (KTHREAD+0x164 = current fiber, 0xA50-byte
+# fiber block, ERROR_ALREADY_FIBER 1280 / ERROR_ALREADY_THREAD 1281):
+#   0x830EBC60 GetCurrentFiber (reads KTHREAD+0x164; same layout in the SDK, not hooked)
+#   0x830EBE90 4-byte stub "b 0x830ED910" that every caller of SwitchToFiber uses
+#   0x830ED900 / 0x830EBEA0 start trampoline of XDK fibers (unused once CreateFiber is hooked)
+[rexcrt]
+ConvertThreadToFiber = 0x830EBC70
+ConvertFiberToThread = 0x830EBD00
+CreateFiber = 0x830EBD50
+DeleteFiber = 0x830EBE30
+SwitchToFiber = 0x830ED910

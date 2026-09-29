@@ -25,6 +25,10 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
   - Press Start -> XamShowDeviceSelectorUI (returns dummy device 1) -> ~130 ms later a guest
     null read (0x00000000) on the main thread. Crash reports (fh1/src/fh1_crash_report.cpp,
     `build_logs\run-*.log.crash.txt`) added to find the function.
+  - [x] Crash report: sub_8310C340 read through r20 = 0 right after sub_8310C640 called the XDK's
+        SwitchToFiber (0x830ED910), which saves/loads full register contexts and cannot work as
+        translated code. The fiber family is now hooked to the SDK's host fibers ([rexcrt] in
+        fh1/overrides.toml).
 - [ ] First drive
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
