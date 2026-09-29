@@ -26,7 +26,8 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 - Windows 11, GTX 1050, PS4 controller through DSX (shows up twice: real pad + virtual
   Xbox 360 pad — handled by `fh1_merge_controllers`, see below).
 - Everything lives in `C:\Users\andre\Desktop\FH1-recomp\`:
-  - the ISO, `game_root\` (full extracted disc), `file_list.txt`
+  - the ISO, `game_root\` (full extracted disc), `README.txt`, `claude_memory\` (backup copy of
+    Claude's memory notes), `_old\` (superseded extraction scripts, disc file list)
   - `fh1-recomp\` = this repo (clone), built by `build_fh1.bat`
   - `build_fh1.bat` — fetch + `reset --hard origin/main`, then `tools\build_windows.ps1`
   - `run_fh1.bat` — extracts the disc on first run, then runs fh1.exe with a log
