@@ -34,6 +34,20 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 - Toolchain installed: LLVM/clang 23 (on PATH), CMake 4.4, Ninja, Python 3.13, Git,
   VS 2022 Build Tools (VCTools), VC++ redistributable.
 
+## Fresh PC setup (after a Windows reinstall)
+
+1. Install the graphics driver from the vendor (NVIDIA GTX 1050 Notebook) and check Task Manager
+   shows the GPU. Install Claude Code and log in.
+2. In `C:\Users\andre\Desktop\FH1-recomp\`: put the ISO there, run
+   `git clone https://github.com/AndryTheBeast/fh1-recomp.git`, and copy
+   `fh1-recomp\tools\build_fh1.bat` and `run_fh1.bat` next to the ISO.
+3. Run `fh1-recomp\tools\setup_windows.bat` (winget installs Git, CMake, Ninja, Python 3.13, LLVM,
+   VS 2022 Build Tools C++ workload, VC++ redist, GitHub CLI; accept the UAC prompts).
+4. Copy `fh1-recomp\tools\claude_settings.json` to `FH1-recomp\.claude\settings.json` so Claude can
+   build, read logs and commit without asking each time. Set git's identity:
+   `git config --global user.name AndryTheBeast` and `git config --global user.email antigotgvs@gmail.com`.
+5. Run `run_fh1.bat` once (extracts the disc into game_root), then `build_fh1.bat`.
+
 ## Layout
 
 | Path | What |
