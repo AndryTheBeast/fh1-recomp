@@ -17,6 +17,7 @@
 
 #include <rex/assert.h>
 #include <rex/chrono/clock.h>
+#include <fmt/format.h>
 #include <rex/cvar.h>
 #include <rex/dbg.h>
 #include <rex/perf/counter.h>
@@ -1911,6 +1912,7 @@ void D3D12CommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontbu
     REXGPU_ERROR("IssueSwap: BeginSubmission failed");
     return;
   }
+  GpuTimeMark(GpuTimeKind::kSwap);
 
   // Obtain the actual swap source texture size (resolution-scaled if it's a
   // resolve destination, or not otherwise).
@@ -2333,6 +2335,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   }
 
   // Process primitives.
+  GpuTimeMark(GpuTimeKind::kPrimitives);
   PrimitiveProcessor::ProcessingResult primitive_processing_result;
   if (!primitive_processor_->Process(primitive_processing_result)) {
     return false;
@@ -2365,6 +2368,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   uint32_t normalized_color_mask =
       pixel_shader ? draw_util::GetNormalizedColorMask(regs, pixel_shader->writes_color_targets())
                    : 0;
+  GpuTimeMark(GpuTimeKind::kRenderTargets);
   if (!render_target_cache_->Update(is_rasterization_done, normalized_depth_control,
                                     normalized_color_mask, *vertex_shader)) {
     return false;
@@ -2408,6 +2412,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   uint32_t used_texture_mask =
       vertex_shader->GetUsedTextureMaskAfterTranslation() |
       (pixel_shader != nullptr ? pixel_shader->GetUsedTextureMaskAfterTranslation() : 0);
+  GpuTimeMark(GpuTimeKind::kTextures);
   texture_cache_->RequestTextures(used_texture_mask);
 
   // Bind the pipeline after configuring it and doing everything that may bind
@@ -2512,6 +2517,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
         vertex_buffers_in_sync_[vfetch_index >> 6] |= vfetch_bit;
         continue;
       }
+      GpuTimeMark(GpuTimeKind::kMemory);
       if (!shared_memory_->RequestRange(vfetch_constant.address << 2, vfetch_constant.size << 2)) {
         REXGPU_ERROR(
             "Failed to request vertex buffer at 0x{:08X} (size {}) in the "
@@ -2629,6 +2635,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
     SubmitBarriers();
     PROFILE_DRAW_CALL();
     PROFILE_VERTICES(primitive_processing_result.host_draw_vertex_count);
+    GpuTimeMark(GpuTimeKind::kDraw);
     deferred_command_list_.D3DDrawInstanced(primitive_processing_result.host_draw_vertex_count, 1,
                                             0, 0);
   } else {
@@ -2688,6 +2695,7 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
     SubmitBarriers();
     PROFILE_DRAW_CALL();
     PROFILE_VERTICES(primitive_processing_result.host_draw_vertex_count);
+    GpuTimeMark(GpuTimeKind::kDraw);
     deferred_command_list_.D3DDrawIndexedInstanced(
         primitive_processing_result.host_draw_vertex_count, 1, 0, 0, 0);
     if (scratch_index_buffer != nullptr) {
@@ -2878,6 +2886,7 @@ bool D3D12CommandProcessor::IssueCopy() {
   if (!BeginSubmission(true)) {
     return false;
   }
+  GpuTimeMark(GpuTimeKind::kResolve);
   ReadbackResolveMode readback_mode = GetReadbackResolveMode(REXCVAR_GET(d3d12_readback_resolve));
   if (readback_mode == ReadbackResolveMode::kDisabled) {
     uint32_t written_address, written_length;
@@ -3197,6 +3206,85 @@ void D3D12CommandProcessor::CheckSubmissionFence(uint64_t await_submission) {
   primitive_processor_->CompletedSubmissionUpdated();
 
   texture_cache_->CompletedSubmissionUpdated(submission_completed_);
+
+  GpuTimeCollectCompleted();
+}
+
+void D3D12CommandProcessor::GpuTimeMark(GpuTimeKind kind) {
+  if (!gpu_time_current_ || uint8_t(kind) == gpu_time_last_kind_) {
+    return;
+  }
+  GpuTimeSlot& slot = *gpu_time_current_;
+  if (slot.count >= kGpuTimeMaxMarks - 1) {
+    return;  // Keep one for the closing timestamp; the rest counts as the last kind.
+  }
+  uint32_t slot_index = uint32_t(&slot - gpu_time_slots_);
+  deferred_command_list_.D3DEndQuery(gpu_time_query_heap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+                                     slot_index * kGpuTimeMaxMarks + slot.count);
+  slot.kinds.push_back(uint8_t(kind));
+  ++slot.count;
+  gpu_time_last_kind_ = uint8_t(kind);
+}
+
+void D3D12CommandProcessor::GpuTimeEndSubmission() {
+  GpuTimeSlot* slot = gpu_time_current_;
+  gpu_time_current_ = nullptr;
+  if (!slot || !slot->count) {
+    return;
+  }
+  uint32_t base = uint32_t(slot - gpu_time_slots_) * kGpuTimeMaxMarks;
+  deferred_command_list_.D3DEndQuery(gpu_time_query_heap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+                                     base + slot->count);
+  ++slot->count;
+  deferred_command_list_.D3DResolveQueryData(gpu_time_query_heap_.Get(),
+                                             D3D12_QUERY_TYPE_TIMESTAMP, base, slot->count,
+                                             gpu_time_readback_.Get(), base * sizeof(uint64_t));
+  slot->pending = true;
+}
+
+void D3D12CommandProcessor::GpuTimeCollectCompleted() {
+  for (GpuTimeSlot& slot : gpu_time_slots_) {
+    if (!slot.pending || slot.submission > submission_completed_) {
+      continue;
+    }
+    uint32_t base = uint32_t(&slot - gpu_time_slots_) * kGpuTimeMaxMarks;
+    D3D12_RANGE range = {base * sizeof(uint64_t), (base + slot.count) * sizeof(uint64_t)};
+    void* mapping = nullptr;
+    if (SUCCEEDED(gpu_time_readback_->Map(0, &range, &mapping))) {
+      const uint64_t* ts = reinterpret_cast<const uint64_t*>(mapping) + base;
+      for (uint32_t i = 0; i + 1 < slot.count; ++i) {
+        if (ts[i + 1] > ts[i]) {
+          gpu_time_ticks_[slot.kinds[i]] += ts[i + 1] - ts[i];
+        }
+      }
+      D3D12_RANGE written = {0, 0};
+      gpu_time_readback_->Unmap(0, &written);
+      ++gpu_time_submissions_;
+    }
+    slot.pending = false;
+  }
+}
+
+std::string D3D12CommandProcessor::TakeGpuTimeSummary(uint32_t frames) {
+  if (!gpu_time_frequency_ || !frames) {
+    return {};
+  }
+  static const char* const kNames[] = {"primitives", "render targets (EDRAM)", "textures",
+                                       "memory uploads", "draws", "resolves", "present"};
+  static_assert(std::size(kNames) == size_t(GpuTimeKind::kCount));
+  double total = 0;
+  std::string parts;
+  for (size_t i = 0; i < size_t(GpuTimeKind::kCount); ++i) {
+    double ms = 1000.0 * double(gpu_time_ticks_[i]) / double(gpu_time_frequency_) / frames;
+    total += ms;
+    parts += fmt::format("{}{:.1f} ms {}", parts.empty() ? "" : ", ", ms, kNames[i]);
+    gpu_time_ticks_[i] = 0;
+  }
+  std::string result = fmt::format("{:.1f} ms measured: {} ({} submissions, {} not measured)",
+                                   total, parts, gpu_time_submissions_, gpu_time_skipped_);
+  gpu_time_submissions_ = 0;
+  gpu_time_skipped_ = 0;
+  return result;
 }
 
 void D3D12CommandProcessor::LogDeviceRemovalDiagnostics(ID3D12Device* device, HRESULT reason) {
@@ -3332,6 +3420,44 @@ bool D3D12CommandProcessor::BeginSubmission(bool is_guest_command) {
     primitive_processor_->BeginSubmission();
 
     texture_cache_->BeginSubmission(submission_current_);
+
+    // GPU time profiling: record this submission in its slot unless that slot's previous
+    // submission has not been collected yet.
+    gpu_time_current_ = nullptr;
+    gpu_time_last_kind_ = 0xFF;
+    if (!gpu_time_query_heap_) {
+      D3D12_QUERY_HEAP_DESC gpu_time_heap_desc = {};
+      gpu_time_heap_desc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+      gpu_time_heap_desc.Count = kGpuTimeSlots * kGpuTimeMaxMarks;
+      D3D12_RESOURCE_DESC gpu_time_buffer_desc;
+      ui::d3d12::util::FillBufferResourceDesc(
+          gpu_time_buffer_desc, sizeof(uint64_t) * kGpuTimeSlots * kGpuTimeMaxMarks,
+          D3D12_RESOURCE_FLAG_NONE);
+      if (FAILED(device->CreateQueryHeap(&gpu_time_heap_desc,
+                                         IID_PPV_ARGS(&gpu_time_query_heap_))) ||
+          FAILED(device->CreateCommittedResource(
+              &ui::d3d12::util::kHeapPropertiesReadback,
+              GetD3D12Provider().GetHeapFlagCreateNotZeroed(), &gpu_time_buffer_desc,
+              D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&gpu_time_readback_))) ||
+          FAILED(GetD3D12Provider().GetDirectQueue()->GetTimestampFrequency(
+              &gpu_time_frequency_))) {
+        REXGPU_WARN("GPU time profiling unavailable");
+        gpu_time_query_heap_.Reset();
+        gpu_time_readback_.Reset();
+        gpu_time_frequency_ = 0;
+      }
+    }
+    if (gpu_time_frequency_) {
+      GpuTimeSlot& slot = gpu_time_slots_[submission_current_ % kGpuTimeSlots];
+      if (slot.pending) {
+        ++gpu_time_skipped_;
+      } else {
+        slot.submission = submission_current_;
+        slot.count = 0;
+        slot.kinds.clear();
+        gpu_time_current_ = &slot;
+      }
+    }
   }
 
   if (is_opening_frame) {
@@ -3418,6 +3544,8 @@ bool D3D12CommandProcessor::EndSubmission(bool is_swap) {
     // Submit barriers now because resources with the queued barriers may be
     // destroyed between frames.
     SubmitBarriers();
+
+    GpuTimeEndSubmission();
 
     ID3D12CommandQueue* direct_queue = provider.GetDirectQueue();
 

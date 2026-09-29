@@ -171,6 +171,9 @@ class CommandProcessor {
 
   uint32_t ExecutePrimaryBuffer(uint32_t start_index, uint32_t end_index);
   virtual void OnPrimaryBufferEnd() {}
+  // Backend GPU-time breakdown for the [fps] log ("" if not measured); called every ~10 s with
+  // the number of guest frames since the previous call, and resets the backend's counters.
+  virtual std::string TakeGpuTimeSummary(uint32_t frames) { return {}; }
   void ExecuteIndirectBuffer(uint32_t ptr, uint32_t length);
   bool ExecutePacket(memory::RingBuffer* reader);
   bool ExecutePacketType0(memory::RingBuffer* reader, uint32_t packet);

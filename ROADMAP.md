@@ -57,7 +57,13 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         scissored away). --native_stencil_value_output_d3d12_intel=true is much worse (green
         wheels, bright band at the bottom): Intel's PS stencil reference output is still broken.
         Next: RenderDoc capture of the cutscene frame to find the pass that writes that corner.
-  - [ ] Intro drive on the HD 630: ~7 fps, ~90 ms per frame of host-GPU work (needs ~4x less for 30)
+  - [ ] Intro drive on the HD 630: ~7 fps. Host-GPU time per frame by kind of work (GPU
+        timestamps, `[fps] host GPU per frame` log line, 2026-09-30): 137 ms = 54 draws (39%),
+        30 render-target/EDRAM transfers (22%), 26 resolves (19%), 19 texture loads (14%),
+        4 memory uploads, 2.5 primitive processing, 2 present. Emulating the Xbox's EDRAM and
+        render-to-texture costs ~75 ms (55%); the draws alone would still be ~18 fps. 30 fps on the
+        HD 630 needs the native renderer (no EDRAM emulation, no per-strip tiling, native shaders)
+        plus cheaper draws.
   - [ ] forza_tone.wmv / title scene: ~40 ms per frame of host-GPU work on the HD 630 (18 fps)
   - [x] "Audio cut" in the intro video is the video playing slowly (19 fps): its audio runs in real
         time and ends first. Should go away with the frame rate.

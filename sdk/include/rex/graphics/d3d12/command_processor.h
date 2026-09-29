@@ -218,6 +218,7 @@ class D3D12CommandProcessor : public CommandProcessor {
   bool IssueDraw(xenos::PrimitiveType primitive_type, uint32_t index_count,
                  IndexBufferInfo* index_buffer_info, bool major_mode_explicit) override;
   bool IssueCopy() override;
+  std::string TakeGpuTimeSummary(uint32_t frames) override;
 
  private:
   static constexpr uint32_t kQueueFrames = 3;
@@ -647,6 +648,38 @@ class D3D12CommandProcessor : public CommandProcessor {
   uint32_t readback_buffer_size_ = 0;
   std::unordered_map<uint64_t, ReadbackBuffer> readback_buffers_;
   std::unordered_map<uint64_t, ReadbackBuffer> memexport_readback_buffers_;
+
+  // GPU time by kind of work ([fps] log): a timestamp is written whenever the kind changes,
+  // resolved at EndSubmission into a readback slot, and summed once the submission completes.
+  enum class GpuTimeKind : uint8_t {
+    kPrimitives,     // index/vertex conversion (PrimitiveProcessor)
+    kRenderTargets,  // render target cache update: EDRAM ownership transfers, clears
+    kTextures,       // texture loading/untiling
+    kMemory,         // shared memory uploads
+    kDraw,           // the draw itself
+    kResolve,        // EDRAM -> memory copies (IssueCopy)
+    kSwap,           // presentation copy
+    kCount,
+  };
+  void GpuTimeMark(GpuTimeKind kind);
+  void GpuTimeEndSubmission();
+  void GpuTimeCollectCompleted();
+  static constexpr uint32_t kGpuTimeSlots = 16;
+  static constexpr uint32_t kGpuTimeMaxMarks = 8192;  // per submission
+  Microsoft::WRL::ComPtr<ID3D12QueryHeap> gpu_time_query_heap_;
+  Microsoft::WRL::ComPtr<ID3D12Resource> gpu_time_readback_;
+  struct GpuTimeSlot {
+    uint64_t submission = 0;
+    uint32_t count = 0;
+    bool pending = false;
+    std::vector<uint8_t> kinds;
+  };
+  GpuTimeSlot gpu_time_slots_[kGpuTimeSlots];
+  GpuTimeSlot* gpu_time_current_ = nullptr;  // slot recording the open submission, or null
+  uint8_t gpu_time_last_kind_ = 0xFF;
+  uint64_t gpu_time_ticks_[size_t(GpuTimeKind::kCount)] = {};
+  uint64_t gpu_time_frequency_ = 0;
+  uint32_t gpu_time_submissions_ = 0, gpu_time_skipped_ = 0;
 
   static constexpr uint32_t kMaxOcclusionQueries = 8192;
   Microsoft::WRL::ComPtr<ID3D12QueryHeap> occlusion_query_heap_;

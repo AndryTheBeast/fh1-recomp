@@ -104,7 +104,8 @@ struct FrameStats {
 };
 FrameStats frame_stats_;
 
-void LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
+// Returns the frame count of the 10 s window when it logged, 0 otherwise.
+uint32_t LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
   uint64_t now = rex::chrono::Clock::QueryHostTickCount();
   uint64_t freq = rex::chrono::Clock::QueryHostTickFrequency();
   FrameStats& s = frame_stats_;
@@ -112,14 +113,14 @@ void LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
     s.window_start = s.last_swap = now;
     s.idle_ticks = 0;
     host_gpu_wait_ticks = 0;
-    return;
+    return 0;
   }
   s.worst_ticks = std::max(s.worst_ticks, now - s.last_swap);
   s.last_swap = now;
   ++s.frames;
   uint64_t elapsed = now - s.window_start;
   if (elapsed < freq * 10) {
-    return;
+    return 0;
   }
   double seconds = double(elapsed) / double(freq);
   double busy = 100.0 * (1.0 - std::min(1.0, double(s.idle_ticks) / double(elapsed)));
@@ -137,8 +138,10 @@ void LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
               s.draws / s.frames, s.failed_draws / s.frames, ms_per_frame(s.swap_ticks),
               ms_per_frame(host_gpu_wait_ticks));
   host_gpu_wait_ticks = 0;
+  uint32_t frames = s.frames;
   s = FrameStats{};
   s.window_start = s.last_swap = now;
+  return frames;
 }
 
 ReadbackResolveMode ParseReadbackResolveMode(std::string_view value) {
@@ -1061,7 +1064,12 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
   }
 #endif
   rex::perf::Profiler::Flip();
-  LogFrameStatsOnSwap(stats_host_gpu_wait_ticks_);
+  if (uint32_t frames = LogFrameStatsOnSwap(stats_host_gpu_wait_ticks_)) {
+    std::string gpu_time = TakeGpuTimeSummary(frames);
+    if (!gpu_time.empty()) {
+      REXGPU_INFO("[fps] host GPU per frame: {}", gpu_time);
+    }
+  }
 
   // Xenia-specific VdSwap hook.
   // VdSwap will post this to tell us we need to swap the screen/fire an
