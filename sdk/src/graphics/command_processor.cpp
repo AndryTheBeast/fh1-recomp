@@ -86,6 +86,45 @@ using namespace rex::graphics::xenos;
 
 namespace {
 
+// Frame-rate summary written to the log every 10 s (see ExecutePacketType3_XE_SWAP). Only the
+// GPU Commands worker thread touches these. idle_ticks counts time spent waiting for the game to
+// submit commands: a low "GPU thread busy" means the game's own code (CPU) is the bottleneck, a
+// high one means translating/drawing the Xbox 360 GPU commands is.
+struct FrameStats {
+  uint64_t window_start = 0;
+  uint64_t last_swap = 0;
+  uint64_t idle_ticks = 0;
+  uint64_t worst_ticks = 0;
+  uint32_t frames = 0;
+};
+FrameStats frame_stats_;
+
+void LogFrameStatsOnSwap() {
+  uint64_t now = rex::chrono::Clock::QueryHostTickCount();
+  uint64_t freq = rex::chrono::Clock::QueryHostTickFrequency();
+  FrameStats& s = frame_stats_;
+  if (!s.window_start) {
+    s.window_start = s.last_swap = now;
+    s.idle_ticks = 0;
+    return;
+  }
+  s.worst_ticks = std::max(s.worst_ticks, now - s.last_swap);
+  s.last_swap = now;
+  ++s.frames;
+  uint64_t elapsed = now - s.window_start;
+  if (elapsed < freq * 10) {
+    return;
+  }
+  double seconds = double(elapsed) / double(freq);
+  double busy = 100.0 * (1.0 - std::min(1.0, double(s.idle_ticks) / double(elapsed)));
+  REXGPU_INFO("[fps] {:.1f} fps over {:.1f} s ({} frames), average {:.1f} ms, worst {:.1f} ms; "
+              "GPU thread busy {:.0f}%",
+              s.frames / seconds, seconds, s.frames, 1000.0 * seconds / s.frames,
+              1000.0 * double(s.worst_ticks) / double(freq), busy);
+  s = FrameStats{};
+  s.window_start = s.last_swap = now;
+}
+
 ReadbackResolveMode ParseReadbackResolveMode(std::string_view value) {
   if (value == "fast") {
     return ReadbackResolveMode::kFast;
@@ -221,6 +260,7 @@ void CommandProcessor::WorkerThreadMain() {
       // We spin here waiting for new ones, as the overhead of waiting on our
       // event is too high.
       PrepareForWait();
+      uint64_t idle_start = rex::chrono::Clock::QueryHostTickCount();
 #if !REX_PLATFORM_SWITCH
       uint32_t loop_count = 0;
 #endif
@@ -243,6 +283,7 @@ void CommandProcessor::WorkerThreadMain() {
         write_ptr_index = write_ptr_index_.load();
       } while (worker_running_ && pending_fns_.empty() &&
                (write_ptr_index == 0xBAADF00D || read_ptr_index_ == write_ptr_index));
+      frame_stats_.idle_ticks += rex::chrono::Clock::QueryHostTickCount() - idle_start;
       ReturnFromWait();
       if (!worker_running_ || !pending_fns_.empty()) {
         continue;
@@ -1004,6 +1045,7 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
   }
 #endif
   rex::perf::Profiler::Flip();
+  LogFrameStatsOnSwap();
 
   // Xenia-specific VdSwap hook.
   // VdSwap will post this to tell us we need to swap the screen/fire an
