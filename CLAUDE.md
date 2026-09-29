@@ -80,6 +80,18 @@ Codegen: `rexglue codegen fh1_manifest.toml` from `fh1/` (~3 min). After editing
 `python tools/comprobar_simbolos.py fh1` (every registered function defined) and
 `grep REX_FATAL fh1/generated/*/*.cpp` (must be empty).
 
+## Unattended testing (no one at the PC)
+
+`tools/auto_test.ps1` runs fh1.exe for N seconds, screenshots the game window at chosen seconds
+(`build_logs	est-<name>-<date>-<s>s.png`, read them with the Read tool) and prints the `[fps]`
+lines. `-Autoplay` passes `--fh1_autoplay` (fh1/src/fh1_autoplay.h): a virtual pad that holds
+buttons on a timetable. This script reaches the intro drive (~130 s after launch):
+
+    powershell -ExecutionPolicy Bypass -File toolsuto_test.ps1 -Name drive -Seconds 250 `
+      -Shots "150,210,245" -Autoplay "34+0.3=start;36+0.3=start;38+0.3=start;124+0.3=a;127+0.3=a;130+120=rt"
+
+Use it for every graphics/performance change instead of asking the user to play.
+
 ## Tools written for this port
 
 - `tools/extract_xiso.ps1` — XDVDFS extractor (XGD2/XGD3), `-OnlyXex` for just default.xex.

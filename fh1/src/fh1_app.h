@@ -10,6 +10,7 @@
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
 
+#include "fh1_autoplay.h"
 #include "fh1_crash_report.h"
 
 // Forza Horizon is single player. By default every controller drives player 1: tools like
@@ -18,6 +19,11 @@
 // ("No Gamer Profiles"). --fh1_merge_controllers=false restores one controller per player.
 REXCVAR_DEFINE_BOOL(fh1_merge_controllers, true, "FH1",
                     "Every controller drives player 1 (single player)");
+
+// Scripted virtual controller for unattended tests (tools/auto_test.ps1); format in
+// fh1_autoplay.h. Empty = off. Needs fh1_merge_controllers so it drives player 1.
+REXCVAR_DEFINE_STRING(fh1_autoplay, "", "FH1",
+                      "Scripted input: START+DURATION=CONTROLS;... (seconds from launch)");
 
 class Fh1App : public rex::ReXApp {
  public:
@@ -40,11 +46,13 @@ class Fh1App : public rex::ReXApp {
   // void OnLoadXexImage(std::string& xex_image) override {}
   // void OnPostLoadXexImage() override {}
   void OnPostSetup() override {
-    if (!REXCVAR_GET(fh1_merge_controllers)) return;
     auto* input = dynamic_cast<rex::input::InputSystem*>(runtime()->input_system());
-    if (input) {
-      input->SetDeviceAssignment(std::make_unique<rex::input::SharedAssignment>());
+    if (!input) return;
+    if (auto autoplay = fh1::CreateAutoplayDriver(REXCVAR_GET(fh1_autoplay))) {
+      input->AddDriver(std::move(autoplay));
     }
+    if (!REXCVAR_GET(fh1_merge_controllers)) return;
+    input->SetDeviceAssignment(std::make_unique<rex::input::SharedAssignment>());
   }
   // void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {}
   // std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;

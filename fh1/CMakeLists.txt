@@ -22,6 +22,7 @@ include(generated/rexglue.cmake)
 set(FH1_SOURCES
     src/main.cpp
     src/fh1_crash_report.cpp
+    src/fh1_autoplay.cpp
 )
 
 if(WIN32)

@@ -12,7 +12,9 @@ param(
   [string]$Name = "run",
   [int]$Seconds = 60,
   [string]$Shots = "",
-  [string]$ExtraArgs = ""
+  [string]$ExtraArgs = "",
+  # Scripted controller, passed as --fh1_autoplay (format in fh1/src/fh1_autoplay.h).
+  [string]$Autoplay = ""
 )
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent $PSScriptRoot
@@ -57,6 +59,7 @@ function Shot($proc, [string]$path) {
 $ShotList = @($Shots -split "[,\s]+" | Where-Object { $_ } | ForEach-Object { [int]$_ })
 $argv = @("--game_data_root=$Top\game_root", "--log_file=$Log", "--log_level=debug") +
   @($ExtraArgs -split "\s+" | Where-Object { $_ })
+if ($Autoplay) { $argv += "--fh1_autoplay=`"$Autoplay`"" }
 $p = Start-Process -FilePath $Exe -ArgumentList $argv -WorkingDirectory (Split-Path $Exe) -PassThru
 $start = Get-Date
 foreach ($s in ($ShotList | Sort-Object)) {
