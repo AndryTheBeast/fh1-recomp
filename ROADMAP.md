@@ -19,7 +19,10 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
 - [x] First run: boots, loads `XMediaFacade_default.xex` at run time and dies calling into it.
       Both run-time modules (XMediaFacade, SpeechFacade) are now `[[modules]]` in the manifest.
 - [x] Turn on the `xenos` GPU plugin (the nfsmw-nx SDK defaults to no GPU emulation)
-- [ ] Reach the first frame, then menus, then a drive
+- [x] First frame: trademark screens with audio (2026-09-29)
+- [x] Intro video and the title screen ("PRESS START") render with the xenos GPU plugin (2026-09-29)
+- [ ] Past Start: profile sign-in, save device, main menu
+- [ ] First drive
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
 ## Stage 3 — Move to the Switch system
