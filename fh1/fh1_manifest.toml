@@ -16,11 +16,11 @@ includes = ["overrides.toml", "huecos.toml"]
 guest_path = "XMediaFacade_default.xex"
 file_path = "assets/game_root/XMediaFacade_default.xex"
 out_directory_path = "generated/xmediafacade_default"
-includes = ["xmediafacade_overrides.toml"]
+includes = ["xmediafacade_overrides.toml", "xmediafacade_huecos.toml"]
 
 # Kinect speech recognition, loaded the same way.
 [[modules]]
 guest_path = "SpeechFacade_default.xex"
 file_path = "assets/game_root/SpeechFacade_default.xex"
 out_directory_path = "generated/speechfacade_default"
-includes = ["speechfacade_overrides.toml"]
+includes = ["speechfacade_overrides.toml", "speechfacade_huecos.toml"]

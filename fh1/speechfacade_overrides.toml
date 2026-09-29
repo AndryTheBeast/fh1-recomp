@@ -3,3 +3,7 @@
 
 # Tail call from 0x890E2FBC whose target Discover never made a function.
 "0x890E2FA0" = { }
+
+# Tail call from the gap function at 0x890E3670 into the rest of the gap at
+# 0x890E3580 (whose first function ends before 0x890E35A0).
+"0x890E35A0" = { }

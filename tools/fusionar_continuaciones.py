@@ -13,14 +13,22 @@ reference/nfsmw-app/huecos.toml). This removes those gap entries and writes
 first function covers the whole span.
 
     python tools/fusionar_continuaciones.py fh1
+    python tools/fusionar_continuaciones.py fh1 --gen generated/xmediafacade_default --huecos xmediafacade_huecos.toml
+Only log lines whose addresses fall inside that module's code are used.
 Anything it cannot merge safely is listed for a manual look.
 """
 import bisect, json, re, sys, os
 
-app = sys.argv[1]
+import argparse
+ap = argparse.ArgumentParser()
+ap.add_argument('app')
+ap.add_argument('--gen', default='generated/default')
+ap.add_argument('--huecos', default='huecos.toml')
+args = ap.parse_args()
+app = args.app
 log = open(os.path.join(app, 'codegen.log')).read()
-starts = sorted(int(k, 16) for k in json.load(open(os.path.join(app, 'generated/default/codegen.partition.json')))['assignments'])
-huecos_path = os.path.join(app, 'huecos.toml')
+starts = sorted(int(k, 16) for k in json.load(open(os.path.join(app, args.gen, 'codegen.partition.json')))['assignments'])
+huecos_path = os.path.join(app, args.huecos)
 lines = open(huecos_path).read().split('\n')
 declared = {}
 for i, l in enumerate(lines):
@@ -35,6 +43,9 @@ for m in re.finditer(r'Unresolved b target 0x([0-9A-F]+) from 0x([0-9A-F]+)', lo
     pairs.add((int(m.group(2), 16), int(m.group(1), 16)))
 for m in re.finditer(r'Jump target 0x([0-9A-F]+) unresolved at bctr 0x([0-9A-F]+)', log):
     pairs.add((int(m.group(2), 16), int(m.group(1), 16)))
+
+lo_mod, hi_mod = starts[0], starts[-1] + 0x100000
+pairs = {(s_, t_) for s_, t_ in pairs if lo_mod <= s_ < hi_mod}
 
 def owner(a):
     return starts[bisect.bisect_right(starts, a) - 1]

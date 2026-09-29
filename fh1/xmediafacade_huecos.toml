@@ -1,0 +1,73 @@
+# Code gaps (tools/huecos.py --min 8) in xmediafacade_default.xex, declared as functions.
+# Cleaned with tools/huecos_pasada.py and tools/fusionar_continuaciones.py.
+[functions]
+"0x880506A0" = { }   # 8 bytes, tras 0x88050654
+"0x880507C4" = { }   # 12 bytes, tras 0x880506A8
+"0x88050D78" = { }   # 8 bytes, tras 0x88050D20
+"0x88052008" = { }   # 32 bytes, tras 0x88051FB8
+"0x880520D0" = { }   # 8 bytes, tras 0x88052050
+"0x88052350" = { }   # 8 bytes, tras 0x8805234C
+"0x88058288" = { }   # 8 bytes, tras 0x88058250
+"0x880588B0" = { }   # 8 bytes, tras 0x88058878
+"0x880596F4" = { }   # 12 bytes, tras 0x88059430
+"0x880597B8" = { }   # 16 bytes, tras 0x88059718
+"0x88059A04" = { }   # 12 bytes, tras 0x880597E0
+"0x88059C10" = { }   # 8 bytes, tras 0x88059C08
+"0x88059CB4" = { }   # 16 bytes, tras 0x88059C18
+"0x88059E40" = { }   # 8 bytes, tras 0x88059E38
+"0x8805A208" = { }   # 12 bytes, tras 0x88059E48
+"0x8805A490" = { }   # 8 bytes, tras 0x8805A408
+"0x8805A7A0" = { }   # 12 bytes, tras 0x8805A498
+"0x8805A7B8" = { }   # 8 bytes, tras 0x8805A7AC
+"0x8805A8B0" = { }   # 8 bytes, tras 0x8805A860
+"0x8805A94C" = { }   # 16 bytes, tras 0x8805A8B8
+"0x8805A968" = { }   # 8 bytes, tras 0x8805A95C
+"0x8805ABE8" = { }   # 12 bytes, tras 0x8805A970
+"0x8805AF98" = { }   # 20 bytes, tras 0x8805ADE0
+"0x88063880" = { }   # 56 bytes, tras 0x880637E8
+"0x88065498" = { }   # 24 bytes, tras 0x88065480
+"0x88067730" = { }   # 8 bytes, tras 0x88067718
+"0x88067750" = { }   # 8 bytes, tras 0x88067738
+"0x880678D8" = { }   # 320 bytes, tras 0x880678B8
+"0x88069278" = { }   # 16 bytes, tras 0x88069268
+"0x88069538" = { }   # 8 bytes, tras 0x88069510
+"0x88069568" = { }   # 8 bytes, tras 0x88069540
+"0x880CD528" = { }   # 8 bytes, tras 0x880CD510
+"0x880D2F20" = { }   # 40 bytes, tras 0x880D2668
+"0x880D85A8" = { }   # 8 bytes, tras 0x880D8238
+"0x880D8608" = { }   # 8 bytes, tras 0x880D85B0
+"0x880EB764" = { }   # 52 bytes, tras 0x880EB2F0
+"0x880F4414" = { }   # 92 bytes, tras 0x880F40C0
+"0x88105720" = { }   # 64 bytes, tras 0x88105518
+"0x88105A48" = { }   # 64 bytes, tras 0x88105760
+"0x88121B20" = { }   # 80 bytes, tras 0x881219C0
+"0x8812F2C4" = { }   # 44 bytes, tras 0x8812ECC8
+"0x88130B44" = { }   # 212 bytes, tras 0x8812F2F0
+"0x88132EB8" = { }   # 48 bytes, tras 0x88132948
+"0x88138D08" = { }   # 64 bytes, tras 0x881387C0
+"0x8813F784" = { }   # 68 bytes, tras 0x8813F6E8
+"0x88155C6C" = { }   # 52 bytes, tras 0x88155A40
+"0x8817CDFC" = { }   # 84 bytes, tras 0x8817C508
+"0x88192C34" = { }   # 52 bytes, tras 0x88191980
+"0x881A6148" = { }   # 64 bytes, tras 0x881A5F40
+"0x881A6470" = { }   # 64 bytes, tras 0x881A6188
+"0x881EAAC8" = { }   # 8 bytes, tras 0x881EA768
+"0x881EB074" = { }   # 24 bytes, tras 0x881EAAD0
+"0x881EB098" = { }   # 8 bytes, tras 0x881EB08C
+"0x881EB990" = { }   # 8 bytes, tras 0x881EB948
+"0x881EC494" = { }   # 68 bytes, tras 0x881EBC90
+"0x881EE7B8" = { }   # 8 bytes, tras 0x881EE7B0
+"0x881F0820" = { }   # 8 bytes, tras 0x881F07C8
+"0x881F1098" = { }   # 8 bytes, tras 0x881F1020
+"0x881F1588" = { }   # 8 bytes, tras 0x881F1348
+"0x881F18F0" = { }   # 8 bytes, tras 0x881F1898
+"0x881F1C48" = { }   # 8 bytes, tras 0x881F1C20
+"0x882435D8" = { }   # 16 bytes, tras 0x88242BC0
+"0x88243600" = { }   # 1536 bytes, tras 0x882435E8
+# Continuations (tools/fusionar_continuaciones.py)
+"0x88063590" = { end = 0x880636B8 }
+"0x88131478" = { end = 0x88132628 }
+"0x8817C398" = { end = 0x8817C440 }
+"0x88216BA8" = { end = 0x882171F8 }
+"0x882171F8" = { end = 0x88217750 }
+"0x88217750" = { end = 0x88217CC0 }
