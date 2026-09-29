@@ -85,10 +85,15 @@ Codegen: `rexglue codegen fh1_manifest.toml` from `fh1/` (~3 min). After editing
 `tools/auto_test.ps1` runs fh1.exe for N seconds, screenshots the game window at chosen seconds
 (`build_logs	est-<name>-<date>-<s>s.png`, read them with the Read tool) and prints the `[fps]`
 lines. `-Autoplay` passes `--fh1_autoplay` (fh1/src/fh1_autoplay.h): a virtual pad that holds
-buttons on a timetable. This script reaches the intro drive (~130 s after launch):
+buttons on a timetable. Route: title (Start) -> A to confirm -> forza_tone intro video (~82 s)
+-> controls screen -> in-engine cutscene (same camera every run at ~160-176 s: best frames for
+before/after screenshots) -> the drive. With nobody touching the pad:
 
-    powershell -ExecutionPolicy Bypass -File toolsuto_test.ps1 -Name drive -Seconds 250 `
-      -Shots "150,210,245" -Autoplay "34+0.3=start;36+0.3=start;38+0.3=start;124+0.3=a;127+0.3=a;130+120=rt"
+    powershell -ExecutionPolicy Bypass -File toolsuto_test.ps1 -Name cut -Seconds 182 `
+      -Shots "160,168,176" -Autoplay "34+0.3=start;36+0.3=start;38+0.3=start;41+0.3=a;43+0.3=a;46+0.3=a;124+0.3=a;127+0.3=a;131+0.3=a"
+
+Append ";180+60=rt" (and a longer -Seconds) to hold the accelerator in the drive. Nothing steers
+yet, so the car leaves the road; compare graphics on the cutscene frames, not the drive.
 
 Use it for every graphics/performance change instead of asking the user to play.
 
