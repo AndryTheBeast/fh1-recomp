@@ -42,6 +42,11 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         adapter 0; the Optimus export sat in rexruntime.dll where drivers ignore it). Draws took
         ~90-290 us each (2300-3300 per frame in the drive -> 4 fps). Fixed: high-performance adapter
         first (sdk/src/ui/d3d12/d3d12_provider.cpp) + Optimus/PowerXpress exports in fh1/src/main.cpp.
+  - [x] Intel HD 630: the SDK forced the ROV render-target path on Intel (a 2021 driver workaround);
+        it compiled pipelines for ~65 s before the first frame and made draws ~15x slower. Host render
+        targets (RTV) are now the default everywhere; clears render correctly. Logos 50 -> 60 fps.
+  - [x] Tear lines: the D3D12 presenter allowed tearing by default; now off (vblank-synced).
+  - [ ] forza_tone.wmv / title scene: ~40 ms per frame of host-GPU work on the HD 630 (18 fps)
   - [x] "Audio cut" in the intro video is the video playing slowly (19 fps): its audio runs in real
         time and ends first. Should go away with the frame rate.
 - [ ] First drive

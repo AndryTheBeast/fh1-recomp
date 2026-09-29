@@ -178,18 +178,14 @@ bool D3D12RenderTargetCache::Initialize() {
   } else if (REXCVAR_GET(render_target_path_d3d12) == "rov") {
     path_ = Path::kPixelShaderInterlock;
   } else {
-    // As of April 2021 (driver version 27.20.0100.9316), on Intel (tested on
-    // UHD Graphics 630), the "always" stencil comparison function isn't working
-    // properly, so clears in the Xbox 360's Direct3D 9 don't work. Forcing ROV
-    // there.
+    // Xenia forced ROV on Intel because in April 2021 (driver 27.20.0100.9316, UHD 630) the
+    // "always" stencil comparison broke Direct3D 9 clears. With current drivers on an HD 630,
+    // Forza Horizon's clears render correctly with host render targets, while ROV spent ~65 s
+    // compiling pipelines before the first frame and made the logo scenes' draws ~15x slower
+    // (11-13 ms vs 0.8 ms per frame). --render_target_path_d3d12=rov still selects ROV.
 #if 1
     // The ROV path is currently much slower generally.
-    // TODO(Triang3l): Make ROV the default when it's optimized better (for
-    // instance, using static shader modifications to pass render target
-    // parameters).
-    path_ = provider.GetAdapterVendorID() == ui::GraphicsProvider::GpuVendorID::kIntel
-                ? Path::kPixelShaderInterlock
-                : Path::kHostRenderTargets;
+    path_ = Path::kHostRenderTargets;
 #else
     // The AMD shader compiler crashes very often with Xenia's custom
     // output-merger code as of March 2021.

@@ -30,7 +30,10 @@
 #include <ffx_api/ffx_upscale.h>
 #endif
 
-REXCVAR_DEFINE_BOOL(d3d12_allow_variable_refresh_rate_and_tearing, true, "UI/D3D12",
+// Off by default: with tearing allowed, Present(0) shows each frame immediately, and on a
+// 60 Hz screen with an uneven frame rate (Forza Horizon on an Intel HD 630) the picture was
+// full of tear lines. Without it DXGI shows frames on vblank. VRR monitors can turn it back on.
+REXCVAR_DEFINE_BOOL(d3d12_allow_variable_refresh_rate_and_tearing, false, "UI/D3D12",
                     "Allow variable refresh rate and tearing");
 
 namespace rex::ui::d3d12 {
