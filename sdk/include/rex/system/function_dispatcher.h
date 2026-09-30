@@ -122,6 +122,10 @@ class FunctionDispatcher : public IModuleRegistrar {
     uint32_t image_size;
     uint32_t next_thunk_address;
     uint32_t thunk_limit;
+    // Thunk already handed out in this pool per host function. Games can call
+    // XexGetProcedureAddress for the same export over and over (FH1 does it while its
+    // videos play); without reuse the 64 KB pool ran out and the lookup returned 0.
+    std::unordered_map<::PPCFunc*, uint32_t> thunk_by_func = {};
   };
 
   ModuleTableInfo* FindModuleByAddress(uint32_t guest_address);

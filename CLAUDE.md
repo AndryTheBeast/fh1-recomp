@@ -110,6 +110,10 @@ Append ";180+60=rt" (and a longer -Seconds) to hold the accelerator in the drive
 yet, so the car leaves the road; compare graphics on the cutscene frames, not the drive.
 
 Use it for every graphics/performance change instead of asking the user to play.
+The screenshots copy the screen: if Windows has locked (user away) they show the lock screen,
+though the game and its `[fps]` lines still run. Look at one shot before trusting a batch. Load
+times shrink on repeated runs (files cached by Windows), so the cutscene can start ~15 s earlier:
+take shots every few seconds from ~110 s rather than trusting fixed seconds.
 
 ## Tools written for this port
 

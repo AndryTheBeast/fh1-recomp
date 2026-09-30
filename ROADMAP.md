@@ -57,6 +57,16 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         scissored away). --native_stencil_value_output_d3d12_intel=true is much worse (green
         wheels, bright band at the bottom): Intel's PS stencil reference output is still broken.
         Next: RenderDoc capture of the cutscene frame to find the pass that writes that corner.
+        Ruled out on the Iris Plus (2026-09-30, square still there): --direct_host_resolve=false,
+        --mrt_edram_used_range_clamp_to_min=false. Still to compare on cutscene frames:
+        --execute_unclipped_draw_vs_on_cpu=true (Xenia's default; off here) with/without
+        _with_scissor=true (the runs so far missed the cutscene - see the crash below).
+  - [x] Crash at the start of forza_tone.wmv (3 runs in a row on the Surface, ~80 s in):
+        "Thunk address space exhausted for module at 823E0000", then XexGetProcedureAddress
+        ordinal 6 in XMediaFacade returns 0 and the game calls address 0. UserModule lookups got a
+        new thunk on every call (only KernelModule cached them), so the game's repeated lookups
+        filled the main module's 64 KB pool. FunctionDispatcher::AllocateThunk now reuses the
+        thunk per (pool, host function); 3/3 runs pass the video afterwards.
   - [ ] Intro drive on the HD 630: ~7 fps. Host-GPU time per frame by kind of work (GPU
         timestamps, `[fps] host GPU per frame` log line, 2026-09-30): 137 ms = 54 draws (39%),
         30 render-target/EDRAM transfers (22%), 26 resolves (19%), 19 texture loads (14%),
