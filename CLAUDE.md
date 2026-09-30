@@ -17,14 +17,15 @@ the in-engine cutscene into the intro drive, and leaves/reloads the XMedia/Speec
 crashing. Rendering uses the SDK's xenos GPU emulation (D3D12, host render targets). Everything
 since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
 
-Performance (Intel HD 630 - the GTX 1050 was not usable, see below): logos 60 fps, title/intro
-video ~19 fps, intro drive ~7 fps. GPU time per drive frame 137 ms: 54 draws, 30 EDRAM render
+Performance (old laptop, Intel HD 630 - its GTX 1050 was never usable and has since died): logos
+60 fps, title/intro video ~19 fps, intro drive ~7 fps. GPU time per drive frame 137 ms: 54 draws, 30 EDRAM render
 target transfers, 26 resolves, 19 textures. EDRAM emulation is ~55% of it, so 30 fps needs the
 native renderer.
 
 **Decision (user, 2026-09-30): make the game fully working with the current GPU emulation first,
-then build the native renderer on PC.** Work was interrupted by a Windows reinstall (the GTX 1050
-stopped initializing - no code cause; Windows never listed it as a DXGI adapter).
+then build the native renderer on PC.** Since 2026-09-30 the project lives on a new machine
+(Microsoft Surface, i7-1065G7, Intel Iris Plus G7, no discrete GPU); the first full build there
+succeeded.
 
 ## Legal rule (never break it)
 
@@ -33,8 +34,9 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 
 ## The user's setup
 
-- Windows 11, GTX 1050, PS4 controller through DSX (shows up twice: real pad + virtual
-  Xbox 360 pad — handled by `fh1_merge_controllers`, see below).
+- Windows 11 Pro on a Microsoft Surface (i7-1065G7, Intel Iris Plus G7 iGPU, 16 GB), PS4
+  controller through DS4Windows (can show up twice: real pad + virtual Xbox 360 pad — handled by
+  `fh1_merge_controllers`).
 - Everything lives in `C:\Users\andre\Desktop\FH1-recomp\`:
   - the ISO, `game_root\` (full extracted disc), `README.txt`, `claude_memory\` (backup copy of
     Claude's memory notes), `_old\` (superseded extraction scripts, disc file list)
@@ -47,8 +49,13 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 
 ## Fresh PC setup (after a Windows reinstall)
 
-1. Install the graphics driver from the vendor (NVIDIA GTX 1050 Notebook) and check Task Manager
-   shows the GPU. Install Claude Code and log in.
+1. Install the graphics driver from the vendor and check Task Manager shows the GPU. Install
+   Claude Code and log in. **Turn off Smart App Control** (Windows Security > App & browser
+   control): it blocks every freshly built exe/dll (exit code 0xC0E90002, CodeIntegrity event
+   3033). Check: `VerifiedAndReputablePolicyState` = 0 under
+   `HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy`.
+   If the repo folder was copied from another PC, delete `out\`, `fh1\out\` and `sdk\out\`: their
+   CMake caches keep the old PC's tool paths (e.g. a missing ninja.exe).
 2. In `C:\Users\andre\Desktop\FH1-recomp\`: put the ISO there, run
    `git clone https://github.com/AndryTheBeast/fh1-recomp.git`, and copy
    `fh1-recomp\tools\build_fh1.bat` and `run_fh1.bat` next to the ISO.
@@ -133,15 +140,16 @@ Use it for every graphics/performance change instead of asking the user to play.
 - XexLoadImage/XexUnloadImage now log at debug level; module reload problems show up there.
 - `[fps]` lines (every 10 s, sdk/src/graphics/command_processor.cpp) give the real frame rate and
   a per-frame breakdown of the GPU thread (idle / WAIT_REG_MEM / draws / presenting).
-- The user's PC is a laptop with switchable graphics (Intel HD 630 + GTX 1050). Check the
-  `DXGI adapter:` log line before trusting any performance numbers.
+- Check the `DXGI adapter:` log line before trusting any performance numbers (the old laptop
+  had switchable graphics and D3D12 silently picked the iGPU).
 - Staging files to the user's PC through the bridge sometimes delivers a stale copy: check the
   size on the device after writing, and use a new staged file name if it did not change.
 
 ## Next steps
 
-0. After the reinstall: follow "Fresh PC setup", then check the run log's `DXGI adapter:` line says
-   the GTX 1050 and re-run the unattended cutscene/drive test to get new `[fps]` numbers.
+0. First run on the Surface: check the `DXGI adapter:` line says Iris Plus, then run the
+   unattended cutscene/drive test for new `[fps]` numbers (old HD 630 numbers are above; its raw
+   logs are in `build_logs\archive-2026-09-29_30`).
 1. Finish the log health check (unattended run, list distinct warnings/errors). Already judged
    harmless: failed opens of media\effects\, stringtables\en\, colourgradingmaps\, db\patch\,
    BadgesAndTitles\ (not on the disc); Kinect XAM message app FE msg 2B003; XamXStudioRequest
@@ -149,7 +157,8 @@ Use it for every graphics/performance change instead of asking the user to play.
    (runtime.cpp only links game:, d:, update:) - find out whether FH1 streams through it and, if
    so, mount a host folder for it as Xenia does.
 2. Glitches: dark square in the bottom-right corner (RTV path on Intel only; ROV is correct) and
-   the hard-edged car shadow. Use RenderDoc on the cutscene frame. Re-check both on the GTX 1050.
+   the hard-edged car shadow. Use RenderDoc on the cutscene frame. Re-check both on the Iris Plus
+   (Intel again, so the dark square likely still shows).
 3. Play past the intro drive (festival, menus, first races): autoplay cannot steer, so ask the
    user to play and send logs, or extend fh1_autoplay.
 4. Then the native renderer on PC (`reference/nfsmw-app/src/nfsmw_nativo_*`, XenosRecomp shaders).
