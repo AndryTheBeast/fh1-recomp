@@ -150,12 +150,17 @@ Use it for every graphics/performance change instead of asking the user to play.
 0. First run on the Surface: check the `DXGI adapter:` line says Iris Plus, then run the
    unattended cutscene/drive test for new `[fps]` numbers (old HD 630 numbers are above; its raw
    logs are in `build_logs\archive-2026-09-29_30`).
-1. Finish the log health check (unattended run, list distinct warnings/errors). Already judged
-   harmless: failed opens of media\effects\, stringtables\en\, colourgradingmaps\, db\patch\,
-   BadgesAndTitles\ (not on the disc); Kinect XAM message app FE msg 2B003; XamXStudioRequest
-   spam. Open: the game opens `cache:\` (Xbox cache partition) and the SDK has no such device
-   (runtime.cpp only links game:, d:, update:) - find out whether FH1 streams through it and, if
-   so, mount a host folder for it as Xenia does.
+1. ~~Log health check~~ done 2026-09-30 (Surface run test-surface1-20260930-043708, to the
+   cutscene): nothing blocking. Harmless: failed opens of media\effects\, stringtables\en\,
+   colourgradingmaps\, db\patch\, BadgesAndTitles\ (not on the disc); Kinect XAM message app FE
+   msg 2B003; XamXStudioRequest / XamVoiceSetMicArrayIdleUsers / EtxProducerRegister /
+   NetDll_getsockopt stubs; 2x BaseHeap::Release (also seen in codegen). `cache:\`: the first
+   probe fails, then the game links `cache: => \Device\cache1` itself (NullDevice), flushes it,
+   and never opens a file under it up to the drive - no streaming through it; revisit only if a
+   later part of the game opens cache:\ paths. "PM4_DRAW_INDX_2 Failed in backend
+   (edram_mode=6)" (~6/frame) are copy/resolve packets, one per "Resolve region is empty" -
+   the scissored-away tiling strips, not lost geometry (see ROADMAP). `[io] LENTO` slow-open
+   warnings: max 139 ms, during the level load only.
 2. Glitches: dark square in the bottom-right corner (RTV path on Intel only; ROV is correct) and
    the hard-edged car shadow. Use RenderDoc on the cutscene frame. Re-check both on the Iris Plus
    (Intel again, so the dark square likely still shows).
