@@ -17,8 +17,9 @@ the in-engine cutscene into the intro drive, and leaves/reloads the XMedia/Speec
 crashing. Rendering uses the SDK's xenos GPU emulation (D3D12, host render targets). Everything
 since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
 
-Performance (old laptop, Intel HD 630 - its GTX 1050 was never usable and has since died): logos
-60 fps, title/intro video ~19 fps, intro drive ~7 fps. GPU time per drive frame 137 ms: 54 draws, 30 EDRAM render
+Performance (earlier laptop, Intel HD 630): logos 60 fps, title/intro video ~19 fps, intro drive
+~7 fps. Iris Plus G7 (current): about the same, videos ~23 fps. Planned next test machine: Lenovo
+Legion Go (AMD Ryzen Z1 Extreme APU). GPU time per drive frame 137 ms: 54 draws, 30 EDRAM render
 target transfers, 26 resolves, 19 textures. EDRAM emulation is ~55% of it, so 30 fps needs the
 native renderer.
 

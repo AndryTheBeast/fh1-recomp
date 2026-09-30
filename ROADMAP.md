@@ -30,7 +30,7 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         translated code. The fiber family is now hooked to the SDK's host fibers ([rexcrt] in
         fh1/overrides.toml).
   - [x] Fiber fix works: Start -> device selector -> the playable intro drive (2026-09-29), but at
-        1-2 frames per second (xenos GPU emulation on a GTX 1050; the native renderer is Stage 4).
+        1-2 frames per second (xenos GPU emulation on an Intel iGPU; the native renderer is Stage 4).
   - [x] Leaving the intro drive: the game unloads XMediaFacade and loads it again. The SDK's
         UnloadUserModule looked the module's translated code up by its resolved "\Device\..." path,
         which never matches the manifest's guest path, so the old entry stayed and the reload was
@@ -38,9 +38,9 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         which spins forever by design and compiles to a trap). Fixed in sdk/src/system/kernel_state.cpp.
         Verified 2026-09-29: XMediaFacade and SpeechFacade unload and reload cleanly.
   - [ ] Frame rate: `[fps]` log lines every 10 s measure it and break down the GPU thread's time.
-        First finding: every run so far used the laptop's Intel HD 630, not the GTX 1050 (D3D12 took
-        adapter 0; the Optimus export sat in rexruntime.dll where drivers ignore it). Draws took
-        ~90-290 us each (2300-3300 per frame in the drive -> 4 fps). Fixed: high-performance adapter
+        On a laptop with switchable graphics D3D12 took adapter 0, the integrated GPU (the Optimus
+        export sat in rexruntime.dll where drivers ignore it). Draws took ~90-290 us each (2300-3300
+        per frame in the drive -> 4 fps). Fixed for multi-GPU machines: high-performance adapter
         first (sdk/src/ui/d3d12/d3d12_provider.cpp) + Optimus/PowerXpress exports in fh1/src/main.cpp.
   - [x] Intel HD 630: the SDK forced the ROV render-target path on Intel (a 2021 driver workaround);
         it compiled pipelines for ~65 s before the first frame and made draws ~15x slower. Host render

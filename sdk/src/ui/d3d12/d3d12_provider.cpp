@@ -256,8 +256,8 @@ bool D3D12Provider::Initialize() {
   IDXGIAdapter1* adapter = nullptr;
   // With the default (-1, any physical adapter), ask DXGI for the high-performance GPU first.
   // Plain EnumAdapters1 order puts the adapter driving the display first, which on laptops with
-  // switchable graphics is the integrated GPU (an Intel HD 630 was picked over a GTX 1050, and
-  // every draw was many times slower). The NvOptimusEnablement export in graphics_system.cpp
+  // switchable graphics is the integrated GPU (the integrated one was picked over the discrete one,
+  // and every draw was many times slower). The NvOptimusEnablement export in graphics_system.cpp
   // does not help: the driver only honours it in the .exe, not in rexruntime.dll.
   if (REXCVAR_GET(d3d12_adapter) == -1) {
     IDXGIFactory6* dxgi_factory6 = nullptr;
