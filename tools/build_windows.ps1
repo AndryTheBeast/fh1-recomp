@@ -24,6 +24,9 @@ $Root = Split-Path -Parent $PSScriptRoot
 if (-not $GameRoot) { $GameRoot = Join-Path (Split-Path -Parent $Root) "game_root" }
 if (-not $LogDir) { $LogDir = Join-Path (Split-Path -Parent $Root) "build_logs" }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+# The steps below change directory, so relative paths must be made absolute first.
+$LogDir = (Resolve-Path $LogDir).Path
+if (Test-Path $GameRoot) { $GameRoot = (Resolve-Path $GameRoot).Path }
 $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 Start-Transcript -Path (Join-Path $LogDir "build-$Stamp.log") | Out-Null
 

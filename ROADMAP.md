@@ -67,6 +67,8 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         covers (on ROV) but that the host-RT path keeps. Needs a frame capture (RenderDoc).
         ROV on the Iris Plus (user watched, 2026-09-30): "fixed almost every glitch" but the drive
         runs at 1-2 fps (0.2 at worst) - usable only as the correct reference picture.
+        **AMD Z1 Extreme (Legion Go, 2026-09-30): both gone on RTV** (clean corner, soft car shadow):
+        an Intel-only problem. ROV there: 6-10 fps, GPU-bound on draws.
   - [x] Crash at the start of forza_tone.wmv (3 runs in a row on the Surface, ~80 s in):
         "Thunk address space exhausted for module at 823E0000", then XexGetProcedureAddress
         ordinal 6 in XMediaFacade returns 0 and the game calls address 0. UserModule lookups got a
@@ -110,6 +112,9 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
   - [ ] The HUD flashes sometimes (rendering; compare with ROV).
 - [ ] Stop-gap speed before the native renderer (user's request, 2026-09-30). Festival, car still,
       Iris Plus: 7.4 fps, ~3,800 draws/frame, ~130 ms host GPU/frame (draws 62, EDRAM 19, resolves 17).
+      Legion Go (Z1 Extreme), RTV, festival + free-roam driving: 28-30 fps = the game's 30 fps cap,
+      28 ms host GPU/frame (draws 11, EDRAM 7, resolves 4.5, textures 3), GPU thread busy 100%
+      (13 ms of CPU time in ~3,300 draws). Not needed on this PC; kept for weaker GPUs / Switch.
   - [x] --gpu_force_msaa_1x (clears the MSAA field of RB_SURFACE_INFO): works, all RTs 1x, but only
         7.4 -> 7.7 fps. MSAA is not the cost; the draw count is.
   - Predicated tiling (see the `[fps] tiling` line): the frame is replayed once per strip (bin

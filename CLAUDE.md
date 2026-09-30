@@ -19,15 +19,18 @@ event (no cache: device). Rendering uses the SDK's xenos GPU emulation (D3D12, h
 targets = RTV). Everything since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
 
 Known problems: the car drives above the road and clips into other cars; the HUD flashes; on
-Intel, RTV shows a dark square bottom-right and a hard-edged car shadow (ROV draws both right).
+Intel only (fine on AMD), RTV shows a dark square bottom-right and a hard-edged car shadow (ROV draws both right).
 
 Performance so far only on Intel iGPUs: HD 630 and Iris Plus G7 both ~7 fps in the drive and in
 the festival (~3,800 draws per frame, the frame drawn in 3 strips), ~20 fps in videos. Speed
 experiments (all off by default) are in ROADMAP "Stop-gap speed".
 
 **Machine change (2026-10-01): the project moves to a Lenovo Legion Go (AMD Ryzen Z1 Extreme:
-Zen 4 CPU + RDNA 3 iGPU, 1920x1200 screen).** Re-measure everything there before changing code;
-the Intel-only rendering workarounds may not be needed (see Next steps).
+Zen 4 CPU + RDNA 3 iGPU, 1920x1200 screen).** Baseline there (2026-09-30 evening, commit dea7f49,
+test-base / test-rov logs): festival + free-roam driving on RTV **28-30 fps** (the game's own
+30 fps cap; Surface 7.4), host GPU ~28 ms/frame, GPU thread busy 100%, ~3,300 draws/frame. On AMD
+the RTV picture is correct: no dark square, soft car shadow. ROV: 6-10 fps, GPU-bound (~100-120 ms
+of host GPU per frame, almost all draws) - still only a reference. Full build ~14 min.
 
 **Decision (user, 2026-09-30): make the game fully working with the current GPU emulation first,
 then build the native renderer on PC.** User's order after that: a stop-gap speed-up first, then
@@ -178,14 +181,16 @@ lists the actions and saves the render targets as PNG.
 - Run logs rotate at 5 MB (`run-*.1.log`, `.2.log`, ...): read all of them.
 - Hooking a game function from the app: `REX_EXTERN(__imp__sub_X); REX_HOOK_RAW(sub_X) { ...
   __imp__sub_X(ctx, base); }` (see fh1/src/fh1_trace_load.cpp).
+- OneDrive may keep the saves "online-only" on a new PC: `attrib +P -U <fh1 folder> /S /D` pins
+  them to the device so the game never waits on a download (done on the Legion Go).
+- `auto_test.ps1` used to print only the newest log part; it now reads the rotated parts too.
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
 ## Next steps
 
-1. Set up the Legion Go ("Fresh PC setup" above), build, and check the `DXGI adapter:` log line
-   names the AMD GPU.
-2. Baseline on the Z1 Extreme before touching code. With a save present the game boots straight
-   into the festival (~65-100 s), so the unattended test is:
+1. [done 2026-09-30] Legion Go set up and built; `DXGI adapter: AMD Radeon Graphics (0x1002)`.
+2. [done, results in "Goal and current state"] Baseline on the Z1 Extreme. With a save present the
+   game boots straight into the festival (~50 s on the Legion Go), so the unattended test is:
 
        powershell -ExecutionPolicy Bypass -File tools\auto_test.ps1 -Name base -Seconds 140 `
          -Shots "110,125,138" -Autoplay "34+0.3=start;36+0.3=start;38+0.3=start;41+0.3=a;43+0.3=a;46+0.3=a"
@@ -196,7 +201,8 @@ lists the actions and saves the render targets as PNG.
    Questions: is ROV (correct picture) fast enough now? Does RTV still show the dark square and the
    hard car shadow on AMD? (On Intel the stencil-reference export is missing and xenia falls back;
    AMD has it.) Is the frame CPU-bound (`GPU thread busy` ~100% with low host-GPU time) or GPU-bound?
-3. Stop-gap speed (the user's priority): finish the single-strip mode (ROADMAP "Stop-gap speed":
+3. Stop-gap speed: on the Z1 Extreme RTV already reaches the game's 30 fps cap, so this matters
+   only for weaker GPUs (and the Switch). Was: finish the single-strip mode (ROADMAP "Stop-gap speed":
    force window offset 0 and a full scissor for draws, strip 1's copy destination, one resolve of
    all rows), or real screen extents, depending on what the baseline shows.
 4. Gameplay/visual bugs: car above the road and clipping into cars (collision / ground queries;
