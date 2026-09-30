@@ -99,7 +99,15 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
       logged as "not a real entry". 6/6 clean with it (guard never fired). The real uninitialized
       read is upstream, probably in sub_82A7D730 (fills the vector at caller sp+384 whose w word
       is the index). --fh1_trace_load logs every table entry used.
-- [ ] First event
+- [x] First event (user, 2026-09-30, run-20260930-131706): whole race, no crash; the game opened
+      cache:\ghost_stream_0..4, replay_stream and main_side_stream on the new utility mount. 8-13
+      fps during the race (7.5-9 in the busy middle); felt like ~4 to the user.
+- [ ] Seen in that race (user):
+  - [ ] The car drives above the road, and cars clip into each other. Both are collision/ground
+        queries; the save-loading crash was an uninitialized index coming out of the same area
+        (sub_82A7D730 fills the vector whose w word is the surface index). Check first whether
+        those queries return hits at all (a translation bug in the vector math would fit all three).
+  - [ ] The HUD flashes sometimes (rendering; compare with ROV).
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
 ## Stages 3-5 — Nintendo Switch (separate repository)
