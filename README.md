@@ -52,7 +52,6 @@ APU: Zen 4 CPU and an RDNA 3 integrated GPU, running Windows 11.
 
 1. `tools\setup_windows.bat` installs the tools (Git, CMake, Ninja, Python, LLVM, VS 2022 Build Tools).
 2. Put your ISO, `tools\build_fh1.bat` and `tools\run_fh1.bat` in one folder next to this clone.
-un_fh1.bat` in one folder next to this clone.
 3. `run_fh1.bat` once extracts the disc; `build_fh1.bat` builds `fh1.exe`; `run_fh1.bat` plays it.
 
 ## Credits
