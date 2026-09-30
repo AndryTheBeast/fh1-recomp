@@ -108,6 +108,23 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         (sub_82A7D730 fills the vector whose w word is the surface index). Check first whether
         those queries return hits at all (a translation bug in the vector math would fit all three).
   - [ ] The HUD flashes sometimes (rendering; compare with ROV).
+- [ ] Stop-gap speed before the native renderer (user's request, 2026-09-30). Festival, car still,
+      Iris Plus: 7.4 fps, ~3,800 draws/frame, ~130 ms host GPU/frame (draws 62, EDRAM 19, resolves 17).
+  - [x] --gpu_force_msaa_1x (clears the MSAA field of RB_SURFACE_INFO): works, all RTs 1x, but only
+        7.4 -> 7.7 fps. MSAA is not the cost; the draw count is.
+  - Predicated tiling (see the `[fps] tiling` line): the frame is replayed once per strip (bin
+    select 3 / C / 30, plus 80000003 for the first pass). Per object the game emits EVENT_WRITE 0x19
+    (reset extent), its draws, then EVENT_WRITE_EXT 0x1A to a 16-byte slot; its CPU code reads the
+    slots back later and turns them into per-object bin masks (e.g. 28 = strips 2+3). The SDK
+    writes a full-screen extent for every query, so most objects get mask FFFFFFFF and are drawn in
+    all 3 strips (~4,250 predicated draws, ~3,590 run). Proven with --gpu_screen_extent_top_only
+    (objects then vanish from the lower strips). Real extents (Y range of the draws between 0x19 and
+    0x1A) would let predication skip them; the SDK's only tool is running the VS on the CPU
+    (DrawExtentEstimator), too slow per vertex - needs sampling or a GPU-side approach.
+  - media\renderscenarios.zip Global.xml has <TilingScenario value="1"/> (UI scenes use 0). Editing
+    the file (byte + zip CRC) made the game call XamShowDirtyDiscErrorUI at boot - it verifies its
+    data (not via zipmanifest.xml, which only has directory offsets). Next: override the value in
+    memory where the game parses it (find the "TilingScenario" string's users), not on disk.
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
 ## Stages 3-5 — Nintendo Switch (separate repository)

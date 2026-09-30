@@ -1,4 +1,4 @@
-/**
+﻿/**
  ******************************************************************************
  * Xenia : Xbox 360 Emulator Research Project                                 *
  ******************************************************************************
@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include <fmt/format.h>
@@ -86,6 +87,17 @@ REXCVAR_DEFINE_BOOL(async_shader_compilation, true, "GPU",
                     "pipelines are being prepared.")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
+REXCVAR_DEFINE_BOOL(gpu_force_msaa_1x, false, "GPU",
+                    "Performance: treat every render target as 1x MSAA (clears the MSAA field of "
+                    "RB_SURFACE_INFO as the game writes it). A quarter of the samples to shade, "
+                    "store, transfer and resolve at 4x; edges lose their antialiasing.");
+
+REXCVAR_DEFINE_INT32(gpu_trace_pm4_at_extent, 0, "GPU",
+                     "Debug: log 400 PM4 packets after the Nth screen extent write (0 = off)");
+
+REXCVAR_DEFINE_BOOL(gpu_screen_extent_top_only, false, "GPU",
+                    "Experiment: report every screen extent (EVENT_WRITE_EXT) as the top 256 rows");
+
 REXCVAR_DEFINE_STRING(renderdoc_capture_seconds, "", "GPU",
                       "Comma-separated seconds after the first frame at which to capture one "
                       "guest frame with RenderDoc (the app must be launched by RenderDoc, e.g. "
@@ -114,6 +126,20 @@ struct FrameStats {
   uint32_t frames = 0;
 };
 FrameStats frame_stats_;
+
+// Predicated tiling (the game draws each frame in strips): how the bin masks look and how many
+// packets predication skips. Logged with the [fps] lines. GPU Commands worker thread only.
+struct TilingStats {
+  uint32_t extent_events = 0;       // EVENT_WRITE_EXT (screen extent writes)
+  uint32_t predicated = 0;          // predicated type-3 packets
+  uint32_t predicated_skipped = 0;  // ... skipped because (bin_select & bin_mask) == 0
+  uint32_t predicated_draws = 0;    // predicated DRAW_INDX / DRAW_INDX_2 packets
+  uint32_t draws_run = 0;           // ... of those, executed
+  uint32_t mask_sets = 0, select_sets = 0;
+  std::unordered_map<uint64_t, uint32_t> masks, selects;
+};
+TilingStats tiling_stats_;
+uint32_t tiling_stats_total_extents_ = 0;
 
 // Returns the frame count of the 10 s window when it logged, 0 otherwise.
 uint32_t LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
@@ -148,6 +174,26 @@ uint32_t LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
               ms_per_frame(s.idle_ticks), ms_per_frame(s.wait_reg_ticks), ms_per_frame(s.draw_ticks),
               s.draws / s.frames, s.failed_draws / s.frames, ms_per_frame(s.swap_ticks),
               ms_per_frame(host_gpu_wait_ticks));
+  {
+    TilingStats& t = tiling_stats_;
+    auto top = [](const std::unordered_map<uint64_t, uint32_t>& m) {
+      std::vector<std::pair<uint32_t, uint64_t>> v;
+      for (auto& [k, c] : m) v.push_back({c, k});
+      std::sort(v.begin(), v.end(), std::greater<>());
+      std::string out;
+      for (size_t i = 0; i < v.size() && i < 6; ++i) {
+        out += fmt::format(" {:X}x{}", v[i].second, v[i].first / s.frames);
+      }
+      return out;
+    };
+    REXGPU_INFO("[fps] tiling per frame: {} extent writes, {} predicated packets ({} skipped), "
+                "{} predicated draws ({} run); {} bin-mask sets:{}; {} bin-select sets:{}",
+                t.extent_events / s.frames, t.predicated / s.frames,
+                t.predicated_skipped / s.frames, t.predicated_draws / s.frames,
+                t.draws_run / s.frames, t.mask_sets / s.frames, top(t.masks),
+                t.select_sets / s.frames, top(t.selects));
+    t = TilingStats{};
+  }
   host_gpu_wait_ticks = 0;
   uint32_t frames = s.frames;
   s = FrameStats{};
@@ -486,6 +532,13 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
           index);
     }
     return;
+  }
+
+  if (index == XE_GPU_REG_RB_SURFACE_INFO && REXCVAR_GET(gpu_force_msaa_1x)) {
+    reg::RB_SURFACE_INFO surface_info;
+    surface_info.value = value;
+    surface_info.msaa_samples = xenos::MsaaSamples::k1X;
+    value = surface_info.value;
   }
 
   // Volatile for the WAIT_REG_MEM loop.
@@ -924,11 +977,40 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
     return false;
   }
 
+  // --gpu_trace_pm4_at_extent=N: log the 400 type-3 packets that follow the Nth screen extent
+  // write (to see how the game's predicated tiling consumes the extents).
+  {
+    static int32_t traced = -1;
+    int32_t at = REXCVAR_GET(gpu_trace_pm4_at_extent);
+    if (at > 0 && traced < 0 && tiling_stats_total_extents_ >= uint32_t(at)) {
+      traced = 0;
+    }
+    if (traced >= 0 && traced < 400) {
+      ++traced;
+      std::string words;
+      for (uint32_t i = 0; i < count && i < 6; ++i) {
+        uint32_t w;
+        std::memcpy(&w, reader->buffer() + (data_start_offset + i * 4) % reader->capacity(), 4);
+        words += fmt::format(" {:08X}", __builtin_bswap32(w));
+      }
+      REXGPU_INFO("[pm4] op {:02X}{} n {} bin sel {:X} mask {:X}:{}", opcode,
+                  (packet & 1) ? " PRED" : "", count, bin_select_, bin_mask_, words);
+    }
+  }
+
   // & 1 == predicate - when set, we do bin check to see if we should execute
   // the packet. Only type 3 packets are affected.
   // We also skip predicated swaps, as they are never valid (probably?).
   if (packet & 1) {
     bool any_pass = (bin_select_ & bin_mask_) != 0;
+    bool is_draw = opcode == PM4_DRAW_INDX || opcode == PM4_DRAW_INDX_2;
+    ++tiling_stats_.predicated;
+    tiling_stats_.predicated_draws += is_draw;
+    if (!any_pass || opcode == PM4_XE_SWAP) {
+      ++tiling_stats_.predicated_skipped;
+    } else {
+      tiling_stats_.draws_run += is_draw;
+    }
     if (!any_pass || opcode == PM4_XE_SWAP) {
       reader->AdvanceRead(count * sizeof(uint32_t));
       return true;
@@ -1014,6 +1096,8 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
     case PM4_SET_BIN_MASK_LO: {
       uint32_t value = reader->ReadAndSwap<uint32_t>();
       bin_mask_ = (bin_mask_ & 0xFFFFFFFF00000000ull) | value;
+      ++tiling_stats_.mask_sets;
+      ++tiling_stats_.masks[bin_mask_];
       result = true;
     } break;
     case PM4_SET_BIN_MASK_HI: {
@@ -1024,6 +1108,8 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
     case PM4_SET_BIN_SELECT_LO: {
       uint32_t value = reader->ReadAndSwap<uint32_t>();
       bin_select_ = (bin_select_ & 0xFFFFFFFF00000000ull) | value;
+      ++tiling_stats_.select_sets;
+      ++tiling_stats_.selects[bin_select_];
       result = true;
     } break;
     case PM4_SET_BIN_SELECT_HI: {
@@ -1036,6 +1122,8 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
       uint64_t val_hi = reader->ReadAndSwap<uint32_t>();
       uint64_t val_lo = reader->ReadAndSwap<uint32_t>();
       bin_mask_ = (val_hi << 32) | val_lo;
+      ++tiling_stats_.mask_sets;
+      ++tiling_stats_.masks[bin_mask_];
       result = true;
     } break;
     case PM4_SET_BIN_SELECT: {
@@ -1043,6 +1131,8 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
       uint64_t val_hi = reader->ReadAndSwap<uint32_t>();
       uint64_t val_lo = reader->ReadAndSwap<uint32_t>();
       bin_select_ = (val_hi << 32) | val_lo;
+      ++tiling_stats_.select_sets;
+      ++tiling_stats_.selects[bin_select_];
       result = true;
     } break;
     case PM4_CONTEXT_UPDATE: {
@@ -1419,6 +1509,8 @@ bool CommandProcessor::ExecutePacketType3_EVENT_WRITE_SHD(memory::RingBuffer* re
 bool CommandProcessor::ExecutePacketType3_EVENT_WRITE_EXT(memory::RingBuffer* reader,
                                                           uint32_t packet, uint32_t count) {
   // generate a screen extent event
+  ++tiling_stats_.extent_events;
+  ++tiling_stats_total_extents_;
   uint32_t initiator = reader->ReadAndSwap<uint32_t>();
   uint32_t address = reader->ReadAndSwap<uint32_t>();
   // Writeback initiator.
@@ -1438,6 +1530,19 @@ bool CommandProcessor::ExecutePacketType3_EVENT_WRITE_EXT(memory::RingBuffer* re
       0,                                         // min z
       1,                                         // max z
   };
+  // Experiment (predicated tiling): report every extent as the top 256 rows only, to see whether
+  // the game's bin masks follow the extents written here.
+  if (REXCVAR_GET(gpu_screen_extent_top_only)) {
+    extents[3] = 255 >> 3;
+  }
+  {
+    static uint32_t logged = 0;
+    if (logged < 12) {
+      ++logged;
+      REXGPU_INFO("EVENT_WRITE_EXT initiator {:08X} address {:08X} endian {}", initiator, address,
+                  uint32_t(endianness));
+    }
+  }
   assert_true(endianness == xenos::Endian::k8in16);
   memory::copy_and_swap_16_unaligned(memory_->TranslatePhysical(address), extents,
                                      rex::countof(extents));
