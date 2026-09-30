@@ -7,7 +7,7 @@
     5. translates the game to C++ (codegen)
     6. compiles fh1.exe
 
-    powershell -ExecutionPolicy Bypass -File tools\build_windows.ps1 -GameRoot C:\path\to\game_root [-Config Release] [-SkipCodegen]
+    powershell -ExecutionPolicy Bypass -File tools\build_windows.ps1 -GameRoot C:\path\to\game_root [-Config Release] [-SkipCodegen] [-SkipFetch]
 
   Every step is logged to -LogDir (default: the folder above the repository, in build_logs).
 #>
@@ -15,7 +15,9 @@ param(
   [string]$GameRoot = "",
   [ValidateSet("Release", "RelWithDebInfo", "Debug")][string]$Config = "Release",
   [string]$LogDir = "",
-  [switch]$SkipCodegen
+  [switch]$SkipCodegen,
+  # Reuse the third-party sources already in sdk\thirdparty (offline, and faster for rebuilds).
+  [switch]$SkipFetch
 )
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -78,8 +80,10 @@ try {
   # AVX2 for the SDK's byte-swap and vector code (ReXGlue, like Xenia, expects it).
   $Flags = "-mavx2"
 
-  Step "Fetching third-party sources"
-  Run python @("$Root\tools\fetch_thirdparty.py") "fetch_thirdparty.log"
+  if (-not $SkipFetch) {
+    Step "Fetching third-party sources"
+    Run python @("$Root\tools\fetch_thirdparty.py") "fetch_thirdparty.log"
+  }
 
   Step "Building the code generator"
   $HostDir = Join-Path $Root "out\host"

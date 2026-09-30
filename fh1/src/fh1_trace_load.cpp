@@ -8,13 +8,17 @@
 // the entry held on each call and when it changed, plus which thread called and from where. It
 // changes nothing in the game. On only with --fh1_trace_load.
 
+#include <algorithm>
 #include <atomic>
+#include <string>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+
+#include <fmt/format.h>
 
 #include <rex/cvar.h>
 #include <rex/hook.h>
@@ -49,8 +53,49 @@ bool Plausible(uint32_t p) {
 
 }  // namespace
 
+REXCVAR_DEFINE_STRING(fh1_find_string, "", "FH1",
+                      "Debug: log the guest addresses of this text in default.xex's image "
+                      "(searched once, when the game first reaches sub_82D3DB00)");
+
 REX_EXTERN(__imp__sub_82D3DB00);
 REX_HOOK_RAW(sub_82D3DB00) {
+  {
+    static std::atomic<bool> searched{false};
+    // Comma-separated needles; "0x82D80DD8" searches for that big-endian word and also logs the
+    // 8 words before and after each hit (to read vtables and objects around it).
+    std::string list = REXCVAR_GET(fh1_find_string);
+    if (!list.empty() && !searched.exchange(true)) {
+      for (size_t start = 0; start < list.size();) {
+        size_t comma = list.find(',', start);
+        if (comma == std::string::npos) comma = list.size();
+        std::string item = list.substr(start, comma - start);
+        start = comma + 1;
+        std::string needle = item;
+        bool word = item.rfind("0x", 0) == 0;
+        if (word) {
+          uint32_t v = uint32_t(std::stoul(item.substr(2), nullptr, 16));
+          needle = std::string{char(v >> 24), char(v >> 16), char(v >> 8), char(v)};
+        }
+        constexpr uint32_t kImageBegin = 0x82000000, kImageEnd = 0x83620000;
+        const uint8_t* begin = base + kImageBegin;
+        const uint8_t* end = base + kImageEnd;
+        int found = 0;
+        for (const uint8_t* p = begin; found < 32;) {
+          p = std::search(p, end, needle.begin(), needle.end());
+          if (p == end) break;
+          uint32_t at = kImageBegin + uint32_t(p - begin);
+          std::string around;
+          if (word && (at & 3) == 0) {
+            for (int i = -8; i <= 8; ++i) around += fmt::format(" {:08X}", Be32(base, at + i * 4));
+          }
+          REXLOG_INFO("[find] '{}' at {:08X}{}", item, at, around);
+          ++found;
+          ++p;
+        }
+        REXLOG_INFO("[find] '{}': {} hits", item, found);
+      }
+    }
+  }
   // WORKAROUND. The index can come from a stack word the game never wrote (see
   // XThread::AllocateStack: with Xenia's 0xBE stack fill it was always 190). Zeroed stacks fixed
   // the usual case; a long-lived stack can still hold a stale value (seen: 192, 1 run in 5), which

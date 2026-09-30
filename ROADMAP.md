@@ -123,8 +123,15 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
     (DrawExtentEstimator), too slow per vertex - needs sampling or a GPU-side approach.
   - media\renderscenarios.zip Global.xml has <TilingScenario value="1"/> (UI scenes use 0). Editing
     the file (byte + zip CRC) made the game call XamShowDirtyDiscErrorUI at boot - it verifies its
-    data (not via zipmanifest.xml, which only has directory offsets). Next: override the value in
-    memory where the game parses it (find the "TilingScenario" string's users), not on disk.
+    data (not via zipmanifest.xml, which only has directory offsets). Changing only that byte and
+    keeping both CRCs also fails: the entry's content is verified. So: in memory only.
+    The string is at 8223C180 (UITilingScenario 8223C1B4; second copies at 832B1CE2/832B1D16).
+    Its only user in code is sub_82D80DD8, a one-line "return name" method, which nothing in the
+    image or the code references (0 hits for the word 82D80DD8; no lis/addi pair builds it) -
+    the settings table is built some other way. Next options: find the D3D BeginTiling-style
+    code that emits SET_BIN_SELECT 80000003/C/30 and force one tile together with
+    --gpu_force_msaa_1x (1280x720 at 1x fits EDRAM: 720+720 tiles), or scan the heap for the
+    parsed settings block after load. --fh1_find_string="text,0xWORD" helps with both.
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
 ## Stages 3-5 — Nintendo Switch (separate repository)
