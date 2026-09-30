@@ -109,7 +109,16 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         queries; the save-loading crash was an uninitialized index coming out of the same area
         (sub_82A7D730 fills the vector whose w word is the surface index). Check first whether
         those queries return hits at all (a translation bug in the vector math would fit all three).
-  - [ ] The HUD flashes sometimes (rendering; compare with ROV).
+        Legion Go (2026-10-01): the user did not see the car float in the first 30 fps run. New
+        lead: both may be large-physics-step artifacts of the 7-9 fps runs (suspension settling
+        wrong, cars tunnelling between checks). Re-check in a race at 30 fps before digging.
+        Audit so far (sdk/src/codegen/builders/vector.cpp): the most used vector/FP builders
+        (vcmp*, vrlimi, vsldoi, vperm*, vsplt*, vmsum*, vupkd3d128 types 0-5, fma) match the PPC
+        semantics. Real but harmless: vupkd3d128/vpkd3d128 type 6 (NORMPACKED64) read the wrong
+        64-bit half, write x..w reversed and skip the 3.0+X form - FH1 never uses it (0 sites).
+  - [ ] The HUD flashes sometimes (rendering; compare with ROV). Xenia users see HUD flashing
+        in FH1 when the frame pacing is off (vsync off / >30 fps, game-compatibility issue 30);
+        ours was seen at 7-9 fps. Re-check at 30 fps.
 - [ ] Stop-gap speed before the native renderer (user's request, 2026-09-30). Festival, car still,
       Iris Plus: 7.4 fps, ~3,800 draws/frame, ~130 ms host GPU/frame (draws 62, EDRAM 19, resolves 17).
       Legion Go (Z1 Extreme), RTV, festival + free-roam driving: 28-30 fps = the game's 30 fps cap,
