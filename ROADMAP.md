@@ -132,6 +132,24 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
     code that emits SET_BIN_SELECT 80000003/C/30 and force one tile together with
     --gpu_force_msaa_1x (1280x720 at 1x fits EDRAM: 720+720 tiles), or scan the heap for the
     parsed settings block after load. --fh1_find_string="text,0xWORD" helps with both.
+  - One strip instead of three (2026-09-30), fh1/src/fh1_trace_load.cpp --fh1_single_tile (with
+    --gpu_force_msaa_1x): the D3D command-list walker sub_829F5FF0 copies a 248-byte tiling block
+    into device+116 with memcpy sub_82A7D730 (return address 829F60DC): +4 strip count (3), +8
+    strip rects x1,y1,x2,y2 (0,0,1280,256 / 0,256,1280,512 / 0,512,1280,720); device+60 = strip
+    being replayed, +364 = bin select. Setting count 1 + rect 0..720 works mechanically: one pass,
+    draws 4,250 -> 2,300/frame, 7.4 -> 8-9 fps; with --gpu_bin_select_or=3C (all strip packets
+    run) 13.3 fps. But the picture is wrong: only one band is right, the rest black.
+    Per-strip packets (--gpu_trace_pm4_strip_packets / _from_copy_dest traces):
+      - pass start and per object: PA_SC_WINDOW_OFFSET 0x2080 = 0 / 7F000000 (-256) / 7E000000
+        (-512), PA_SC_WINDOW_SCISSOR_TL/BR = rows 0-256 / 256-512 / 512-720 (op 2D and op 55,
+        predicated mask 3 / C / 30 in sequence);
+      - each copy-out: RB_COPY_DEST_BASE 0x2319 for strip 1/2/3 (e.g. 1C4E1000 / 1C621000 /
+        1C761000, one strip apart), then ONE unpredicated resolve (op 36 = DRAW_INDX_2, 00030088)
+        and EVENT_WRITE 6.
+    Next: in single-tile mode run only strip 1's packets (select 80000003) but force window
+    offset 0 and scissor BR to the full height, so draws cover the frame and the one resolve
+    copies all 720 rows to strip 1's base (= the start of the image). Check whether the resolve's
+    own rectangle is full-frame or per strip.
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
 ## Stages 3-5 — Nintendo Switch (separate repository)

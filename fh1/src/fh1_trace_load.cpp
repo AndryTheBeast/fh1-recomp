@@ -53,6 +53,61 @@ bool Plausible(uint32_t p) {
 
 }  // namespace
 
+REXCVAR_DEFINE_INT32(fh1_trace_tiling, 0, "FH1",
+                     "Debug: log the D3D predicated-tiling block (device+116, 248 bytes) on the "
+                     "first N bin-select writes (sub_829F55A8)");
+
+REX_EXTERN(__imp__sub_829F55A8);
+REX_HOOK_RAW(sub_829F55A8) {
+  static std::atomic<int32_t> logged{0};
+  int32_t limit = REXCVAR_GET(fh1_trace_tiling);
+  if (limit > 0 && logged.fetch_add(1) < limit) {
+    uint32_t device = ctx.r3.u32;
+    std::string words;
+    for (uint32_t off = 56; off < 384; off += 4) {
+      if (off == 116 || off == 244 || off == 364) words += " |";
+      words += fmt::format(" {:08X}", Be32(base, device + off));
+    }
+    REXLOG_INFO("[tiling] device {:08X} lr {:08X} +56..+384:{}", device, uint32_t(ctx.lr), words);
+  }
+  __imp__sub_829F55A8(ctx, base);
+}
+
+// Speed experiment: draw each frame in one piece instead of FH1's 2-3 horizontal strips
+// (predicated tiling). The game's D3D replays the frame's commands once per strip; the strip
+// setup is a 248-byte block the command-list walker sub_829F5FF0 copies into device+116 with
+// memcpy (sub_82A7D730, called from 829F60D8): +4 = strip count, +8.. = strip rectangles
+// (x1, y1, x2, y2) of 16 bytes each. Rewriting it to one strip of 1280x720 skips two replays of
+// every draw. Needs --gpu_force_msaa_1x: at 4x MSAA a whole frame does not fit in EDRAM.
+REXCVAR_DEFINE_BOOL(fh1_single_tile, false, "FH1",
+                    "Speed experiment: draw the frame as one strip (use with --gpu_force_msaa_1x)");
+
+REX_EXTERN(__imp__sub_82A7D730);
+REX_HOOK_RAW(sub_82A7D730) {
+  bool tiling_block = uint32_t(ctx.lr) == 0x829F60DC && ctx.r5.u32 == 248;
+  uint32_t dest = ctx.r3.u32;
+  __imp__sub_82A7D730(ctx, base);
+  if (tiling_block && REXCVAR_GET(fh1_single_tile)) {
+    uint32_t count = Be32(base, dest + 4);
+    if (count > 1) {
+      // Last strip's bottom-right corner = the whole target.
+      uint32_t last = dest + 8 + (count - 1) * 16;
+      uint32_t x2 = Be32(base, last + 8), y2 = Be32(base, last + 12);
+      auto put = [&](uint32_t address, uint32_t value) {
+        uint32_t be = __builtin_bswap32(value);
+        std::memcpy(base + address, &be, 4);
+      };
+      put(dest + 4, 1);
+      put(dest + 16, x2);
+      put(dest + 20, y2);
+      static std::atomic<uint32_t> logged{0};
+      if (logged.fetch_add(1) < 5) {
+        REXLOG_INFO("[tiling] single tile: {} strips -> 1 of {}x{}", count, x2, y2);
+      }
+    }
+  }
+}
+
 REXCVAR_DEFINE_STRING(fh1_find_string, "", "FH1",
                       "Debug: log the guest addresses of this text in default.xex's image "
                       "(searched once, when the game first reaches sub_82D3DB00)");

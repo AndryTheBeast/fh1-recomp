@@ -95,6 +95,18 @@ REXCVAR_DEFINE_BOOL(gpu_force_msaa_1x, false, "GPU",
 REXCVAR_DEFINE_INT32(gpu_trace_pm4_at_extent, 0, "GPU",
                      "Debug: log 400 PM4 packets after the Nth screen extent write (0 = off)");
 
+REXCVAR_DEFINE_BOOL(gpu_trace_pm4_from_copy_dest, false, "GPU",
+                    "Debug: with gpu_trace_pm4_at_extent, start the trace at the next packet "
+                    "that writes RB_COPY_DEST_BASE");
+
+REXCVAR_DEFINE_BOOL(gpu_trace_pm4_strip_packets, false, "GPU",
+                    "Debug: with gpu_trace_pm4_at_extent, log only packets predicated on one "
+                    "strip (bin mask 3, C or 30)");
+
+REXCVAR_DEFINE_STRING(gpu_bin_select_or, "", "GPU",
+                      "Experiment (predicated tiling): hex bits OR'ed into every bin select the "
+                      "game sets, except all-ones (e.g. 3C to also run strips 2-3 packets)");
+
 REXCVAR_DEFINE_BOOL(gpu_screen_extent_top_only, false, "GPU",
                     "Experiment: report every screen extent (EVENT_WRITE_EXT) as the top 256 rows");
 
@@ -983,9 +995,22 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
     static int32_t traced = -1;
     int32_t at = REXCVAR_GET(gpu_trace_pm4_at_extent);
     if (at > 0 && traced < 0 && tiling_stats_total_extents_ >= uint32_t(at)) {
-      traced = 0;
+      // With gpu_trace_pm4_from_copy_dest, wait further for a packet whose first word is
+      // RB_COPY_DEST_BASE (0x2319) and trace everything from there.
+      bool wait_copy = REXCVAR_GET(gpu_trace_pm4_from_copy_dest);
+      uint32_t first = 0;
+      if (count) {
+        std::memcpy(&first, reader->buffer() + data_start_offset % reader->capacity(), 4);
+        first = __builtin_bswap32(first);
+      }
+      if (!wait_copy || first == 0x2319) {
+        traced = 0;
+      }
     }
-    if (traced >= 0 && traced < 400) {
+    // Only strip-specific packets (bin mask 3, C or 30) once the trace has started.
+    bool strip_only = REXCVAR_GET(gpu_trace_pm4_strip_packets);
+    bool strip_packet = (packet & 1) && (bin_mask_ == 0x3 || bin_mask_ == 0xC || bin_mask_ == 0x30);
+    if (traced >= 0 && traced < 400 && (!strip_only || strip_packet)) {
       ++traced;
       std::string words;
       for (uint32_t i = 0; i < count && i < 6; ++i) {
@@ -1002,7 +1027,15 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
   // the packet. Only type 3 packets are affected.
   // We also skip predicated swaps, as they are never valid (probably?).
   if (packet & 1) {
-    bool any_pass = (bin_select_ & bin_mask_) != 0;
+    static const uint64_t select_or = [] {
+      std::string s = REXCVAR_GET(gpu_bin_select_or);
+      return s.empty() ? uint64_t(0) : uint64_t(std::stoull(s, nullptr, 16));
+    }();
+    uint64_t select = bin_select_;
+    if (select_or && uint32_t(select) != 0xFFFFFFFFu) {
+      select |= select_or;
+    }
+    bool any_pass = (select & bin_mask_) != 0;
     bool is_draw = opcode == PM4_DRAW_INDX || opcode == PM4_DRAW_INDX_2;
     ++tiling_stats_.predicated;
     tiling_stats_.predicated_draws += is_draw;
