@@ -12,8 +12,13 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <functional>
+#include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <fmt/format.h>
 
@@ -34,6 +39,7 @@
 #include <rex/stream.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/user_module.h>
+#include <rex/ui/renderdoc_api.h>
 
 REXCVAR_DEFINE_BOOL(vsync, true, "GPU", "Enable vertical sync");
 
@@ -79,6 +85,11 @@ REXCVAR_DEFINE_BOOL(async_shader_compilation, true, "GPU",
                     "threads. This reduces stutter but may cause brief visual artifacts while "
                     "pipelines are being prepared.")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
+REXCVAR_DEFINE_STRING(renderdoc_capture_seconds, "", "GPU",
+                      "Comma-separated seconds after the first frame at which to capture one "
+                      "guest frame with RenderDoc (the app must be launched by RenderDoc, e.g. "
+                      "renderdoccmd capture). For unattended graphics debugging.");
 
 namespace rex::graphics {
 
@@ -142,6 +153,58 @@ uint32_t LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
   s = FrameStats{};
   s.window_start = s.last_swap = now;
   return frames;
+}
+
+// --renderdoc_capture_seconds: after each guest swap, ends a capture started at the previous
+// swap (so a capture holds exactly one guest frame, including its present), then starts a new
+// one once the next requested time has passed. Only the GPU Commands worker thread calls this.
+void UpdateRenderDocCaptureOnSwap() {
+  static bool initialized = false;
+  static std::unique_ptr<rex::ui::RenderDocAPI> api;
+  static std::vector<double> pending_seconds;
+  static uint64_t first_swap = 0;
+  static bool capturing = false;
+  if (!initialized) {
+    initialized = true;
+    std::string list = REXCVAR_GET(renderdoc_capture_seconds);
+    if (list.empty()) {
+      return;
+    }
+    for (size_t start = 0; start < list.size();) {
+      size_t end = list.find(',', start);
+      if (end == std::string::npos) {
+        end = list.size();
+      }
+      pending_seconds.push_back(std::atof(list.substr(start, end - start).c_str()));
+      start = end + 1;
+    }
+    std::sort(pending_seconds.begin(), pending_seconds.end(), std::greater<double>());
+    api = rex::ui::RenderDocAPI::CreateIfConnected();
+    if (!api) {
+      REXGPU_WARN("renderdoc_capture_seconds is set but RenderDoc is not attached");
+      pending_seconds.clear();
+    }
+  }
+  if (!api) {
+    return;
+  }
+  uint64_t now = rex::chrono::Clock::QueryHostTickCount();
+  if (!first_swap) {
+    first_swap = now;
+  }
+  if (capturing) {
+    uint32_t ok = api->api_1_0_0()->EndFrameCapture(nullptr, nullptr);
+    REXGPU_INFO("RenderDoc: frame capture ended ({})", ok ? "saved" : "FAILED");
+    capturing = false;
+  }
+  double seconds =
+      double(now - first_swap) / double(rex::chrono::Clock::QueryHostTickFrequency());
+  if (!pending_seconds.empty() && seconds >= pending_seconds.back()) {
+    pending_seconds.pop_back();
+    api->api_1_0_0()->StartFrameCapture(nullptr, nullptr);
+    capturing = true;
+    REXGPU_INFO("RenderDoc: capturing the guest frame after {:.1f} s", seconds);
+  }
 }
 
 ReadbackResolveMode ParseReadbackResolveMode(std::string_view value) {
@@ -1087,6 +1150,7 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
   uint64_t swap_start = rex::chrono::Clock::QueryHostTickCount();
   IssueSwap(frontbuffer_ptr, frontbuffer_width, frontbuffer_height);
   frame_stats_.swap_ticks += rex::chrono::Clock::QueryHostTickCount() - swap_start;
+  UpdateRenderDocCaptureOnSwap();
 
   ++counter_;
   return true;

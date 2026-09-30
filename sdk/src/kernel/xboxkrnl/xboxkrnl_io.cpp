@@ -569,6 +569,14 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
   }
 
   *handle_out = handle;
+  // The utility (cache) partition is written by the game itself (FH1: ghost / replay streams),
+  // so every open there is logged to follow what it does with it.
+  if (target_path.size() >= 6 && rex::string::utf8_starts_with_case(target_path, "cache:")) {
+    REXKRNL_INFO("[cache] NtCreateFile '{}' disposition {} access {:08X} options {:08X} -> {:08X} "
+                 "action {} handle {:08X}",
+                 target_path, uint32_t(creation_disposition), uint32_t(desired_access),
+                 uint32_t(create_options), result, uint32_t(file_action), handle);
+  }
   if (XFAILED(result)) {
     REXKRNL_IMPORT_FAIL("NtCreateFile", "path='{}' -> {:#x}", target_path, result);
   } else {

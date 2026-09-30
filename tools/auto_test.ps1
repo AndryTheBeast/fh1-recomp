@@ -14,7 +14,11 @@ param(
   [string]$Shots = "",
   [string]$ExtraArgs = "",
   # Scripted controller, passed as --fh1_autoplay (format in fh1/src/fh1_autoplay.h).
-  [string]$Autoplay = ""
+  [string]$Autoplay = "",
+  # Launch through RenderDoc (renderdoccmd capture). Combine with
+  # -ExtraArgs "--renderdoc_capture_seconds=120,150" to record single frames unattended;
+  # captures land in build_logs\rdc-<Name>-<date>_frame*.rdc.
+  [switch]$RenderDoc
 )
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent $PSScriptRoot
@@ -60,7 +64,22 @@ $ShotList = @($Shots -split "[,\s]+" | Where-Object { $_ } | ForEach-Object { [i
 $argv = @("--game_data_root=$Top\game_root", "--log_file=$Log", "--log_level=debug") +
   @($ExtraArgs -split "\s+" | Where-Object { $_ })
 if ($Autoplay) { $argv += "--fh1_autoplay=`"$Autoplay`"" }
-$p = Start-Process -FilePath $Exe -ArgumentList $argv -WorkingDirectory (Split-Path $Exe) -PassThru
+if ($RenderDoc) {
+  $RdCmd = "C:\Program Files\RenderDoc\renderdoccmd.exe"
+  $rdArgv = @("capture", "-d", (Split-Path $Exe), "-c", (Join-Path $Logs "rdc-$Name-$Stamp"), $Exe) + $argv
+  $launchTime = Get-Date
+  # renderdoccmd stays alive as long as the game does, so do not -Wait for it: poll for fh1.
+  Start-Process -FilePath $RdCmd -ArgumentList $rdArgv -WorkingDirectory (Split-Path $Exe) | Out-Null
+  $p = $null
+  for ($i = 0; $i -lt 60 -and -not $p; $i++) {
+    Start-Sleep -Milliseconds 500
+    $p = Get-Process fh1 -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -ge $launchTime.AddSeconds(-2) } |
+      Sort-Object StartTime -Descending | Select-Object -First 1
+  }
+  if (-not $p) { throw "RenderDoc did not start fh1.exe" }
+} else {
+  $p = Start-Process -FilePath $Exe -ArgumentList $argv -WorkingDirectory (Split-Path $Exe) -PassThru
+}
 $start = Get-Date
 foreach ($s in ($ShotList | Sort-Object)) {
   $wait = $s - ((Get-Date) - $start).TotalSeconds

@@ -391,6 +391,12 @@ u32 NtQueryVolumeInformationFile_entry(u32 file_handle,
   X_STATUS status = X_STATUS_SUCCESS;
   uint32_t out_length;
 
+  if (file->device() &&
+      rex::string::utf8_starts_with_case(file->device()->mount_path(), "\\Device\\Cache")) {
+    REXKRNL_INFO("[cache] NtQueryVolumeInformationFile class {} length {} on {}", uint32_t(info_class),
+                 uint32_t(info_length), file->device()->mount_path());
+  }
+
   switch (info_class) {
     case XFileFsVolumeInformation: {
       auto info = info_ptr.as<X_FILE_FS_VOLUME_INFORMATION*>();

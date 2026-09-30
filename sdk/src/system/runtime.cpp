@@ -350,9 +350,25 @@ bool Runtime::SetupVfs() {
     REXSYS_DEBUG("  Registered NullDevice for \\Device\\Harddisk0\\{{Partition0,Cache0,Cache1}}");
   }
 
-  // NOTE: Do NOT register a device for cache: paths
-  // Games handle "device not found" gracefully but don't handle actual device
-  // errors (like NAME_COLLISION) well. Let cache: fail cleanly.
+  // The utility (cache) partitions, as a game sees them after mounting one itself: FH1 links
+  // cache: => \Device\cache1 at boot and later creates cache:\ghost_stream_N and
+  // cache:\replay_stream when an event starts; with no device there it dereferences a null
+  // stream and crashes. The title "formats" the partition at every boot, so the host folder is
+  // emptied here too: leftovers from the previous run would turn its creates into
+  // NAME_COLLISION errors. Nothing is registered for cache: itself - games that never mount the
+  // partition still get "device not found" as before.
+  if (!cache_root_.empty()) {
+    for (const char* name : {"Cache0", "Cache1"}) {
+      auto host = cache_root_ / "xbox_utility" / name;
+      std::error_code ec;
+      std::filesystem::remove_all(host, ec);
+      auto cache_device = std::make_unique<rex::filesystem::HostPathDevice>(
+          std::string("\\Device\\") + name, host, false);
+      if (cache_device->Initialize() && file_system_->RegisterDevice(std::move(cache_device))) {
+        REXSYS_DEBUG("  Mounted {} at \\Device\\{} (emptied)", host.string(), name);
+      }
+    }
+  }
 
   return true;
 }

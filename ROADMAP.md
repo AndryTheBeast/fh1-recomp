@@ -83,7 +83,21 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
   - [ ] forza_tone.wmv / title scene: ~40 ms per frame of host-GPU work on the HD 630 (18 fps)
   - [x] "Audio cut" in the intro video is the video playing slowly (19 fps): its audio runs in real
         time and ends first. Should go away with the frame rate.
-- [ ] First drive
+- [x] First drive (the user played it through to the festival and saved, 2026-09-30)
+- [ ] Crash entering an event (user, 2026-09-30): the game creates cache:\ghost_stream_0..3 and
+      cache:\replay_stream; `cache:` is linked by the game to \Device\cache1, which did not exist,
+      so the creates failed and it read a null stream. Runtime::SetupVfs now mounts
+      <cache_root>\xbox_utility\Cache0/Cache1 at \Device\Cache0/1 (emptied at every boot, as the
+      title formats it). Not verified in an event yet - blocked by the crash below.
+- [ ] Crash loading a save (4 of 6 runs, unattended "continue" boot, 2026-09-30): worker thread in
+      sub_82D3DB00 (called from sub_82D44B90 / sub_82D1AAE8) 0.01-1.5 s after the main thread
+      deletes the loading fiber (start 82C0BEC8). It walks a table at [r3+84] + (r4&0xFF)*12
+      (count byte at +9, list at +4) and copies 544-byte records to its stack; the addresses it
+      faults on are garbage (3F800000, 00070707, 17861B87, 0x40, or past its stack), so the table
+      is being changed under it. Not the fiber's stack (keeping deleted fiber stacks did not help);
+      not lwarx/stwcx (compiled to CAS). Unrelated to the cache mount (the game touches cache: only
+      once, at boot). Next: find who writes that table (log r3/r4 at entry, watch [r3+84]).
+- [ ] First event
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
 ## Stages 3-5 — Nintendo Switch (separate repository)

@@ -248,8 +248,9 @@ u32 CreateFiber_entry(u32 dwStackSize, u32 lpStartAddress, mapped_void lpParamet
   ks->RegisterFiber(buf_addr, FiberInfo{host_fiber, unique_fiber_count++, buf_addr, stack_top,
                                         stack_bottom, false});
 
-  REXKRNL_DEBUG("CreateFiber: fiber={:#010x} start={:#010x} stack={:#x} param={:#010x}", buf_addr,
-                lpStartAddress, guest_stack_size, lpParameter.guest_address());
+  REXKRNL_DEBUG("CreateFiber: fiber={:#010x} start={:#010x} stack={:#x} ({:08X}-{:08X}) param={:#010x}",
+                buf_addr, lpStartAddress, guest_stack_size, stack_bottom, stack_top,
+                lpParameter.guest_address());
   return buf_addr;
 }
 

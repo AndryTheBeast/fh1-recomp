@@ -114,6 +114,14 @@ The screenshots copy the screen: if Windows has locked (user away) they show the
 though the game and its `[fps]` lines still run. Look at one shot before trusting a batch. Load
 times shrink on repeated runs (files cached by Windows), so the cutscene can start ~15 s earlier:
 take shots every few seconds from ~110 s rather than trusting fixed seconds.
+With a save present (the user's progress lives in `%USERPROFILE%\OneDrive\Documentos\fh1\
+B13EBABEBABEBABE\` - never delete it) the game skips the intro and loads the festival instead:
+the old intro-route timings no longer apply.
+
+Frame captures: RenderDoc is installed (winget). `auto_test.ps1 -RenderDoc -ExtraArgs
+"--renderdoc_capture_seconds=125,145"` records single guest frames into
+`build_logs\rdc-<name>-*.rdc`; `tools/rdc_dump.py` (run with qrenderdoc --python, see its header)
+lists the actions and saves the render targets as PNG.
 
 ## Tools written for this port
 
