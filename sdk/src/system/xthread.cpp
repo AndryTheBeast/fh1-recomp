@@ -310,8 +310,11 @@ bool XThread::AllocateStack(uint32_t size) {
   stack_limit_ = address + (padding / 2);
   stack_base_ = stack_limit_ + size;
 
-  // Initialize the stack with junk
-  memory()->Fill(stack_alloc_base_, actual_size, 0xBE);
+  // Zero the stack, as the console's kernel hands out zeroed pages. Xenia fills it with 0xBE junk
+  // to expose uninitialized reads, but FH1 depends on one: a worker thread that starts when a save
+  // finishes loading reads a never-written stack word as a table index (sub_82D3DB00 via
+  // sub_82D44B90 / sub_82D1AAE8), got 0xBE = 190 instead of 0, walked garbage and crashed.
+  memory()->Fill(stack_alloc_base_, actual_size, 0);
 
   // Setup the guard pages
   heap->Protect(stack_alloc_base_, padding / 2, memory::kMemoryProtectNoAccess);

@@ -209,8 +209,9 @@ u32 CreateFiber_entry(u32 dwStackSize, u32 lpStartAddress, mapped_void lpParamet
   uint32_t stack_bottom = stack_address;
   uint32_t initial_sp = stack_top - 0x50;
 
-  // Zero the initial 80-byte frame
-  std::memset(mem->TranslateVirtual(initial_sp), 0, 0x50);
+  // Zero the whole stack, not just the initial frame: the range may have held an earlier stack,
+  // and games can read never-written stack words (see XThread::AllocateStack).
+  std::memset(mem->TranslateVirtual(stack_bottom), 0, guest_stack_size);
 
   // Resolve start address to host function pointer
   PPCFunc* start_fn = ks->function_dispatcher()->GetFunction(lpStartAddress);

@@ -88,15 +88,17 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
       cache:\replay_stream; `cache:` is linked by the game to \Device\cache1, which did not exist,
       so the creates failed and it read a null stream. Runtime::SetupVfs now mounts
       <cache_root>\xbox_utility\Cache0/Cache1 at \Device\Cache0/1 (emptied at every boot, as the
-      title formats it). Not verified in an event yet - blocked by the crash below.
-- [ ] Crash loading a save (4 of 6 runs, unattended "continue" boot, 2026-09-30): worker thread in
-      sub_82D3DB00 (called from sub_82D44B90 / sub_82D1AAE8) 0.01-1.5 s after the main thread
-      deletes the loading fiber (start 82C0BEC8). It walks a table at [r3+84] + (r4&0xFF)*12
-      (count byte at +9, list at +4) and copies 544-byte records to its stack; the addresses it
-      faults on are garbage (3F800000, 00070707, 17861B87, 0x40, or past its stack), so the table
-      is being changed under it. Not the fiber's stack (keeping deleted fiber stacks did not help);
-      not lwarx/stwcx (compiled to CAS). Unrelated to the cache mount (the game touches cache: only
-      once, at boot). Next: find who writes that table (log r3/r4 at entry, watch [r3+84]).
+      title formats it). Not verified in an event yet (autoplay cannot reach one: needs the user).
+- [x] Crash loading a save (4 of 6 runs, "continue" boot, 2026-09-30). sub_82D3DB00 (from
+      sub_82D44B90 / sub_82D1AAE8) indexes a 12-byte table at [r3+84] with r4&0xFF; every good call
+      uses index 0, every crash used 190 = 0xBE: the index comes from a stack word the game never
+      writes, and XThread::AllocateStack filled new stacks with Xenia's 0xBE debug pattern. Stacks
+      are now zeroed like the console's (fiber stacks too): 10 of 11 runs clean. The 11th read a
+      stale 192 on a long-lived stack, so fh1/src/fh1_trace_load.cpp adds a guard (WORKAROUND):
+      an entry whose first word/list do not point just past the table falls back to entry 0,
+      logged as "not a real entry". 6/6 clean with it (guard never fired). The real uninitialized
+      read is upstream, probably in sub_82A7D730 (fills the vector at caller sp+384 whose w word
+      is the index). --fh1_trace_load logs every table entry used.
 - [ ] First event
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
