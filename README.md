@@ -17,8 +17,24 @@ Switch-side problems (memory, threads, Vulkan on NVK, shader pre-translation).
 
 ## Status
 
-See [ROADMAP.md](ROADMAP.md). The game boots on Windows through the title screen and into the intro drive;
-current work is crash fixes and performance.
+**Milestone (September 2026): playable on PC at full speed.** From a new game through the intro, the
+festival, loading a save and a complete race, with no crashes, at a steady **30 fps** (the game's own frame
+cap on the Xbox 360) with a correct picture. Rendering still goes through ReXGlue's Xenos GPU emulation
+(Direct3D 12); a native renderer comes later.
+
+Still being fixed: the car rides slightly above the road and can pass through other cars, and the HUD
+sometimes flashes. Details and history in [ROADMAP.md](ROADMAP.md).
+
+### Test hardware
+
+Development and testing now happen on a **Lenovo Legion Go** (handheld PC) with an **AMD Ryzen Z1 Extreme**
+APU: Zen 4 CPU and an RDNA 3 integrated GPU, running Windows 11.
+
+| Machine | GPU | Festival / free roam |
+| --- | --- | --- |
+| Lenovo Legion Go, Ryzen Z1 Extreme | Radeon (RDNA 3, integrated) | **28-30 fps**, correct picture |
+| Microsoft Surface, Core i7-1065G7 (earlier) | Intel Iris Plus G7 | ~7 fps, shadow/corner glitches |
+| Laptop, Core i7 (earlier) | Intel HD 630 | ~7 fps |
 
 ## Layout
 
@@ -35,7 +51,8 @@ current work is crash fixes and performance.
 ## Building on Windows
 
 1. `tools\setup_windows.bat` installs the tools (Git, CMake, Ninja, Python, LLVM, VS 2022 Build Tools).
-2. Put your ISO, `toolsuild_fh1.bat` and `toolsun_fh1.bat` in one folder next to this clone.
+2. Put your ISO, `tools\build_fh1.bat` and `tools\run_fh1.bat` in one folder next to this clone.
+un_fh1.bat` in one folder next to this clone.
 3. `run_fh1.bat` once extracts the disc; `build_fh1.bat` builds `fh1.exe`; `run_fh1.bat` plays it.
 
 ## Credits
