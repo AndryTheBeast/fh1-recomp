@@ -57,10 +57,16 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         scissored away). --native_stencil_value_output_d3d12_intel=true is much worse (green
         wheels, bright band at the bottom): Intel's PS stencil reference output is still broken.
         Next: RenderDoc capture of the cutscene frame to find the pass that writes that corner.
-        Ruled out on the Iris Plus (2026-09-30, square still there): --direct_host_resolve=false,
-        --mrt_edram_used_range_clamp_to_min=false. Still to compare on cutscene frames:
-        --execute_unclipped_draw_vs_on_cpu=true (Xenia's default; off here) with/without
-        _with_scissor=true (the runs so far missed the cutscene - see the crash below).
+        Ruled out on the Iris Plus (2026-09-30, square still there with each):
+        --direct_host_resolve=false, --mrt_edram_used_range_clamp_to_min=false,
+        --execute_unclipped_draw_vs_on_cpu=true (+ _with_scissor=true),
+        --depth_transfer_not_equal_test=false, --native_2x_msaa=false.
+        The square (~x 1183-1280, y 630-720 of 1280x720, blurred edges, blue-grey) is at a fixed
+        screen spot: it shows in sky-only frames and at the drive start too, sometimes with a thin
+        dark bar along the bottom edge. Looks like a scratch region the game draws into and later
+        covers (on ROV) but that the host-RT path keeps. Needs a frame capture (RenderDoc).
+        ROV on the Iris Plus (user watched, 2026-09-30): "fixed almost every glitch" but the drive
+        runs at 1-2 fps (0.2 at worst) - usable only as the correct reference picture.
   - [x] Crash at the start of forza_tone.wmv (3 runs in a row on the Surface, ~80 s in):
         "Thunk address space exhausted for module at 823E0000", then XexGetProcedureAddress
         ordinal 6 in XMediaFacade returns 0 and the game calls address 0. UserModule lookups got a
