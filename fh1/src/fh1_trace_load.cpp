@@ -10,8 +10,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <vector>
 #include <string>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <mutex>
@@ -112,8 +115,105 @@ REXCVAR_DEFINE_STRING(fh1_find_string, "", "FH1",
                       "Debug: log the guest addresses of this text in default.xex's image "
                       "(searched once, when the game first reaches sub_82D3DB00)");
 
+// Car-collision investigation (cars and some objects pass through each other). The game registers
+// its named tuning values ("CollisionsOffTime", "noghosts", ...) with three helpers, each taking
+// r4 = name, r5 = address of the variable. This records them and, from a helper thread, logs the
+// current values of those whose name contains one of the filter words every 20 s.
+REXCVAR_DEFINE_STRING(fh1_watch_tunables, "", "FH1",
+                      "Debug: comma-separated words; log the game's tuning values whose name "
+                      "contains one of them every 20 s (e.g. \"ollision,host,ollide\")");
+
+namespace {
+struct Tunable {
+  std::string name;
+  uint32_t address;
+  char kind;  // 'b' bool byte, 'f' float, 'i' 32-bit
+};
+std::mutex g_tunables_mutex;
+std::vector<Tunable> g_tunables;
+std::atomic<uint8_t*> g_base{nullptr};
+
+std::string GuestString(const uint8_t* base, uint32_t address) {
+  std::string s;
+  for (uint32_t i = 0; i < 96 && base[address + i]; ++i) s += char(base[address + i]);
+  return s;
+}
+
+void RecordTunable(PPCContext& ctx, uint8_t* base, char kind) {
+  std::string list = REXCVAR_GET(fh1_watch_tunables);
+  if (list.empty()) return;
+  std::string name = GuestString(base, ctx.r4.u32);
+  bool match = false;
+  for (size_t start = 0; start < list.size();) {
+    size_t comma = list.find(',', start);
+    if (comma == std::string::npos) comma = list.size();
+    std::string word = list.substr(start, comma - start);
+    start = comma + 1;
+    if (!word.empty() && name.find(word) != std::string::npos) match = true;
+  }
+  if (!match) return;
+  std::lock_guard<std::mutex> lock(g_tunables_mutex);
+  g_tunables.push_back({name, ctx.r5.u32, kind});
+  REXLOG_INFO("[tunable] registered {} '{}' at {:08X} (from {:08X})", kind, name, ctx.r5.u32,
+              uint32_t(ctx.lr));
+  if (!g_base.exchange(base)) {
+    std::thread([] {
+      for (;;) {
+        std::this_thread::sleep_for(std::chrono::seconds(20));
+        uint8_t* b = g_base.load();
+        std::lock_guard<std::mutex> lock2(g_tunables_mutex);
+        for (const auto& t : g_tunables) {
+          uint32_t w = Be32(b, t.address);
+          float f;
+          std::memcpy(&f, &w, 4);
+          if (t.kind == 'b') {
+            REXLOG_INFO("[tunable] {} = {}", t.name, unsigned(b[t.address]));
+          } else if (t.kind == 'f') {
+            REXLOG_INFO("[tunable] {} = {} ({:08X})", t.name, f, w);
+          } else {
+            REXLOG_INFO("[tunable] {} = {} ({:08X}, as float {})", t.name, int32_t(w), w, f);
+          }
+        }
+      }
+    }).detach();
+  }
+}
+}  // namespace
+
+REX_EXTERN(__imp__sub_82C096E0);
+REX_HOOK_RAW(sub_82C096E0) {
+  RecordTunable(ctx, base, 'b');
+  __imp__sub_82C096E0(ctx, base);
+}
+REX_EXTERN(__imp__sub_82C09468);
+REX_HOOK_RAW(sub_82C09468) {
+  RecordTunable(ctx, base, 'i');
+  __imp__sub_82C09468(ctx, base);
+}
+REX_EXTERN(__imp__sub_82C1A110);
+REX_HOOK_RAW(sub_82C1A110) {
+  RecordTunable(ctx, base, 'f');
+  __imp__sub_82C1A110(ctx, base);
+}
+
+REXCVAR_DEFINE_STRING(fh1_dump_image, "", "FH1",
+                      "Debug: write default.xex's loaded image (0x82000000-0x83620000) to this "
+                      "file, once, for offline analysis (strings, tables, cross-references)");
+
 REX_EXTERN(__imp__sub_82D3DB00);
 REX_HOOK_RAW(sub_82D3DB00) {
+  {
+    static std::atomic<bool> dumped{false};
+    std::string path = REXCVAR_GET(fh1_dump_image);
+    if (!path.empty() && !dumped.exchange(true)) {
+      constexpr uint32_t kImageBegin = 0x82000000, kImageEnd = 0x83620000;
+      if (FILE* f = std::fopen(path.c_str(), "wb")) {
+        std::fwrite(base + kImageBegin, 1, kImageEnd - kImageBegin, f);
+        std::fclose(f);
+        REXLOG_INFO("[find] image {:08X}-{:08X} written to {}", kImageBegin, kImageEnd, path);
+      }
+    }
+  }
   {
     static std::atomic<bool> searched{false};
     // Comma-separated needles; "0x82D80DD8" searches for that big-endian word and also logs the

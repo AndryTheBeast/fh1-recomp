@@ -109,6 +109,17 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         queries; the save-loading crash was an uninitialized index coming out of the same area
         (sub_82A7D730 fills the vector whose w word is the surface index). Check first whether
         those queries return hits at all (a translation bug in the vector math would fit all three).
+        2026-10-01, Legion Go race at 30 fps (run-20261001-000832): the car no longer floats
+        (was a low-fps effect), but cars pass COMPLETELY through each other, always, all cars
+        (AI + traffic) and some objects; ground and world geometry collide fine.
+        Checked, all fine: upstream's PPC instruction suite (sdk/tests/ppc, 1458 cases, run with
+        tools/run_ppc_tests.ps1) passes; vmaddcfp128/vnmsubfp128/vcsxwfp128/fsel/fcmpu/dcbz/mftb
+        read correctly; no physics file is missing; the collision tunables have sane values
+        (--fh1_watch_tunables=ollision,host: PostResetNonCollideTime 3, CollisionsOffTime 2,
+        CollisionBias* 0.5/1, CollisionSphereRadius 0.5). Tools: --fh1_dump_image writes the
+        loaded image for offline analysis; tunables are registered by sub_82C1A110 (float),
+        sub_82C096E0 (bool), sub_82C09468 (r4 name, r5 variable). The game has a CollisionMode
+        (Default/AlwaysOn/AlwaysOff/Ghosts, used in sub_826063E0 / sub_8260A4D8) - next: log it.
         Legion Go (2026-10-01): the user did not see the car float in the first 30 fps run. New
         lead: both may be large-physics-step artifacts of the 7-9 fps runs (suspension settling
         wrong, cars tunnelling between checks). Re-check in a race at 30 fps before digging.

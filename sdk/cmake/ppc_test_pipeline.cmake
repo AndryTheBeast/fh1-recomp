@@ -3,8 +3,11 @@
 # Provides ppc_add_test_binary() for assembling, linking, and generating
 # symbol maps from PPC assembly test files.
 
-# Locate PPC toolchain in tools/ directory
-set(PPC_TOOLS_DIR "${PROJECT_SOURCE_DIR}/tools/binutils")
+# Locate PPC toolchain in tools/ directory (or pass -DPPC_TOOLS_DIR=...; fh1 keeps the upstream
+# binaries outside git, see tools/run_ppc_tests.ps1)
+if(NOT PPC_TOOLS_DIR)
+    set(PPC_TOOLS_DIR "${PROJECT_SOURCE_DIR}/tools/binutils")
+endif()
 
 if(WIN32)
     set(PPC_ASSEMBLER "${PPC_TOOLS_DIR}/powerpc-none-elf-as.exe")
