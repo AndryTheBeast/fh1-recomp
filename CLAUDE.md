@@ -12,21 +12,26 @@ untouched until then. The base is the nfsmw-nx
 project (NFS Most Wanted for Switch); its game-specific app lives in `reference/nfsmw-app/` as a
 worked example.
 
-Status (2026-09-30): the Windows build boots through the logos, title screen, intro video and
-the in-engine cutscene into the intro drive, and leaves/reloads the XMedia/Speech modules without
-crashing. Rendering uses the SDK's xenos GPU emulation (D3D12, host render targets). Everything
-since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
+Status (2026-09-30, end of the Surface session): playable from a new game through the intro,
+the festival, loading a save and a full race (the user finished an event). Fixed that day: a crash
+at the intro video (thunk pool), the crash loading a save (0xBE stack fill), the crash entering an
+event (no cache: device). Rendering uses the SDK's xenos GPU emulation (D3D12, host render
+targets = RTV). Everything since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
 
-Performance (earlier laptop, Intel HD 630): logos 60 fps, title/intro video ~19 fps, intro drive
-~7 fps. Iris Plus G7 (current): about the same, videos ~23 fps. Planned next test machine: Lenovo
-Legion Go (AMD Ryzen Z1 Extreme APU). GPU time per drive frame 137 ms: 54 draws, 30 EDRAM render
-target transfers, 26 resolves, 19 textures. EDRAM emulation is ~55% of it, so 30 fps needs the
-native renderer.
+Known problems: the car drives above the road and clips into other cars; the HUD flashes; on
+Intel, RTV shows a dark square bottom-right and a hard-edged car shadow (ROV draws both right).
+
+Performance so far only on Intel iGPUs: HD 630 and Iris Plus G7 both ~7 fps in the drive and in
+the festival (~3,800 draws per frame, the frame drawn in 3 strips), ~20 fps in videos. Speed
+experiments (all off by default) are in ROADMAP "Stop-gap speed".
+
+**Machine change (2026-10-01): the project moves to a Lenovo Legion Go (AMD Ryzen Z1 Extreme:
+Zen 4 CPU + RDNA 3 iGPU, 1920x1200 screen).** Re-measure everything there before changing code;
+the Intel-only rendering workarounds may not be needed (see Next steps).
 
 **Decision (user, 2026-09-30): make the game fully working with the current GPU emulation first,
-then build the native renderer on PC.** Since 2026-09-30 the project lives on a new machine
-(Microsoft Surface, i7-1065G7, Intel Iris Plus G7, no discrete GPU); the first full build there
-succeeded.
+then build the native renderer on PC.** User's order after that: a stop-gap speed-up first, then
+the gameplay/visual bugs.
 
 ## Legal rule (never break it)
 
@@ -35,18 +40,24 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 
 ## The user's setup
 
-- Windows 11 Pro on a Microsoft Surface (i7-1065G7, Intel Iris Plus G7 iGPU, 16 GB), PS4
-  controller through DS4Windows (can show up twice: real pad + virtual Xbox 360 pad — handled by
-  `fh1_merge_controllers`).
+- Windows 11 on a Lenovo Legion Go (AMD Ryzen Z1 Extreme) from 2026-10-01; before that a Surface
+  (Intel Iris Plus G7) and a laptop with an Intel HD 630. PS4 controller through DS4Windows (can
+  show up twice: real pad + virtual Xbox 360 pad — handled by `fh1_merge_controllers`). The user
+  is not a programmer: short plain explanations, and say exactly what to run.
 - Everything lives in `C:\Users\andre\Desktop\FH1-recomp\`:
   - the ISO, `game_root\` (full extracted disc), `README.txt`, `claude_memory\` (backup copy of
-    Claude's memory notes), `_old\` (superseded extraction scripts, disc file list)
+    Claude's memory notes), `.claude\settings.json` (permissions, from tools\claude_settings.json)
   - `fh1-recomp\` = this repo (clone), built by `build_fh1.bat`
   - `build_fh1.bat` — fetch + `reset --hard origin/main`, then `tools\build_windows.ps1`
   - `run_fh1.bat` — extracts the disc on first run, then runs fh1.exe with a log
-  - `build_logs\` — every build step's log, `run-<date>.log`, and `run-<date>.log.crash.txt`
-- Toolchain installed: LLVM/clang 23 (on PATH), CMake 4.4, Ninja, Python 3.13, Git,
-  VS 2022 Build Tools (VCTools), VC++ redistributable.
+  - `build_logs\` — every build step's log, `run-<date>.log`, and `run-<date>.log.crash.txt`;
+    `archive-2026-09-29_30.zip` (HD 630 laptop) and `archive-2026-09-30-surface\` (Iris Plus:
+    logs zip + key screenshots, see its README.txt)
+- The user's saves: `%USERPROFILE%\OneDrive\Documentos\fh1\B13EBABEBABEBABE\` — never delete.
+  The emulated Xbox cache partition is `...\fh1\cache\xbox_utility\` (emptied at every start).
+- Toolchain: LLVM/clang (on PATH), CMake, Ninja, Python 3.13, Git, GitHub CLI, VS 2022 Build Tools
+  (VCTools), VC++ redistributable, RenderDoc (optional, `winget install BaldurKarlsson.RenderDoc`).
+- The user's internet can drop (phone hotspot): build with `-SkipFetch` once sdk\thirdparty exists.
 
 ## Fresh PC setup (after a Windows reinstall)
 
@@ -66,6 +77,9 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
    build, read logs and commit without asking each time. Set git's identity:
    `git config --global user.name AndryTheBeast` and `git config --global user.email antigotgvs@gmail.com`.
 5. Run `run_fh1.bat` once (extracts the disc into game_root), then `build_fh1.bat`.
+6. Bring the user's saves: `%USERPROFILE%\OneDrive\Documentos\fh1\` (OneDrive syncs it on the same
+   account; otherwise copy it over by hand). Copy `FH1-recomp\claude_memory\*` to
+   `%USERPROFILE%\.claude\projects\C--Users-andre-Desktop-FH1-recomp\memory\`.
 
 ## Layout
 
@@ -98,13 +112,13 @@ Codegen: `rexglue codegen fh1_manifest.toml` from `fh1/` (~3 min). After editing
 ## Unattended testing (no one at the PC)
 
 `tools/auto_test.ps1` runs fh1.exe for N seconds, screenshots the game window at chosen seconds
-(`build_logs	est-<name>-<date>-<s>s.png`, read them with the Read tool) and prints the `[fps]`
+(`build_logs\test-<name>-<date>-<s>s.png`, read them with the Read tool) and prints the `[fps]`
 lines. `-Autoplay` passes `--fh1_autoplay` (fh1/src/fh1_autoplay.h): a virtual pad that holds
 buttons on a timetable. Route: title (Start) -> A to confirm -> forza_tone intro video (~82 s)
 -> controls screen -> in-engine cutscene (same camera every run at ~160-176 s: best frames for
 before/after screenshots) -> the drive. With nobody touching the pad:
 
-    powershell -ExecutionPolicy Bypass -File toolsuto_test.ps1 -Name cut -Seconds 182 `
+    powershell -ExecutionPolicy Bypass -File tools\auto_test.ps1 -Name cut -Seconds 182 `
       -Shots "160,168,176" -Autoplay "34+0.3=start;36+0.3=start;38+0.3=start;41+0.3=a;43+0.3=a;46+0.3=a;124+0.3=a;127+0.3=a;131+0.3=a"
 
 Append ";180+60=rt" (and a longer -Seconds) to hold the accelerator in the drive. Nothing steers
@@ -157,27 +171,38 @@ lists the actions and saves the render targets as PNG.
   had switchable graphics and D3D12 silently picked the iGPU).
 - Staging files to the user's PC through the bridge sometimes delivers a stale copy: check the
   size on the device after writing, and use a new staged file name if it did not change.
+- A crash whose bad value is 0xBE / 190 (or 0xBEBEBEBE) was an uninitialized stack read: Xenia
+  filled new stacks with 0xBE. Stacks are now zeroed like the console's (XThread::AllocateStack).
+- The game verifies its data files: changing even one byte of media\*.zip (CRCs updated or not)
+  makes it call XamShowDirtyDiscErrorUI at boot. Change settings in memory, never on disk.
+- Run logs rotate at 5 MB (`run-*.1.log`, `.2.log`, ...): read all of them.
+- Hooking a game function from the app: `REX_EXTERN(__imp__sub_X); REX_HOOK_RAW(sub_X) { ...
+  __imp__sub_X(ctx, base); }` (see fh1/src/fh1_trace_load.cpp).
+- Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
 ## Next steps
 
-0. First run on the Surface: check the `DXGI adapter:` line says Iris Plus, then run the
-   unattended cutscene/drive test for new `[fps]` numbers (old HD 630 numbers are above; its raw
-   logs are in `build_logs\archive-2026-09-29_30`).
-1. ~~Log health check~~ done 2026-09-30 (Surface run test-surface1-20260930-043708, to the
-   cutscene): nothing blocking. Harmless: failed opens of media\effects\, stringtables\en\,
-   colourgradingmaps\, db\patch\, BadgesAndTitles\ (not on the disc); Kinect XAM message app FE
-   msg 2B003; XamXStudioRequest / XamVoiceSetMicArrayIdleUsers / EtxProducerRegister /
-   NetDll_getsockopt stubs; 2x BaseHeap::Release (also seen in codegen). `cache:\`: the first
-   probe fails, then the game links `cache: => \Device\cache1` itself (NullDevice), flushes it,
-   and never opens a file under it up to the drive - no streaming through it; revisit only if a
-   later part of the game opens cache:\ paths. "PM4_DRAW_INDX_2 Failed in backend
-   (edram_mode=6)" (~6/frame) are copy/resolve packets, one per "Resolve region is empty" -
-   the scissored-away tiling strips, not lost geometry (see ROADMAP). `[io] LENTO` slow-open
-   warnings: max 139 ms, during the level load only.
-2. Glitches: dark square in the bottom-right corner (RTV path on Intel only; ROV is correct) and
-   the hard-edged car shadow. Use RenderDoc on the cutscene frame. Re-check both on the Iris Plus
-   (Intel again, so the dark square likely still shows).
-3. Play past the intro drive (festival, menus, first races): autoplay cannot steer, so ask the
-   user to play and send logs, or extend fh1_autoplay.
-4. Then the native renderer on PC (`reference/nfsmw-app/src/nfsmw_nativo_*`, XenosRecomp shaders).
+1. Set up the Legion Go ("Fresh PC setup" above), build, and check the `DXGI adapter:` log line
+   names the AMD GPU.
+2. Baseline on the Z1 Extreme before touching code. With a save present the game boots straight
+   into the festival (~65-100 s), so the unattended test is:
+
+       powershell -ExecutionPolicy Bypass -File tools\auto_test.ps1 -Name base -Seconds 140 `
+         -Shots "110,125,138" -Autoplay "34+0.3=start;36+0.3=start;38+0.3=start;41+0.3=a;43+0.3=a;46+0.3=a"
+
+   Run it twice: default (RTV) and with `-ExtraArgs "--render_target_path_d3d12=rov"`. Compare
+   `[fps]`, `[fps] host GPU per frame` and the screenshots with the Surface
+   (`build_logs\archive-2026-09-30-surface\`: festival 7.4 fps, ~130 ms host GPU per frame).
+   Questions: is ROV (correct picture) fast enough now? Does RTV still show the dark square and the
+   hard car shadow on AMD? (On Intel the stencil-reference export is missing and xenia falls back;
+   AMD has it.) Is the frame CPU-bound (`GPU thread busy` ~100% with low host-GPU time) or GPU-bound?
+3. Stop-gap speed (the user's priority): finish the single-strip mode (ROADMAP "Stop-gap speed":
+   force window offset 0 and a full scissor for draws, strip 1's copy destination, one resolve of
+   all rows), or real screen extents, depending on what the baseline shows.
+4. Gameplay/visual bugs: car above the road and clipping into cars (collision / ground queries;
+   see the save-loading crash notes in ROADMAP), HUD flashing, then whatever RTV still gets wrong.
+5. Then the native renderer on PC (`reference/nfsmw-app/src/nfsmw_nativo_*`, XenosRecomp shaders).
    The Switch port is a separate repository, later.
+
+Done and verified (details in ROADMAP): log health check (harmless warnings listed there), the
+intro-video crash, the save-loading crash, the event crash (cache: mount), first event finished.
