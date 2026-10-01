@@ -175,6 +175,46 @@ inline simde__m128i simde_mm_cmpgt_epu16(simde__m128i a, simde__m128i b) {
   return simde_mm_cmpgt_epi16(simde_mm_xor_si128(a, c), simde_mm_xor_si128(b, c));
 }
 
+// vmsum3fp128 / vmsum4fp128 as the Xbox 360 computes them (same as Xenia's x64 backend,
+// OPCODE_DOT_PRODUCT_3/4): products and sums in float64, one rounding to float32, in the order
+// (x + z) + y and (x + z) + (y + w). A float32 overflow of a finite sum gives the canonical QNaN,
+// not infinity; infinities and NaNs coming from the inputs pass through. Result in all lanes.
+// Games rely on it: FH1's GJK starts its simplex at -FLT_MAX and its progress test only goes on
+// when |v|^2 is NaN; with a host dot product (+inf) every convex-shape collision test stopped on
+// its first iteration and cars passed through each other.
+// Host lanes are reversed: f32[3] = guest x, f32[2] = y, f32[1] = z, f32[0] = w.
+inline simde__m128 simde_mm_vmsum_finish(double sum) {
+  float result = float(sum);
+  uint32_t bits;
+  std::memcpy(&bits, &result, 4);
+  uint64_t sum_bits;
+  std::memcpy(&sum_bits, &sum, 8);
+  bool sum_finite = ((sum_bits >> 52) & 0x7FF) != 0x7FF;
+  if ((bits & 0x7F800000u) == 0x7F800000u && sum_finite) bits = 0x7FC00000u;
+  return simde_mm_castsi128_ps(simde_mm_set1_epi32(int32_t(bits)));
+}
+
+inline simde__m128 simde_mm_vmsum3fp(simde__m128 a, simde__m128 b) {
+  alignas(16) float fa[4], fb[4];
+  simde_mm_store_ps(fa, a);
+  simde_mm_store_ps(fb, b);
+  double x = double(fa[3]) * double(fb[3]);
+  double y = double(fa[2]) * double(fb[2]);
+  double z = double(fa[1]) * double(fb[1]);
+  return simde_mm_vmsum_finish((x + z) + y);
+}
+
+inline simde__m128 simde_mm_vmsum4fp(simde__m128 a, simde__m128 b) {
+  alignas(16) float fa[4], fb[4];
+  simde_mm_store_ps(fa, a);
+  simde_mm_store_ps(fb, b);
+  double x = double(fa[3]) * double(fb[3]);
+  double y = double(fa[2]) * double(fb[2]);
+  double z = double(fa[1]) * double(fb[1]);
+  double w = double(fa[0]) * double(fb[0]);
+  return simde_mm_vmsum_finish((x + z) + (y + w));
+}
+
 // Vector Convert To Signed Fixed-Point Word Saturate
 inline simde__m128i simde_mm_vctsxs(simde__m128 src1) {
   simde__m128 xmm2 = simde_mm_cmpunord_ps(src1, src1);

@@ -119,7 +119,22 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         CollisionBias* 0.5/1, CollisionSphereRadius 0.5). Tools: --fh1_dump_image writes the
         loaded image for offline analysis; tunables are registered by sub_82C1A110 (float),
         sub_82C096E0 (bool), sub_82C09468 (r4 name, r5 variable). The game has a CollisionMode
-        (Default/AlwaysOn/AlwaysOff/Ghosts, used in sub_826063E0 / sub_8260A4D8) - next: log it.
+        (Default/AlwaysOn/AlwaysOff/Ghosts, used in sub_826063E0 / sub_8260A4D8): logged
+        AlwaysOn (--fh1_watch_collision_mode). User: no sound, no damage, only a camera flick.
+        ROOT CAUSE (2026-10-01): vmsum3fp128/vmsum4fp128 used the host dot product (dp_ps),
+        which gives +inf on float32 overflow; the console (and Xenia, OPCODE_DOT_PRODUCT_3/4)
+        sums in float64 and returns QNaN when a finite sum overflows float32. Chain, found with
+        --fh1_trace_epa (fh1/src/fh1_trace_epa.cpp): narrow phase sub_82D42638 dispatches pairs
+        through the 6x6 table at 832AF138 by shape type; type 1x1 (sub_82D29BE8) made contacts,
+        every pair with a type-2 (convex) shape made none (sub_82D1AAE8, sub_82D44B90). Their GJK
+        sub_82D43290 stopped every test in iteration 0: the empty simplex holds v = -FLT_MAX, the
+        progress test sub_82D420F0 computes |v|^2 with vmsum3fp128 and stops when
+        eps*FLT_MAX >= FLT_MAX - |v|^2 - true for +inf, false for NaN. So GJK always answered
+        "apart" (identical witness points, NaN normals, unwritten surface index = the old
+        save-loading crash's 0xBE index). Fixed in sdk/include/rex/ppc/intrinsics.h
+        (simde_mm_vmsum3fp/4fp) + builders; PPC tests added (overflow -> 7FC00000).
+        Tools left for later: --fh1_nan_trap=N (logs code sites that create NaNs; very noisy, the
+        rsqrt Newton step and (x-a)/(b-a) idioms make NaNs on purpose), --fh1_watch_tunables=*.
         Legion Go (2026-10-01): the user did not see the car float in the first 30 fps run. New
         lead: both may be large-physics-step artifacts of the 7-9 fps runs (suspension settling
         wrong, cars tunnelling between checks). Re-check in a race at 30 fps before digging.

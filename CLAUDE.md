@@ -184,6 +184,14 @@ lists the actions and saves the render targets as PNG.
 - OneDrive may keep the saves "online-only" on a new PC: `attrib +P -U <fh1 folder> /S /D` pins
   them to the device so the game never waits on a download (done on the Legion Go).
 - `auto_test.ps1` used to print only the newest log part; it now reads the rotated parts too.
+- Instruction semantics must match the console, not just IEEE: vmsum3fp128/vmsum4fp128 give
+  QNaN on float32 overflow (float64 sum), and FH1's collision GJK depends on it. When a guest
+  algorithm misbehaves, compare our builder with Xenia's x64 sequences (x64_sequences.cc,
+  x64_seq_vector.cc) - they encode many such console quirks. tools/run_ppc_tests.ps1 runs the
+  instruction suite (upstream binutils in FH1-recomp\ppc_binutils, not in git); add a test for
+  every quirk fixed.
+- Finding a game subsystem without symbols: --fh1_dump_image + the strings/xref scripts approach
+  (ROADMAP, car collisions): strings -> lis/addi cross-references -> function -> hook and log.
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
 ## Next steps

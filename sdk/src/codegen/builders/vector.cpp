@@ -183,23 +183,23 @@ bool build_vlogefp(BuilderContext& ctx) {
 // Vector Dot Products
 //=============================================================================
 
+// Not simde_mm_dp_ps: the console sums in float64 and turns a float32 overflow into QNaN (see
+// rex::ppc::simde_mm_vmsum3fp). A host dot product gives +inf there, which broke FH1's convex
+// collision tests (GJK never left its first iteration).
 bool build_vmsum3fp128(BuilderContext& ctx) {
-  // 3-element dot product accounting for guest->host vector element reversal
-  // 0xEF = dot(yzw) with result broadcast to all elements (see constants doc)
   ctx.emit_set_flush_mode(true);
   ctx.println(
-      "\tsimde_mm_store_ps({}.f32, simde_mm_dp_ps(simde_mm_load_ps({}.f32), "
-      "simde_mm_load_ps({}.f32), 0xEF));",
+      "\tsimde_mm_store_ps({}.f32, rex::ppc::simde_mm_vmsum3fp(simde_mm_load_ps({}.f32), "
+      "simde_mm_load_ps({}.f32)));",
       ctx.v(ctx.insn.operands[0]), ctx.v(ctx.insn.operands[1]), ctx.v(ctx.insn.operands[2]));
   return true;
 }
 
 bool build_vmsum4fp128(BuilderContext& ctx) {
-  // 4-element dot product: 0xFF = all 4 elements, result to all (see constants doc)
   ctx.emit_set_flush_mode(true);
   ctx.println(
-      "\tsimde_mm_store_ps({}.f32, simde_mm_dp_ps(simde_mm_load_ps({}.f32), "
-      "simde_mm_load_ps({}.f32), 0xFF));",
+      "\tsimde_mm_store_ps({}.f32, rex::ppc::simde_mm_vmsum4fp(simde_mm_load_ps({}.f32), "
+      "simde_mm_load_ps({}.f32)));",
       ctx.v(ctx.insn.operands[0]), ctx.v(ctx.insn.operands[1]), ctx.v(ctx.insn.operands[2]));
   return true;
 }

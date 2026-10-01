@@ -143,7 +143,9 @@ void RecordTunable(PPCContext& ctx, uint8_t* base, char kind) {
   std::string list = REXCVAR_GET(fh1_watch_tunables);
   if (list.empty()) return;
   std::string name = GuestString(base, ctx.r4.u32);
-  bool match = false;
+  // "*" = every tunable, dumped once 90 s after the first one (thousands of lines).
+  bool all = list == "*";
+  bool match = all;
   for (size_t start = 0; start < list.size();) {
     size_t comma = list.find(',', start);
     if (comma == std::string::npos) comma = list.size();
@@ -154,12 +156,14 @@ void RecordTunable(PPCContext& ctx, uint8_t* base, char kind) {
   if (!match) return;
   std::lock_guard<std::mutex> lock(g_tunables_mutex);
   g_tunables.push_back({name, ctx.r5.u32, kind});
-  REXLOG_INFO("[tunable] registered {} '{}' at {:08X} (from {:08X})", kind, name, ctx.r5.u32,
-              uint32_t(ctx.lr));
+  if (!all) {
+    REXLOG_INFO("[tunable] registered {} '{}' at {:08X} (from {:08X})", kind, name, ctx.r5.u32,
+                uint32_t(ctx.lr));
+  }
   if (!g_base.exchange(base)) {
-    std::thread([] {
-      for (;;) {
-        std::this_thread::sleep_for(std::chrono::seconds(20));
+    std::thread([all] {
+      for (int pass = 0; !all || pass < 1; ++pass) {
+        std::this_thread::sleep_for(std::chrono::seconds(all ? 90 : 20));
         uint8_t* b = g_base.load();
         std::lock_guard<std::mutex> lock2(g_tunables_mutex);
         for (const auto& t : g_tunables) {
@@ -167,11 +171,11 @@ void RecordTunable(PPCContext& ctx, uint8_t* base, char kind) {
           float f;
           std::memcpy(&f, &w, 4);
           if (t.kind == 'b') {
-            REXLOG_INFO("[tunable] {} = {}", t.name, unsigned(b[t.address]));
+            REXLOG_INFO("[tunable] {:08X} {} = {}", t.address, t.name, unsigned(b[t.address]));
           } else if (t.kind == 'f') {
-            REXLOG_INFO("[tunable] {} = {} ({:08X})", t.name, f, w);
+            REXLOG_INFO("[tunable] {:08X} {} = {} ({:08X})", t.address, t.name, f, w);
           } else {
-            REXLOG_INFO("[tunable] {} = {} ({:08X}, as float {})", t.name, int32_t(w), w, f);
+            REXLOG_INFO("[tunable] {:08X} {} = {} ({:08X}, as float {})", t.address, t.name, int32_t(w), w, f);
           }
         }
       }
@@ -196,12 +200,67 @@ REX_HOOK_RAW(sub_82C1A110) {
   __imp__sub_82C1A110(ctx, base);
 }
 
+// Race settings record: +660 damage model (Cosmetic/Limited/Simulation), +661 CollisionMode
+// (Default/AlwaysOn/AlwaysOff/Ghosts/RealGhosts), +662 difficulty. sub_826063E0 and
+// sub_8260A4D8 serialize it (name tables at 82006C00, 820299E8, 82006C18). With
+// --fh1_watch_collision_mode every record they touch is logged on each call and every 20 s.
+REXCVAR_DEFINE_BOOL(fh1_watch_collision_mode, false, "FH1",
+                    "Debug: log the race settings' CollisionMode (+661) of every record "
+                    "sub_826063E0/sub_8260A4D8 touch, on each call and every 20 s");
+
+namespace {
+std::mutex g_modes_mutex;
+std::vector<uint32_t> g_mode_records;
+
+void LogCollisionMode(const char* when, uint8_t* base, uint32_t record, uint32_t lr) {
+  static const char* kModes[] = {"Default", "AlwaysOn", "AlwaysOff", "Ghosts", "RealGhosts"};
+  uint8_t mode = base[record + 661];
+  REXLOG_INFO("[collmode] {} record {:08X}: damage {} collision {} ({}) difficulty {} (lr {:08X})",
+              when, record, unsigned(base[record + 660]), unsigned(mode),
+              mode < 5 ? kModes[mode] : "?", unsigned(base[record + 662]), lr);
+}
+
+void WatchCollisionMode(PPCContext& ctx, uint8_t* base, const char* fn) {
+  if (!REXCVAR_GET(fh1_watch_collision_mode)) return;
+  uint32_t record = ctx.r3.u32;
+  LogCollisionMode(fn, base, record, uint32_t(ctx.lr));
+  std::lock_guard<std::mutex> lock(g_modes_mutex);
+  if (std::find(g_mode_records.begin(), g_mode_records.end(), record) != g_mode_records.end())
+    return;
+  bool first = g_mode_records.empty();
+  g_mode_records.push_back(record);
+  if (first) {
+    std::thread([base] {
+      for (;;) {
+        std::this_thread::sleep_for(std::chrono::seconds(20));
+        std::lock_guard<std::mutex> lock2(g_modes_mutex);
+        for (uint32_t r : g_mode_records) LogCollisionMode("now", base, r, 0);
+      }
+    }).detach();
+  }
+}
+}  // namespace
+
+REX_EXTERN(__imp__sub_826063E0);
+REX_HOOK_RAW(sub_826063E0) {
+  WatchCollisionMode(ctx, base, "sub_826063E0");
+  __imp__sub_826063E0(ctx, base);
+}
+REX_EXTERN(__imp__sub_8260A4D8);
+REX_HOOK_RAW(sub_8260A4D8) {
+  WatchCollisionMode(ctx, base, "sub_8260A4D8");
+  __imp__sub_8260A4D8(ctx, base);
+}
+
 REXCVAR_DEFINE_STRING(fh1_dump_image, "", "FH1",
                       "Debug: write default.xex's loaded image (0x82000000-0x83620000) to this "
                       "file, once, for offline analysis (strings, tables, cross-references)");
 
+void Fh1NanTrapArm(PPCContext& ctx);  // fh1_nan_trap.cpp
+
 REX_EXTERN(__imp__sub_82D3DB00);
 REX_HOOK_RAW(sub_82D3DB00) {
+  Fh1NanTrapArm(ctx);
   {
     static std::atomic<bool> dumped{false};
     std::string path = REXCVAR_GET(fh1_dump_image);
