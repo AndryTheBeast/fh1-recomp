@@ -176,8 +176,8 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         Both were CPU reads of resolve results (auto exposure, photo save) with readback off.
         fh1_app.h now defaults --readback_resolve=some (no measurable cost); "full" stalls
         (unplayable) and changes nothing more. Photos saved before the fix stay broken.
-  - [ ] Abarth rear plate is blank grey - maybe normal for FH1 (no custom plates); compare with
-        Xbox footage.
+  - [x] Blank rear plates: normal - the user checked Xbox 360 gameplay footage, no car shows a
+        plate there either. Not a bug.
     Soft rectangle under the car: RTV and ROV render the same (test-rectrtv/rectrov), so not a
     host-render-target shortcut.
   - [x] --gpu_force_msaa_1x (clears the MSAA field of RB_SURFACE_INFO): works, all RTs 1x, but only
