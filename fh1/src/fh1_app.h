@@ -13,6 +13,8 @@
 #include "fh1_autoplay.h"
 #include "fh1_crash_report.h"
 
+void Fh1StartProfiler();  // fh1_profiler.cpp
+
 // Forza Horizon is single player. By default every controller drives player 1: tools like
 // DSX / DS4Windows show one pad twice (the real one and a virtual Xbox 360 pad), and with
 // the SDK's one-device-per-slot routing Start could land on player 2, who has no profile
@@ -36,7 +38,10 @@ class Fh1App : public rex::ReXApp {
   }
 
   // Override virtual hooks for customization:
-  void OnPostInitLogging() override { fh1::InstallCrashReport(); }
+  void OnPostInitLogging() override {
+    fh1::InstallCrashReport();
+    Fh1StartProfiler();  // --fh1_profile=N (fh1_profiler.cpp)
+  }
   // Forza Horizon has no native renderer (yet): draw through the SDK's Xbox 360
   // GPU emulation. The SDK defaults to none because nfsmw-nx renders natively.
   // --gpu_plugin=<name> on the command line still wins.
