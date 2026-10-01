@@ -326,6 +326,16 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
   shared bases (resolve + clear passes). CORRECTION to the frame map above: the native renderer
   DOES need this one aliasing pattern (4x-MSAA-at-half-pitch == 1x-at-full-pitch), e.g. by
   storing such depth buffers as one double-size 1x image and drawing the 4x passes into it.
+- Next two concrete steps (each self-contained, measurable with --gpu_log_rt_frame and the
+  [fps] "render targets (EDRAM)" GPU time; both help D3D12 and Vulkan host-RT paths):
+  1. Shadow depth buffers: when a 4x MSAA depth target at pitch P meets a 1x target of the same
+     format at pitch 2P on the same EDRAM base, keep one 1x image and draw the 4x passes into it
+     at double resolution (viewport/scissor x2, no host MSAA) - removes 56% of the transfers.
+  2. Zero-cleared ranges: after a resolve with clear whose clear value is all-zero bits, mark the
+     EDRAM range; a new owner of a marked range gets a clear-to-zero instead of a transfer
+     (zero bits mean zero in every host format) - removes most of the other 44%.
+  Already there: direct host resolve (vulkan TryResolveCopyDirectly) copies from the target
+  image to shared memory without the EDRAM buffer.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
       Vulkan presenter; first frames: logos and title screen.
 - [ ] Phase D - festival and race: render targets/resolves (no EDRAM, one pass instead of 3
