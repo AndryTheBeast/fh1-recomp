@@ -55,9 +55,10 @@ class Fh1App : public rex::ReXApp {
     // frame's copy, every frame: the photo is rendered over several frames, and "some" only
     // copied a destination's first resolve (the Subaru repaint photo was saved half stale).
     // Same frame rate as "some" (27.7 vs 27.6 fps); "full" stalls. --readback_resolve still wins.
-    if (!rex::cvar::HasNonDefaultValue("readback_resolve")) {
-      rex::cvar::SetFlagByName("readback_resolve", "fast");
-    }
+    // (SetFlagAppDefault, not SetFlagByName: the flag belongs to the GPU plugin, which is loaded
+    // after this hook - SetFlagByName was silently rejected and readback stayed "none", so car
+    // photos were saved as garbage again.)
+    rex::cvar::SetFlagAppDefault("readback_resolve", "fast");
   }
   // void OnLoadXexImage(std::string& xex_image) override {}
   // void OnPostLoadXexImage() override {}

@@ -197,6 +197,11 @@ lists the actions and saves the render targets as PNG.
   the game main thread waits for the GPU command thread, so per-draw CPU cost there is the lever.
 - Finding a game subsystem without symbols: --fh1_dump_image + the strings/xref scripts approach
   (ROADMAP, car collisions): strings -> lis/addi cross-references -> function -> hook and log.
+- GPU settings (readback_resolve, vsync, gpu_*) belong to the xenos plugin DLL, which loads after
+  OnPreSetup: rex::cvar::SetFlagByName on them is silently rejected there. Use
+  rex::cvar::SetFlagAppDefault (deferred until the flag registers; command line still wins). Until
+  2026-10-01 22:15 the readback_resolve=fast default never applied (log line "Settings:" at GPU
+  setup shows the effective values) - car photos and garage bloom depended on it.
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
 ## Next steps

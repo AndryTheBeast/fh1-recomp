@@ -343,6 +343,25 @@ bool SetFlagByName(std::string_view name, std::string_view value) {
   return SetFlagFromSource(name, value, Source::kRuntime) == ApplyResult::kApplied;
 }
 
+void SetFlagAppDefault(std::string_view name, std::string_view value) {
+  {
+    std::lock_guard lock(GetRegistryMutex());
+    if (GetRegistryIndex().find(std::string(name)) == GetRegistryIndex().end()) {
+      // Not registered yet: replayed at config priority when it registers, unless a config file
+      // already deferred its own value.
+      auto& pending = GetPendingValuesStorage()[std::string(name)];
+      if (!pending.config) {
+        pending.config = std::string(value);
+      }
+      return;
+    }
+    if (GetRegistryStorage()[GetRegistryIndex()[std::string(name)]].source != Source::kDefault) {
+      return;
+    }
+  }
+  SetFlagFromSource(name, value, Source::kConfig);
+}
+
 bool SetFlagFromCommandLine(std::string_view name, std::string_view value) {
   return SetFlagFromSource(name, value, Source::kCommandLine) != ApplyResult::kRejected;
 }

@@ -191,6 +191,12 @@ void UnregisterFlag(std::string_view name);
 
 bool SetFlagByName(std::string_view name, std::string_view value);
 
+// An application default for a flag: applied with config-file priority (the command line, the
+// environment and a config file still win) and only while the flag still has its built-in
+// default. Works for flags of modules loaded later (GPU plugin): the value waits until the flag
+// registers. SetFlagByName is silently rejected for those.
+void SetFlagAppDefault(std::string_view name, std::string_view value);
+
 // Applies a value parsed off the command line. Returns false only when the
 // value is rejected (unparseable, or outside the flag's constraints); a value
 // skipped because a higher-priority source already won returns true.

@@ -651,6 +651,9 @@ bool CommandProcessor::Restore(::rex::stream::ByteStream* stream) {
 }
 
 bool CommandProcessor::SetupContext() {
+  REXGPU_INFO("Settings: readback_resolve={} (non-default {}), vsync={}",
+              REXCVAR_GET(readback_resolve), rex::cvar::HasNonDefaultValue("readback_resolve"),
+              REXCVAR_GET(vsync));
   return true;
 }
 
