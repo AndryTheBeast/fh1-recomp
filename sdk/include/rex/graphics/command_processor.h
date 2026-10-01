@@ -91,6 +91,9 @@ class CommandProcessor {
   void GetFrameMonitorStats(system::FrameMonitorStats& out) const;
 
   uint32_t counter() const { return counter_; }
+  // Guest frames (swaps) processed so far. Unlike the backends' frame_current_, it does not
+  // advance when a submission is closed early to await the GPU.
+  uint64_t guest_swap_count() const { return guest_swap_count_; }
   void increment_counter() { counter_++; }
 
   Shader* active_vertex_shader() const { return active_vertex_shader_; }
@@ -136,6 +139,7 @@ class CommandProcessor {
   bool Restore(::rex::stream::ByteStream* stream);
 
  protected:
+  uint64_t guest_swap_count_ = 0;
   struct IndexBufferInfo {
     xenos::IndexFormat format = xenos::IndexFormat::kInt16;
     xenos::Endian endianness = xenos::Endian::kNone;

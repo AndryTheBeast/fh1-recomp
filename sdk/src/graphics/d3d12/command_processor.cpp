@@ -2928,9 +2928,22 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
   // right for resolves repeated every frame (auto exposure); a one-off resolve (FH1's car photos
   // when buying or repainting a car) would return whatever an older resolve left there - the
   // photo was saved as a scrambled earlier frame. Read those synchronously.
-  bool readback_previous_is_recent = rb.last_used_frame != 0 &&
-                                     rb.last_used_frame + 2 >= frame_current_;
+  bool readback_previous_is_recent = !REXCVAR_GET(readback_resolve_sync_one_off) ||
+                                     (rb.last_used_swap != 0 &&
+                                      rb.last_used_swap + 60 >= guest_swap_count_ + 1);
+  if (!readback_previous_is_recent) {
+    static std::atomic<uint32_t> one_off_logged{0};
+    uint32_t one_off_count = one_off_logged.fetch_add(1, std::memory_order_relaxed);
+    if (one_off_count < 40 || (one_off_count % 200) == 0) {
+      REXGPU_INFO("Readback: synchronous one-off resolve #{} to {:08X} ({} bytes, last {} frames "
+                  "ago, swap {}, map size {})",
+                  one_off_count, written_address, written_length,
+                  rb.last_used_swap ? guest_swap_count_ + 1 - rb.last_used_swap : 0,
+                  guest_swap_count_, readback_buffers_.size());
+    }
+  }
   rb.last_used_frame = frame_current_;
+  rb.last_used_swap = guest_swap_count_ + 1;
 
   uint32_t write_index = rb.current_index;
   uint32_t size = AlignReadbackBufferSize(written_length);

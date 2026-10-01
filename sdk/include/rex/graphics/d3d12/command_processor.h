@@ -382,6 +382,7 @@ class D3D12CommandProcessor : public CommandProcessor {
     uint32_t written_size[2] = {0, 0};
     uint32_t current_index = 0;
     uint64_t last_used_frame = 0;
+    uint64_t last_used_swap = 0;  // guest_swap_count_ + 1 at the last resolve (0 = never)
   };
   void EvictOldReadbackBuffers(std::unordered_map<uint64_t, ReadbackBuffer>& buffer_map);
   static constexpr uint32_t kReadbackBufferSizeIncrement = 16 * 1024 * 1024;

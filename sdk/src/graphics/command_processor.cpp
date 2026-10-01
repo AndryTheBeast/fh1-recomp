@@ -91,6 +91,10 @@ REXCVAR_DEFINE_BOOL(async_shader_compilation, true, "GPU",
                     "pipelines are being prepared.")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
+REXCVAR_DEFINE_BOOL(readback_resolve_sync_one_off, true, "GPU",
+                    "With readback_resolve fast/some: read resolves whose destination was not "
+                    "resolved in the last 60 frames synchronously (one-off resolves such as FH1's "
+                    "car photos would otherwise return an older resolve's data)");
 REXCVAR_DEFINE_BOOL(gpu_force_msaa_1x, false, "GPU",
                     "Performance: treat every render target as 1x MSAA (clears the MSAA field of "
                     "RB_SURFACE_INFO as the game writes it). A quarter of the samples to shade, "
@@ -1411,6 +1415,7 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
 #endif
   rex::perf::Profiler::Flip();
   RtLogNextFrame();  // --gpu_log_rt_frame counts frames here
+  ++guest_swap_count_;
   if (uint32_t frames = LogFrameStatsOnSwap(stats_host_gpu_wait_ticks_)) {
     std::string gpu_time = TakeGpuTimeSummary(frames);
     if (!gpu_time.empty()) {
