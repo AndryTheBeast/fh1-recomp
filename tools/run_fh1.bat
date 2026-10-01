@@ -11,6 +11,6 @@ for /f %%t in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss
 set EXE=fh1-recomp\fh1\out\win-release\fh1.exe
 if not exist "%EXE%" (echo fh1.exe not found - run build_fh1.bat first. & pause & exit /b 1)
 echo Starting fh1.exe - log: build_logs\run-%STAMP%.log
-"%EXE%" --game_data_root="%~dp0game_root" --log_file="%~dp0build_logs\run-%STAMP%.log" --log_level=debug
+"%EXE%" --game_data_root="%~dp0game_root" --log_file="%~dp0build_logs\run-%STAMP%.log" --log_level=debug %*
 echo fh1.exe exited with code %ERRORLEVEL%
 pause
