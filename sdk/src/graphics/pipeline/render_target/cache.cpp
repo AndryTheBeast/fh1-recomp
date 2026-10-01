@@ -44,6 +44,10 @@ bool RtLogActive() {
 }
 }  // namespace rex::graphics
 
+REXCVAR_DEFINE_BOOL(gpu_clear_instead_of_transfer, true, "GPU",
+                    "When EDRAM tiles changing owner hold an untouched resolve clear value (zero, or "
+                    "any value if the formats match), clear the new render target instead of "
+                    "copying the data (host render targets, backends that support it)");
 REXCVAR_DEFINE_BOOL(gpu_skip_msaa_switch_transfers, false, "GPU",
                     "Experiment: skip ownership transfers between render targets that differ "
                     "only in MSAA / pitch (same format) - FH1's shadow passes switch one depth "
@@ -587,6 +591,7 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
   if (!interlock_barrier_only) {
     for (size_t i = 0; i < rex::countof(last_update_transfers_); ++i) {
       last_update_transfers_[i].clear();
+      last_update_clear_transfers_[i].clear();
     }
   }
 
@@ -738,7 +743,12 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
     const std::pair<uint32_t, uint32_t>& rt_base_index = edram_bases_sorted[i];
     uint32_t rt_bit_index = rt_base_index.second;
     ChangeOwnership(rt_keys[rt_bit_index], 0, rt_lengths_tiles[i],
-                    interlock_barrier_only ? nullptr : &last_update_transfers_[rt_bit_index]);
+                    interlock_barrier_only ? nullptr : &last_update_transfers_[rt_bit_index],
+                    nullptr,
+                    (!interlock_barrier_only && transfer_clears_supported_ &&
+                     REXCVAR_GET(gpu_clear_instead_of_transfer))
+                        ? &last_update_clear_transfers_[rt_bit_index]
+                        : nullptr);
   }
 
   if (RtLogActive() && !interlock_barrier_only) {
@@ -752,6 +762,10 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
         REXGPU_INFO("[rt] transfer tiles {}-{} from {} to {}", t.start_tiles, t.end_tiles,
                     t.source ? describe(t.source->key()) : std::string("?"),
                     describe(rt_keys[i]));
+      }
+      for (const ClearTransfer& t : last_update_clear_transfers_[i]) {
+        REXGPU_INFO("[rt] clear instead of transfer tiles {}-{} value {:X} in {}", t.start_tiles,
+                    t.end_tiles, t.value, describe(rt_keys[i]));
       }
     }
   }
@@ -1187,6 +1201,37 @@ bool RenderTargetCache::PrepareHostRenderTargetsResolveClear(
     ChangeOwnership(color_render_target_key, color_clear_start_tiles_base_relative,
                     color_clear_length_tiles, &color_transfers_out, &clear_rectangle);
   }
+  // Remember the tiles entirely covered by the clear (full rows of tiles) as holding the clear
+  // value, so a later owner can clear instead of transferring.
+  if (transfer_clears_supported_ && REXCVAR_GET(gpu_clear_instead_of_transfer) &&
+      clear_rectangle.x_pixels == 0 && clear_rectangle.width_pixels >= pitch_pixels) {
+    uint32_t row_start = ((clear_rectangle.y_pixels << msaa_samples_y_log2) +
+                          (xenos::kEdramTileHeightSamples - 1)) /
+                         xenos::kEdramTileHeightSamples;
+    uint32_t row_end =
+        ((clear_rectangle.y_pixels + clear_rectangle.height_pixels) << msaa_samples_y_log2) /
+        xenos::kEdramTileHeightSamples;
+    auto mark = [&](RenderTargetKey key, uint32_t clear_start_base_relative,
+                    uint32_t clear_length, uint64_t value) {
+      if (!clear_length || row_end <= row_start) return;
+      uint32_t pitch = key.GetPitchTiles();
+      uint32_t start = std::max(row_start * pitch, clear_start_base_relative);
+      uint32_t end = std::min(row_end * pitch, clear_start_base_relative + clear_length);
+      // Not handling EDRAM addressing wrap-around: only the part before it.
+      start = std::min(key.base_tiles + start, xenos::kEdramTileCount);
+      end = std::min(key.base_tiles + end, xenos::kEdramTileCount);
+      if (start < end) MarkRangeCleared(key, start, end, value);
+    };
+    if (depth_render_target) {
+      mark(depth_render_target_key, depth_clear_start_tiles_base_relative,
+           depth_clear_length_tiles, resolve_info.rb_depth_clear);
+    }
+    if (color_render_target) {
+      mark(color_render_target_key, color_clear_start_tiles_base_relative,
+           color_clear_length_tiles,
+           resolve_info.rb_color_clear | (uint64_t(resolve_info.rb_color_clear_lo) << 32));
+    }
+  }
   return true;
 }
 
@@ -1303,10 +1348,33 @@ bool RenderTargetCache::WouldOwnershipChangeRequireTransfers(RenderTargetKey des
   return false;
 }
 
+void RenderTargetCache::MarkRangeCleared(RenderTargetKey key, uint32_t start_tiles,
+                                         uint32_t end_tiles, uint64_t clear_value) {
+  // Split the ranges at both ends, then flag the ones in between owned by key.
+  for (uint32_t split : {start_tiles, end_tiles}) {
+    if (split >= xenos::kEdramTileCount) continue;
+    auto it = ownership_ranges_.upper_bound(split);
+    if (it == ownership_ranges_.begin()) continue;
+    auto it_pre = std::prev(it);
+    if (it_pre->first < split && it_pre->second.end_tiles > split) {
+      ownership_ranges_.emplace(split, it_pre->second);
+      it_pre->second.end_tiles = split;
+    }
+  }
+  for (auto it = ownership_ranges_.lower_bound(start_tiles);
+       it != ownership_ranges_.end() && it->first < end_tiles; ++it) {
+    if (it->second.render_target == key) {
+      it->second.cleared = true;
+      it->second.clear_value = clear_value;
+    }
+  }
+}
+
 void RenderTargetCache::ChangeOwnership(RenderTargetKey dest, uint32_t start_tiles_base_relative,
                                         uint32_t length_tiles,
                                         std::vector<Transfer>* transfers_append_out,
-                                        const Transfer::Rectangle* resolve_clear_cutout) {
+                                        const Transfer::Rectangle* resolve_clear_cutout,
+                                        std::vector<ClearTransfer>* clears_append_out) {
   // xenos::kEdramTileCount with length 0 is fine if both the start and the end
   // are clamped to xenos::kEdramTileCount.
   assert_true(start_tiles_base_relative <= (xenos::kEdramTileCount - uint32_t(length_tiles != 0)));
@@ -1344,7 +1412,8 @@ void RenderTargetCache::ChangeOwnership(RenderTargetKey dest, uint32_t start_til
       }
       if (it->second.IsOwnedBy(dest, host_depth_encoding_different)) {
         // Already owned by the needed render target - no need to transfer
-        // anything.
+        // anything. About to be drawn into or cleared, so no longer known to hold a clear value.
+        it->second.cleared = false;
         ++it;
         continue;
       }
@@ -1355,7 +1424,34 @@ void RenderTargetCache::ChangeOwnership(RenderTargetKey dest, uint32_t start_til
         ownership_ranges_.emplace(extent_end, it->second);
         it->second.end_tiles = extent_end;
       }
-      if (transfers_append_out) {
+      // The new owner can be cleared instead if the range holds a resolve clear value that
+      // means the same in its format: all-zero bits (zero in every format), or the same format.
+      bool clear_instead = false;
+      uint64_t clear_instead_value = 0;
+      if (clears_append_out && it->second.cleared && !it->second.render_target.IsEmpty() &&
+          it->second.render_target != dest) {
+        RenderTargetKey source = it->second.render_target;
+        bool dest_uint_clear_risky =
+            !dest.is_depth &&
+            (dest.GetColorFormat() == xenos::ColorRenderTargetFormat::k_32_FLOAT ||
+             dest.GetColorFormat() == xenos::ColorRenderTargetFormat::k_32_32_FLOAT);
+        if (it->second.clear_value == 0) {
+          clear_instead = true;
+        } else if (source.is_depth == dest.is_depth &&
+                   source.resource_format == dest.resource_format && !dest_uint_clear_risky) {
+          clear_instead = true;
+          clear_instead_value = it->second.clear_value;
+        }
+      }
+      if (clear_instead) {
+        uint32_t clear_end_tiles = std::min(it->second.end_tiles, extent_end);
+        if (!clears_append_out->empty() && clears_append_out->back().end_tiles == it->first &&
+            clears_append_out->back().value == clear_instead_value) {
+          clears_append_out->back().end_tiles = clear_end_tiles;
+        } else {
+          clears_append_out->push_back({it->first, clear_end_tiles, clear_instead_value});
+        }
+      } else if (transfers_append_out) {
         RenderTargetKey transfer_source = it->second.render_target;
         // Only perform the copying when actually changing the latest owner, not
         // just the latest host depth owner - the transfer source is expected to
@@ -1414,6 +1510,7 @@ void RenderTargetCache::ChangeOwnership(RenderTargetKey dest, uint32_t start_til
       }
       // Claim the current range.
       it->second.render_target = dest;
+      it->second.cleared = false;
       if (host_depth_encoding_different) {
         it->second.GetHostDepthRenderTarget(dest.GetDepthFormat()) = dest;
       }

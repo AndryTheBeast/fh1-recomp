@@ -343,9 +343,15 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
      Festival A/B (test-d1x / test-d1xoff): "render targets (EDRAM)" 6.5 -> 4.4 ms/frame, host
      GPU 27 -> 24.5 ms, screenshots identical; the shadow-buffer transfers are gone from the
      --gpu_log_rt_frame log. Vulkan does not apply the multiplier yet (flag ignored there).
-  2. Zero-cleared ranges: after a resolve with clear whose clear value is all-zero bits, mark the
-     EDRAM range; a new owner of a marked range gets a clear-to-zero instead of a transfer
-     (zero bits mean zero in every host format) - removes most of the other 44%.
+  2. DONE 2026-10-01: --gpu_clear_instead_of_transfer (ON by default, D3D12 RTV). Ranges fully
+     covered by a resolve clear (whole rows of tiles) remember the clear value until something
+     binds them again; a new owner gets a host clear instead of a transfer when the value is all
+     zero bits or the formats match (RenderTargetCache::MarkRangeCleared / ClearTransfer,
+     D3D12RenderTargetCache::PerformTransferClears). Festival: 59 -> 52 transfers per frame,
+     "render targets (EDRAM)" ~3.9 -> 3.7 ms, picture identical (test-clr / test-clr2). Small win:
+     most remaining transfers carry real data (4x-at-pitch-P <-> 1x-at-2P aliasing with color too,
+     depth read back as color in post-processing), which only the native render target cache
+     removes.
   Already there: direct host resolve (vulkan TryResolveCopyDirectly) copies from the target
   image to shared memory without the EDRAM buffer.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,

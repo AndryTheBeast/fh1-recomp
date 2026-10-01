@@ -633,6 +633,10 @@ class D3D12RenderTargetCache final : public RenderTargetCache {
   // resolve_clear_rectangle is expected to be provided by
   // PrepareHostRenderTargetsResolveClear which should do all the needed size
   // bound checks.
+  // Clears the ranges the common cache chose to clear instead of transferring.
+  void PerformTransferClears(uint32_t render_target_count, RenderTarget* const* render_targets,
+                             const std::vector<ClearTransfer>* render_target_clears);
+  std::vector<D3D12_RECT> transfer_clear_rects_;
   void PerformTransfersAndResolveClears(
       uint32_t render_target_count, RenderTarget* const* render_targets,
       const std::vector<Transfer>* render_target_transfers,

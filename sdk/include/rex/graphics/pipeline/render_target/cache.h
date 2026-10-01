@@ -301,6 +301,14 @@ class RenderTargetCache {
     RenderTargetKey key_;
   };
 
+  // A range of a new owner that is cleared to value (in the new owner's encoding) instead of
+  // being transferred, because the previous owner holds an untouched resolve clear there.
+  struct ClearTransfer {
+    uint32_t start_tiles;
+    uint32_t end_tiles;
+    uint64_t value;
+  };
+
   struct Transfer {
     uint32_t start_tiles;
     uint32_t end_tiles;
@@ -496,6 +504,14 @@ class RenderTargetCache {
     assert_true(GetPath() == Path::kHostRenderTargets);
     return last_update_transfers_;
   }
+  // Ranges of the current render targets to clear instead of transferring (only filled if
+  // transfer_clears_supported_).
+  const std::vector<ClearTransfer>* last_update_clear_transfers() const {
+    assert_true(GetPath() == Path::kHostRenderTargets);
+    return last_update_clear_transfers_;
+  }
+  // Set by backends that perform last_update_clear_transfers().
+  bool transfer_clears_supported_ = false;
 
   HostDepthStoreRenderTargetConstant GetHostDepthStoreRenderTargetConstant(
       uint32_t pitch_tiles, bool msaa_2x_supported) const {
@@ -582,6 +598,12 @@ class RenderTargetCache {
     // empty too.
     RenderTargetKey host_depth_render_target_unorm24;
     RenderTargetKey host_depth_render_target_float24;
+    // The whole range holds one value written by a resolve clear (clear_value in the
+    // render_target's encoding: depth = RB_DEPTH_CLEAR, color = RB_COLOR_CLEAR | LO << 32) and
+    // nothing has been drawn into it since. A new owner can then be cleared instead of getting
+    // a transfer (--gpu_clear_instead_of_transfer).
+    bool cleared = false;
+    uint64_t clear_value = 0;
     OwnershipRange(uint32_t end_tiles, RenderTargetKey render_target,
                    RenderTargetKey host_depth_render_target_unorm24,
                    RenderTargetKey host_depth_render_target_float24)
@@ -617,7 +639,8 @@ class RenderTargetCache {
       return true;
     }
     bool AreOwnersSame(const OwnershipRange& other_range) const {
-      return render_target == other_range.render_target &&
+      return render_target == other_range.render_target && cleared == other_range.cleared &&
+             clear_value == other_range.clear_value &&
              host_depth_render_target_unorm24 == other_range.host_depth_render_target_unorm24 &&
              host_depth_render_target_float24 == other_range.host_depth_render_target_float24;
     }
@@ -645,9 +668,15 @@ class RenderTargetCache {
                                             uint32_t length_tiles) const;
   // Updates ownership_ranges_, adds the transfers needed for the ownership
   // change to transfers_append_out if it's not null.
+  // With clears_append_out, ranges holding a resolve clear value usable by dest get a clear
+  // there instead of a transfer.
   void ChangeOwnership(RenderTargetKey dest, uint32_t start_tiles_base_relative,
                        uint32_t length_tiles, std::vector<Transfer>* transfers_append_out,
-                       const Transfer::Rectangle* resolve_clear_cutout = nullptr);
+                       const Transfer::Rectangle* resolve_clear_cutout = nullptr,
+                       std::vector<ClearTransfer>* clears_append_out = nullptr);
+  // Marks [start_tiles, end_tiles) (not wrapping), owned by key, as holding clear_value.
+  void MarkRangeCleared(RenderTargetKey key, uint32_t start_tiles, uint32_t end_tiles,
+                        uint64_t clear_value);
 
   // If failed to create, may contain nullptr to prevent attempting to create a
   // render target twice.
@@ -684,6 +713,7 @@ class RenderTargetCache {
   // render targets. They are reordered so for one source, all transfers are
   // consecutive in the array.
   std::vector<Transfer> last_update_transfers_[1 + xenos::kMaxColorRenderTargets];
+  std::vector<ClearTransfer> last_update_clear_transfers_[1 + xenos::kMaxColorRenderTargets];
 };
 
 }  // namespace rex::graphics
