@@ -119,7 +119,10 @@ try {
   Run cmake @("-S", "$Root\fh1", "-B", $AppDir, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=$Config",
       "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++",
       "-DCMAKE_C_FLAGS=$Flags", "-DCMAKE_CXX_FLAGS=$Flags", "-DREXGLUE_ENABLE_TRACY=OFF",
-      "-DREXSDK_DIR=$Root\sdk", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5") "app_configure.log"
+      "-DREXSDK_DIR=$Root\sdk", "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+      # Vulkan too (off by default on Windows): the native renderer (ROADMAP Stage 3) draws with it,
+      # and --gpu_backend=vulkan runs the emulation on it for comparisons. D3D12 stays the default.
+      "-DREXGLUE_USE_VULKAN=ON") "app_configure.log"
   Run cmake @("--build", $AppDir) "app_build.log"
 
   $Exe = Get-ChildItem -Path $AppDir, "$Root\sdk\out" -Recurse -Filter fh1.exe -ErrorAction SilentlyContinue | Select-Object -First 1

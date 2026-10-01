@@ -273,6 +273,15 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       translation was too slow. The emulation's shader storage (XESH format, ShaderStoredHeader +
       ucode dwords, cache/shaders/shareable/4D5309C9.xsh) lists every shader seen - useful to
       pre-translate at startup. Never commit it (game data).
+- [ ] Vulkan emulation as a stepping stone (2026-10-01): --gpu_backend=any|d3d12|vulkan (new,
+      sdk/src/ui/rex_app.cpp), and tools/build_windows.ps1 now builds Vulkan too
+      (REXGLUE_USE_VULKAN=ON; it was off on Windows). Result: runs, 30 fps at the festival after
+      the first-run shader compilation, HUD and 2D correct, but the 3D WORLD IS BLACK (also with
+      readback_resolve=none; no errors in the log). Next: RenderDoc capture of a Vulkan frame
+      (auto_test.ps1 -RenderDoc) vs the D3D12 one. Option on the table: build the native renderer
+      by stripping the Vulkan emulation's EDRAM render-target cache, tiling and per-draw cost step
+      by step (always playable, always comparable) instead of porting nfsmw's renderer, whose draw
+      code is built around its offline XenosRecomp shader library.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
       Vulkan presenter; first frames: logos and title screen.
 - [ ] Phase D - festival and race: render targets/resolves (no EDRAM, one pass instead of 3
