@@ -95,6 +95,10 @@ REXCVAR_DEFINE_BOOL(readback_resolve_sync_one_off, true, "GPU",
                     "With readback_resolve fast/some: read resolves whose destination was not "
                     "resolved in the last 60 frames synchronously (one-off resolves such as FH1's "
                     "car photos would otherwise return an older resolve's data)");
+REXCVAR_DEFINE_BOOL(readback_resolve_skip_steady, true, "GPU",
+                    "With readback_resolve fast/some: do not copy back resolves larger than 64 KB "
+                    "whose destination has been resolved every frame (gaps up to 4) for over 60 "
+                    "frames - GPU-only render-to-texture results the CPU never reads");
 REXCVAR_DEFINE_BOOL(gpu_force_msaa_1x, false, "GPU",
                     "Performance: treat every render target as 1x MSAA (clears the MSAA field of "
                     "RB_SURFACE_INFO as the game writes it). A quarter of the samples to shade, "
@@ -2131,11 +2135,17 @@ bool CommandProcessor::ExecutePacketType3_VIZ_QUERY(memory::RingBuffer* reader, 
     // On hardware this clears the internal state of the scan converter (which
     // is different to the register)
     WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, VIZQUERY_START);
-    REXGPU_INFO("Begin viz query ID {:02X}", id);
+    static std::atomic<uint32_t> begin_logged{0};
+    if (begin_logged.fetch_add(1, std::memory_order_relaxed) < 8) {
+      REXGPU_DEBUG("Begin viz query ID {:02X} (first 8 logged)", id);
+    }
   } else {
     // end the viz query
     WriteRegister(XE_GPU_REG_VGT_EVENT_INITIATOR, VIZQUERY_END);
-    REXGPU_INFO("End viz query ID {:02X}", id);
+    static std::atomic<uint32_t> end_logged{0};
+    if (end_logged.fetch_add(1, std::memory_order_relaxed) < 8) {
+      REXGPU_DEBUG("End viz query ID {:02X} (first 8 logged)", id);
+    }
     // The scan converter writes the internal result back to the register here.
     // We just fake it and say it was visible in case it is read back.
     if (id < 32) {

@@ -2942,8 +2942,23 @@ bool D3D12CommandProcessor::IssueCopy_ReadbackResolvePath() {
                   guest_swap_count_, readback_buffers_.size());
     }
   }
+  // Frames this destination has been resolved steadily (gaps of up to 4 frames: FH1's shadow
+  // maps rotate every 4 frames).
+  uint64_t readback_swap_now = guest_swap_count_ + 1;
+  if (rb.last_used_swap && readback_swap_now - rb.last_used_swap <= 4) {
+    rb.steady_frames += readback_swap_now - rb.last_used_swap;
+  } else {
+    rb.steady_frames = 0;
+  }
   rb.last_used_frame = frame_current_;
-  rb.last_used_swap = guest_swap_count_ + 1;
+  rb.last_used_swap = readback_swap_now;
+  // The CPU reads only a few resolve results (FH1: a 4 KB auto exposure value, car photos made
+  // over a few frames). Big destinations resolved every frame for over a second (scene, depth,
+  // shadow maps, bloom) are GPU-only: skip copying them back.
+  if (REXCVAR_GET(readback_resolve_skip_steady) && rb.steady_frames > 60 &&
+      written_length > 64 * 1024) {
+    return true;
+  }
 
   uint32_t write_index = rb.current_index;
   uint32_t size = AlignReadbackBufferSize(written_length);

@@ -9,6 +9,7 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <atomic>
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -2426,6 +2427,8 @@ void VulkanCommandProcessor::IssueSwap(uint32_t frontbuffer_ptr, uint32_t frontb
           frontbuffer_width_scaled, frontbuffer_height_scaled);
     }
   }
+  static std::atomic<uint32_t> present_logged{0};
+  if (present_logged.fetch_add(1, std::memory_order_relaxed) < 8)  // once per frame otherwise
   REXGPU_DEBUG(
       "XELOG_GPU PRESENT: swap_texture_view={:p} packet_size={}x{} src_size={}x{} "
       "src_unscaled={}x{} guest_output_size={}x{} format={}",
@@ -4558,8 +4561,23 @@ bool VulkanCommandProcessor::IssueCopy_ReadbackResolvePath() {
                   guest_swap_count_, readback_buffers_.size());
     }
   }
+  // Frames this destination has been resolved steadily (gaps of up to 4 frames: FH1's shadow
+  // maps rotate every 4 frames).
+  uint64_t readback_swap_now = guest_swap_count_ + 1;
+  if (readback.last_used_swap && readback_swap_now - readback.last_used_swap <= 4) {
+    readback.steady_frames += readback_swap_now - readback.last_used_swap;
+  } else {
+    readback.steady_frames = 0;
+  }
   readback.last_used_frame = frame_current_;
-  readback.last_used_swap = guest_swap_count_ + 1;
+  readback.last_used_swap = readback_swap_now;
+  // The CPU reads only a few resolve results (FH1: a 4 KB auto exposure value, car photos made
+  // over a few frames). Big destinations resolved every frame for over a second (scene, depth,
+  // shadow maps, bloom) are GPU-only: skip copying them back.
+  if (REXCVAR_GET(readback_resolve_skip_steady) && readback.steady_frames > 60 &&
+      written_length > 64 * 1024) {
+    return true;
+  }
   uint32_t write_index = readback.current_index;
   uint32_t readback_size = AlignReadbackBufferSize(written_length);
   if (!ensure_readback_slot(readback, write_index, readback_size)) {

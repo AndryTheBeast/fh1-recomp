@@ -9,6 +9,7 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <atomic>
 #include <rex/kernel/xam/apps/xmp_app.h>
 #include <rex/logging.h>
 #include <rex/system/xthread.h>
@@ -403,8 +404,13 @@ X_HRESULT XmpApp::DispatchMessageSync(uint32_t message, uint32_t buffer_ptr,
       static_assert_size(decltype(*args), 12);
 
       assert_true(args->xmp_client == 0x00000002);
-      REXKRNL_DEBUG("XMPGetPlaybackController({:08X}, {:08X}, {:08X})", uint32_t(args->xmp_client),
-                    uint32_t(args->controller_ptr), uint32_t(args->locked_ptr));
+      // Polled ~30 times a second by FH1: log the first calls only.
+      static std::atomic<uint32_t> logged{0};
+      if (logged.fetch_add(1, std::memory_order_relaxed) < 8) {
+        REXKRNL_DEBUG("XMPGetPlaybackController({:08X}, {:08X}, {:08X})",
+                      uint32_t(args->xmp_client), uint32_t(args->controller_ptr),
+                      uint32_t(args->locked_ptr));
+      }
       memory::store_and_swap<uint32_t>(memory_->TranslateVirtual(args->controller_ptr), 0);
       memory::store_and_swap<uint32_t>(memory_->TranslateVirtual(args->locked_ptr), 0);
 

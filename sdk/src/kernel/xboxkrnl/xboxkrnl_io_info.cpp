@@ -12,6 +12,7 @@
 // Disable warnings about unused parameters for kernel functions
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+#include <atomic>
 #include <rex/filesystem/device.h>
 #include <rex/kernel/xboxkrnl/private.h>
 #include <rex/logging.h>
@@ -141,7 +142,10 @@ u32 NtQueryInformationFile_entry(u32 file_handle, ppc_ptr_t<X_IO_STATUS_BLOCK> i
       break;
     }
     case XFileSectorInformation: {
-      REXKRNL_DEBUG("Stub XFileSectorInformation!");
+      static std::atomic<uint32_t> logged{0};
+      if (logged.fetch_add(1, std::memory_order_relaxed) < 8) {
+        REXKRNL_DEBUG("Stub XFileSectorInformation! (first 8 logged)");
+      }
       auto info = info_ptr.as<uint32_t*>();
       size_t fname_hash = rex::memory::hash_combine(82589933LL, file->path());
       *info = static_cast<uint32_t>(fname_hash ^ (fname_hash >> 32));
