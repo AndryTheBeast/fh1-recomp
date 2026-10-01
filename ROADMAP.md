@@ -265,8 +265,14 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
          replay can be drawn once at full size (skip the per-strip predication and window
          offsets) - the single-strip idea without the EDRAM layout problem. Shader list to start
          phase B: the emulation's shader storage (cache/shaders/shareable/4D5309C9.xsh).
-- [ ] Phase B - shader library: extract FH1's shader microcode, translate with XenosRecomp
-      (shaders/, docs/shaders.md), build the library (no game data in git).
+- [ ] Phase B - shaders. Revised 2026-10-01: a PM4-driven renderer sees the microcode exactly as
+      loaded (vertex shaders already patched by D3D for their vertex layout - the problem that
+      forced nfsmw into shader-creation hooks, docs/shaders.md). On PC, translate that microcode
+      with the SDK's own Vulkan/SPIR-V translator (Xenia's, sdk/src/graphics/vulkan) and cache the
+      results on disk; the XenosRecomp offline library (shaders/) is for the Switch, where runtime
+      translation was too slow. The emulation's shader storage (XESH format, ShaderStoredHeader +
+      ucode dwords, cache/shaders/shareable/4D5309C9.xsh) lists every shader seen - useful to
+      pre-translate at startup. Never commit it (game data).
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
       Vulkan presenter; first frames: logos and title screen.
 - [ ] Phase D - festival and race: render targets/resolves (no EDRAM, one pass instead of 3
