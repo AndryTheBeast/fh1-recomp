@@ -253,6 +253,18 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       per draw; 384/512 per frame = per object/batch) on top of the XDK D3D at 0x829E-0x82A3.
       FH1 also replays recorded command buffers (walker sub_829F5FF0), so not every draw goes
       through a Draw* call each frame (nfsmw's draw/shader pairing needs another approach).
+      Full census (all 778 called functions): the XDK D3D range is called only tens of times per
+      frame - no function there runs once per draw. FH1's engine writes its PM4 itself into
+      recorded command buffers (D3D: setup, Swap, and the replay sub_829F6360 -> walker
+      sub_829F5FF0, 2x per frame, each replayed per tiling strip); the ring itself gets ~8
+      reservations per frame (sub_823E91F0). 0x829C0000-0x829E0000 callers look like another XDK
+      library (audio), not D3D.
+      => DESIGN: FH1's native renderer is PM4-driven only (no per-Draw* hooks as in nfsmw):
+         read ring + indirect buffers, identify shaders by the microcode they load, track state
+         from the register writes. Tiling: native render targets have no EDRAM limit, so each
+         replay can be drawn once at full size (skip the per-strip predication and window
+         offsets) - the single-strip idea without the EDRAM layout problem. Shader list to start
+         phase B: the emulation's shader storage (cache/shaders/shareable/4D5309C9.xsh).
 - [ ] Phase B - shader library: extract FH1's shader microcode, translate with XenosRecomp
       (shaders/, docs/shaders.md), build the library (no game data in git).
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
