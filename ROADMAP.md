@@ -317,6 +317,15 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
   (b) quick win for the emulation too: an EDRAM range that a resolve just cleared can be given to
   the next render target with a clear instead of an ownership transfer (transfers = "render
   targets (EDRAM)", 7-8 ms/frame of GPU in races).
+- Ownership transfers measured (--gpu_log_rt_frame now lists them; build_logs/
+  rt_frame_d3d12_transfers.txt): 74 per frame, 39,082 EDRAM tiles = ~190 MB copied per frame
+  (~19x the whole EDRAM). 56% are same-format MSAA/pitch switches: the shadow passes alternate
+  one depth buffer between "pitch 520, 4x MSAA" and "pitch 1040, 1x" - the same EDRAM bytes (the
+  game renders 4 samples per pixel at half size and reads the samples back as pixels: a
+  supersampling trick) - and every switch copies the whole buffer. 44% are format changes at
+  shared bases (resolve + clear passes). CORRECTION to the frame map above: the native renderer
+  DOES need this one aliasing pattern (4x-MSAA-at-half-pitch == 1x-at-full-pitch), e.g. by
+  storing such depth buffers as one double-size 1x image and drawing the 4x passes into it.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
       Vulkan presenter; first frames: logos and title screen.
 - [ ] Phase D - festival and race: render targets/resolves (no EDRAM, one pass instead of 3

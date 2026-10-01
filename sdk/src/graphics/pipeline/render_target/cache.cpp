@@ -736,6 +736,21 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
                     interlock_barrier_only ? nullptr : &last_update_transfers_[rt_bit_index]);
   }
 
+  if (RtLogActive() && !interlock_barrier_only) {
+    auto describe = [](RenderTargetKey k) {
+      return fmt::format("{}{} base {} pitch {} {}x", k.is_depth ? "depth fmt " : "color fmt ",
+                         uint32_t(k.resource_format), uint32_t(k.base_tiles),
+                         uint32_t(k.pitch_tiles_at_32bpp), 1u << uint32_t(k.msaa_samples));
+    };
+    for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
+      for (const Transfer& t : last_update_transfers_[i]) {
+        REXGPU_INFO("[rt] transfer tiles {}-{} from {} to {}", t.start_tiles, t.end_tiles,
+                    t.source ? describe(t.source->key()) : std::string("?"),
+                    describe(rt_keys[i]));
+      }
+    }
+  }
+
   if (interlock_barrier_only) {
     // No copying transfers or render target bindings - only needed the barrier.
     return true;
