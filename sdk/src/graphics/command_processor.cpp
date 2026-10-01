@@ -100,6 +100,9 @@ REXCVAR_DEFINE_INT32(gpu_collapsed_tiling_height, 0, "GPU",
                      "sets this to the frame height): in the tiled pass, draw and resolve the whole "
                      "frame height (the recorded per-strip scissor covers only the first strip) at "
                      "1x MSAA, so the full frame fits in EDRAM. 0 = off");
+REXCVAR_DEFINE_INT32(gpu_collapsed_tiling_width, 0, "GPU",
+                     "With gpu_collapsed_tiling_height: the tiled surface's pitch (frame width); "
+                     "only 4x MSAA surfaces of this pitch are collapsed. 0 = any 4x surface");
 REXCVAR_DEFINE_INT32(gpu_trace_pm4_at_extent, 0, "GPU",
                      "Debug: log 400 PM4 packets after the Nth screen extent write (0 = off)");
 
@@ -257,6 +260,14 @@ void MaybeCollapseTiledDraw(RegisterFile& regs, uint64_t bin_select, CollapsedTi
   state.active = false;
   int32_t height = REXCVAR_GET(gpu_collapsed_tiling_height);
   if (height <= 0 || uint32_t(bin_select) == 0xFFFFFFFFu) return;
+  // Only the tiled surface itself: the bin select stays set for the post-processing passes after
+  // it, which have their own (smaller) pitches. FH1's tiled pass: 4x MSAA, pitch = frame width.
+  auto surface_check = regs.Get<reg::RB_SURFACE_INFO>();
+  int32_t width = REXCVAR_GET(gpu_collapsed_tiling_width);
+  if (surface_check.msaa_samples != xenos::MsaaSamples::k4X ||
+      (width > 0 && surface_check.surface_pitch != uint32_t(width))) {
+    return;
+  }
   state.active = true;
   state.saved_surface_info = regs.values[XE_GPU_REG_RB_SURFACE_INFO];
   state.saved_scissor_br = regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR];

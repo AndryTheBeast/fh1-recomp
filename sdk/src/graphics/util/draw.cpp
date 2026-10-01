@@ -832,9 +832,16 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
     y1 += pa_sc_window_offset.window_y_offset;
   }
 
-  // Collapsed tiled pass: the game's resolve rectangle covers only the first strip.
+  // Collapsed tiled pass: the game's resolve rectangle covers only the first strip; extend it to
+  // the frame height. The copy-outs of the other strips (rectangles starting lower) still run,
+  // all to the first strip's destination (their RB_COPY_DEST_BASE writes are predicated off), and
+  // would copy the already cleared surface over the frame: make them empty.
   if (g_collapsed_resolve_height) {
-    y1 = std::max(y1, int32_t(g_collapsed_resolve_height));
+    if (y0 > 0) {
+      y1 = y0;
+    } else {
+      y1 = std::max(y1, int32_t(g_collapsed_resolve_height));
+    }
   }
 
   // Rectangle before the scissor, for the "Resolve region is empty" diagnostic below.

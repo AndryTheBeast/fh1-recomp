@@ -113,6 +113,7 @@ REX_HOOK_RAW(sub_82A7D730) {
         static uint32_t last_height = 0;
         if (last_height != y2) {
           last_height = y2;
+          rex::cvar::SetFlagByName("gpu_collapsed_tiling_width", std::to_string(x2));
           rex::cvar::SetFlagByName("gpu_collapsed_tiling_height", std::to_string(y2));
         }
       }
