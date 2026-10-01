@@ -27,6 +27,8 @@ set(FH1_SOURCES
     src/fh1_nan_trap.cpp
     src/fh1_trace_epa.cpp
     src/fh1_profiler.cpp
+    src/fh1_d3d_census.cpp
+    src/fh1_d3d_census_report.cpp
 )
 
 if(WIN32)
