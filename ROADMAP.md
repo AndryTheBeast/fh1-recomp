@@ -366,6 +366,14 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       draw time 11 -> 7 ms. Picture still WRONG (test-st3): only the bottom ~256 rows show the
       world, the rest is grey sky colour - next: find which draws of the pass are missing
       (predicated packets for strips 2/3 are skipped: objects whose bin mask is C/30 only?).
+- Frame rate unlock tried and DROPPED (user's decision, 2026-10-01): --vsync=false (guest vblank
+  at 1 kHz) lifts the 30 fps cap (26-35 fps at the festival, host GPU ~25-34 ms/frame, so 60 would
+  need ~2x on both CPU and GPU), but the user saw broken distant rendering with it. Back to the
+  console's 30 fps; normal mode verified fine by the user afterwards (run-20261001-191853).
+  --video_mode_refresh_rate=120 also uncaps (game waits 2 vblanks). Revisit only with the
+  renderer much faster.
+- F3 frame monitor (renderer, fps, frame times, total frames, graph) drawn by the presenter;
+  --show_frame_monitor opens it at startup; run_fh1.bat now passes extra options through.
   Already there: direct host resolve (vulkan TryResolveCopyDirectly) copies from the target
   image to shared memory without the EDRAM buffer.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
