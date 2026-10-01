@@ -29,6 +29,8 @@
 #include <rex/codegen/output_stamp.h>
 #include <rex/codegen/progress_reporter.h>
 #include <rex/codegen/template_registry.h>
+#include <rex/filesystem.h>
+#include <rex/hash.h>
 #include <rex/kernel/init.h>
 #include <rex/logging.h>
 #include <rex/runtime.h>
@@ -79,7 +81,16 @@ std::vector<std::filesystem::path> CollectModuleInputs(const RecompilerConfig& c
 std::string FingerprintModule(const RecompilerConfig& cfg,
                               std::span<const std::filesystem::path> inputs,
                               std::string_view sdkVersion) {
+  // The code generator itself is an input: a changed instruction builder must regenerate the
+  // output even when the game files and the manifest did not change (fh1 hit this when fixing
+  // vmsum3fp128: "3 module(s) up to date" kept the old translation).
+  static const std::string generator_hash = [] {
+    std::error_code ec;
+    auto exe = rex::filesystem::GetExecutablePath();
+    return std::filesystem::exists(exe, ec) ? rex::hash_file(exe) : std::string("unknown");
+  }();
   std::vector<std::string> flags{
+      fmt::format("generator={}", generator_hash),
       fmt::format("templates={}", EmbeddedTemplatesHash()),
       fmt::format("generate_exception_handlers={}", cfg.generateExceptionHandlers),
       fmt::format("max_jump_extension={}", cfg.maxJumpExtension),

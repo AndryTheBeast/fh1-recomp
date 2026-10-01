@@ -43,9 +43,19 @@ std::filesystem::path to_path(const std::u16string_view source) {
 namespace filesystem {
 
 std::filesystem::path GetExecutablePath() {
-  wchar_t* path;
-  auto error = _get_wpgmptr(&path);
-  return !error ? std::filesystem::path(path) : std::filesystem::path();
+  // Not _get_wpgmptr: _wpgmptr is only set for wmain programs, and with a plain main() the CRT
+  // treats the call as an invalid parameter and fast-fails the process (0xC0000409; rexglue.exe
+  // died this way once its codegen fingerprint started hashing the generator).
+  std::wstring path(MAX_PATH, L'\0');
+  for (;;) {
+    DWORD len = GetModuleFileNameW(nullptr, path.data(), DWORD(path.size()));
+    if (len == 0) return {};
+    if (len < path.size()) {
+      path.resize(len);
+      return std::filesystem::path(path);
+    }
+    path.resize(path.size() * 2);
+  }
 }
 
 std::filesystem::path GetExecutableFolder() {
