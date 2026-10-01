@@ -49,6 +49,11 @@ REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
                     "Submit command list when PM4 primary buffer ends")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
+namespace rex::graphics {
+extern uint32_t g_draw_scale_multiplier;  // graphics/command_processor.cpp
+extern bool g_draw_scale_multiplier_supported;
+}  // namespace rex::graphics
+
 namespace rex::graphics::d3d12 {
 
 // Generated with `xb buildshaders`.
@@ -861,6 +866,7 @@ bool D3D12CommandProcessor::SetupContext() {
     REXGPU_ERROR("Failed to initialize base command processor context");
     return false;
   }
+  g_draw_scale_multiplier_supported = true;  // IssueDraw applies it
   InvalidateAllVertexBufferResidency();
   UpdateDebugMarkersEnabled();
 
@@ -2424,8 +2430,11 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   }
 
   // Get dynamic rasterizer state.
-  uint32_t draw_resolution_scale_x = texture_cache_->draw_resolution_scale_x();
-  uint32_t draw_resolution_scale_y = texture_cache_->draw_resolution_scale_y();
+  // g_draw_scale_multiplier: 2 for 4x MSAA depth draws redirected to their 1x alias
+  // (--gpu_msaa_depth_as_1x, graphics/command_processor.cpp), whose pixels are twice as many.
+  uint32_t draw_scale_multiplier = g_draw_scale_multiplier;
+  uint32_t draw_resolution_scale_x = texture_cache_->draw_resolution_scale_x() * draw_scale_multiplier;
+  uint32_t draw_resolution_scale_y = texture_cache_->draw_resolution_scale_y() * draw_scale_multiplier;
 
   bool convert_z_to_float24 =
       host_render_targets_used && render_target_cache_->depth_float24_convert_in_pixel_shader();
@@ -2443,7 +2452,8 @@ bool D3D12CommandProcessor::IssueDraw(xenos::PrimitiveType primitive_type, uint3
   std::memcpy(viewport_key.vport_regs, &regs[XE_GPU_REG_PA_CL_VPORT_XSCALE],
               sizeof(viewport_key.vport_regs));
   viewport_key.flags = (uint32_t(convert_z_to_float24) << 0) |
-                       (uint32_t(host_render_targets_used) << 1) | (uint32_t(ps_writes_depth) << 2);
+                       (uint32_t(host_render_targets_used) << 1) | (uint32_t(ps_writes_depth) << 2) |
+                       (draw_scale_multiplier << 3);
 
   draw_util::ViewportInfo viewport_info;
   if (viewport_cache_valid_ && viewport_key == previous_viewport_key_) {

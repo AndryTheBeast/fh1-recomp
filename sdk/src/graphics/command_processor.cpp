@@ -110,7 +110,7 @@ REXCVAR_DEFINE_STRING(gpu_bin_select_or, "", "GPU",
                       "Experiment (predicated tiling): hex bits OR'ed into every bin select the "
                       "game sets, except all-ones (e.g. 3C to also run strips 2-3 packets)");
 
-REXCVAR_DEFINE_BOOL(gpu_msaa_depth_as_1x, false, "GPU",
+REXCVAR_DEFINE_BOOL(gpu_msaa_depth_as_1x, true, "GPU",
                     "Draw depth-only passes at 4x MSAA and pitch P into the 1x depth target of "
                     "pitch 2P at the same EDRAM base (the same EDRAM bytes) at double resolution, "
                     "instead of a separate 4x target: no ownership transfers between the two. "
@@ -175,19 +175,22 @@ uint32_t tiling_stats_total_extents_ = 0;
 // double resolution lets both views use one host target. Registers are restored after the draw.
 }  // namespace
 bool RtLogActive();  // pipeline/render_target/cache.cpp
+// Extra draw resolution multiplier for the current draw (--gpu_msaa_depth_as_1x), read by the
+// backends' IssueDraw for the viewport and scissor. 1 outside such draws.
+uint32_t g_draw_scale_multiplier = 1;
+// Set by backends whose IssueDraw applies g_draw_scale_multiplier (D3D12 only for now).
+bool g_draw_scale_multiplier_supported = false;
 namespace {
 struct MsaaDepthAsSingleSample {
   bool active = false;
-  uint32_t saved[13];
+  uint32_t saved[3];
 };
-const uint32_t kMsaaDepthAliasRegs[13] = {
-    XE_GPU_REG_RB_SURFACE_INFO,         XE_GPU_REG_PA_CL_VPORT_XSCALE,
-    XE_GPU_REG_PA_CL_VPORT_XOFFSET,     XE_GPU_REG_PA_CL_VPORT_YSCALE,
-    XE_GPU_REG_PA_CL_VPORT_YOFFSET,     XE_GPU_REG_PA_SC_WINDOW_OFFSET,
-    XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL, XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR,
-    XE_GPU_REG_PA_SC_SCREEN_SCISSOR_TL, XE_GPU_REG_PA_SC_SCREEN_SCISSOR_BR,
-    XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_SCALE, XE_GPU_REG_PA_SU_POLY_OFFSET_BACK_SCALE,
-    XE_GPU_REG_RB_COLOR_MASK};
+// Only the surface layout and the slope-scaled depth bias are rewritten; positions, viewport and
+// scissor are doubled by the backend through g_draw_scale_multiplier (FH1's shadow draws have the
+// viewport transform off, positions already in pixels of the 4x surface).
+const uint32_t kMsaaDepthAliasRegs[3] = {XE_GPU_REG_RB_SURFACE_INFO,
+                                         XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_SCALE,
+                                         XE_GPU_REG_PA_SU_POLY_OFFSET_BACK_SCALE};
 // 1x depth surfaces seen: (base << 32) | (format << 16) | pitch.
 std::unordered_set<uint64_t> g_depth_1x_surfaces;
 
@@ -201,17 +204,10 @@ uint32_t FloatReg(float f) {
   std::memcpy(&v, &f, 4);
   return v;
 }
-// Doubles the x and y fields of a scissor-style register (14-bit x at 0, 14/15-bit y at 16).
-uint32_t DoubleXY(uint32_t v, uint32_t x_bits, uint32_t y_bits) {
-  uint32_t x_mask = (1u << x_bits) - 1, y_mask = (1u << y_bits) - 1;
-  uint32_t x = std::min((v & x_mask) * 2, x_mask);
-  uint32_t y = std::min(((v >> 16) & y_mask) * 2, y_mask);
-  return (v & ~(x_mask | (y_mask << 16))) | x | (y << 16);
-}
 
 void MaybeDrawMsaaDepthAsSingleSample(RegisterFile& regs, MsaaDepthAsSingleSample& state) {
   state.active = false;
-  if (!REXCVAR_GET(gpu_msaa_depth_as_1x)) return;
+  if (!g_draw_scale_multiplier_supported || !REXCVAR_GET(gpu_msaa_depth_as_1x)) return;
   auto surface = regs.Get<reg::RB_SURFACE_INFO>();
   auto depth_control = regs.Get<reg::RB_DEPTHCONTROL>();
   if (!(depth_control.z_enable || depth_control.stencil_enable)) return;
@@ -223,70 +219,28 @@ void MaybeDrawMsaaDepthAsSingleSample(RegisterFile& regs, MsaaDepthAsSingleSampl
     return;
   }
   if (surface.msaa_samples != xenos::MsaaSamples::k4X) return;
-  if (RtLogActive()) {
-    auto vte_dbg = regs.Get<reg::PA_CL_VTE_CNTL>();
-    REXGPU_INFO("[rt] 4x depth draw: base {} fmt {} pitch {} color mask {:08X} vte {:03X} "
-                "1x companion {} (known 1x surfaces {})",
-                uint32_t(depth_info.depth_base), uint32_t(depth_info.depth_format),
-                uint32_t(surface.surface_pitch), regs.values[XE_GPU_REG_RB_COLOR_MASK],
-                vte_dbg.value & 0x7FF,
-                g_depth_1x_surfaces.count(depth_key_base | (surface.surface_pitch * 2)),
-                g_depth_1x_surfaces.size());
-  }
   // Depth only: no color writes.
   if (regs.values[XE_GPU_REG_RB_COLOR_MASK] & 0xFFFF) return;
-  // Positions must go through the viewport transform (screen-space draws would need scaling of
-  // the vertex positions themselves).
-  auto vte = regs.Get<reg::PA_CL_VTE_CNTL>();
-  if (!(vte.vport_x_scale_ena && vte.vport_x_offset_ena && vte.vport_y_scale_ena &&
-        vte.vport_y_offset_ena)) {
-    return;
-  }
   if (!g_depth_1x_surfaces.count(depth_key_base | (surface.surface_pitch * 2))) return;
-  for (uint32_t i = 0; i < 13; ++i) state.saved[i] = regs.values[kMsaaDepthAliasRegs[i]];
+  for (uint32_t i = 0; i < 3; ++i) state.saved[i] = regs.values[kMsaaDepthAliasRegs[i]];
   state.active = true;
   reg::RB_SURFACE_INFO single = surface;
   single.surface_pitch = surface.surface_pitch * 2;
   single.hiz_pitch = std::min<uint32_t>(surface.hiz_pitch * 2, 0x3FFF);
   single.msaa_samples = xenos::MsaaSamples::k1X;
   regs.values[XE_GPU_REG_RB_SURFACE_INFO] = single.value;
-  for (uint32_t reg : {XE_GPU_REG_PA_CL_VPORT_XSCALE, XE_GPU_REG_PA_CL_VPORT_XOFFSET,
-                       XE_GPU_REG_PA_CL_VPORT_YSCALE, XE_GPU_REG_PA_CL_VPORT_YOFFSET,
-                       XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_SCALE,
-                       XE_GPU_REG_PA_SU_POLY_OFFSET_BACK_SCALE}) {
+  // Slope-scaled bias is per pixel: pixels are half as big, so twice the factor.
+  for (uint32_t reg :
+       {XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_SCALE, XE_GPU_REG_PA_SU_POLY_OFFSET_BACK_SCALE}) {
     regs.values[reg] = FloatReg(RegFloat(regs.values[reg]) * 2.0f);
   }
-  // Window offset: signed 15-bit x at 0 and y at 16.
-  {
-    reg::PA_SC_WINDOW_OFFSET offset;
-    offset.value = regs.values[XE_GPU_REG_PA_SC_WINDOW_OFFSET];
-    offset.window_x_offset = offset.window_x_offset * 2;
-    offset.window_y_offset = offset.window_y_offset * 2;
-    regs.values[XE_GPU_REG_PA_SC_WINDOW_OFFSET] = offset.value;
-  }
-  regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL] =
-      DoubleXY(regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL], 14, 14);
-  regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] =
-      DoubleXY(regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR], 14, 14);
-  // Screen scissor: signed 15-bit fields, clamped to their range.
-  auto double_signed15 = [](int32_t v) { return std::clamp(v * 2, -16384, 16383); };
-  {
-    reg::PA_SC_SCREEN_SCISSOR_TL tl;
-    tl.value = regs.values[XE_GPU_REG_PA_SC_SCREEN_SCISSOR_TL];
-    tl.tl_x = double_signed15(tl.tl_x);
-    tl.tl_y = double_signed15(tl.tl_y);
-    regs.values[XE_GPU_REG_PA_SC_SCREEN_SCISSOR_TL] = tl.value;
-    reg::PA_SC_SCREEN_SCISSOR_BR br;
-    br.value = regs.values[XE_GPU_REG_PA_SC_SCREEN_SCISSOR_BR];
-    br.br_x = double_signed15(br.br_x);
-    br.br_y = double_signed15(br.br_y);
-    regs.values[XE_GPU_REG_PA_SC_SCREEN_SCISSOR_BR] = br.value;
-  }
+  g_draw_scale_multiplier = 2;
 }
 
 void RestoreMsaaDepthDraw(RegisterFile& regs, const MsaaDepthAsSingleSample& state) {
   if (!state.active) return;
-  for (uint32_t i = 0; i < 13; ++i) regs.values[kMsaaDepthAliasRegs[i]] = state.saved[i];
+  for (uint32_t i = 0; i < 3; ++i) regs.values[kMsaaDepthAliasRegs[i]] = state.saved[i];
+  g_draw_scale_multiplier = 1;
 }
 
 }  // namespace

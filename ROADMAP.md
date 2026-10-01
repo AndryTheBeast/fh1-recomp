@@ -335,14 +335,14 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
      transfers cuts "render targets (EDRAM)" GPU time 6.4 -> 3.8 ms/frame, but the shadows vanish
      and the car gets the same glowing blue garbage as --gpu_force_msaa_1x (test-ab_skip-*): the
      data IS needed, so do the real one-image version.
-     WIP --gpu_msaa_depth_as_1x (off by default, sdk/src/graphics/command_processor.cpp
-     MaybeDrawMsaaDepthAsSingleSample): rewrites RB_SURFACE_INFO to 1x/2P around such draws, but
-     does not apply yet: FH1's shadow draws have the viewport transform OFF (PA_CL_VTE_CNTL 0x300,
-     positions already in 4x-surface pixels), so doubling viewport registers does nothing. NEXT:
-     drop the viewport/scissor register patching and instead pass a per-draw resolution scale x2
-     to GetHostViewportInfo and the scissor in D3D12 IssueDraw (d3d12/command_processor.cpp
-     ~2427-2470; note the viewport cache key must include the scale). Keep RB_SURFACE_INFO and
-     poly-offset-scale patching.
+     DONE 2026-10-01: --gpu_msaa_depth_as_1x (ON by default, D3D12 only;
+     sdk/src/graphics/command_processor.cpp MaybeDrawMsaaDepthAsSingleSample). Around such draws
+     RB_SURFACE_INFO becomes 1x/pitch 2P and the poly-offset slope scale x2, and
+     g_draw_scale_multiplier = 2 makes D3D12 IssueDraw double the viewport/scissor resolution
+     scale (FH1's shadow draws have VTE off, so register patching of the viewport did nothing).
+     Festival A/B (test-d1x / test-d1xoff): "render targets (EDRAM)" 6.5 -> 4.4 ms/frame, host
+     GPU 27 -> 24.5 ms, screenshots identical; the shadow-buffer transfers are gone from the
+     --gpu_log_rt_frame log. Vulkan does not apply the multiplier yet (flag ignored there).
   2. Zero-cleared ranges: after a resolve with clear whose clear value is all-zero bits, mark the
      EDRAM range; a new owner of a marked range gets a clear-to-zero instead of a transfer
      (zero bits mean zero in every host format) - removes most of the other 44%.
