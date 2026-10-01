@@ -12,31 +12,19 @@ untouched until then. The base is the nfsmw-nx
 project (NFS Most Wanted for Switch); its game-specific app lives in `reference/nfsmw-app/` as a
 worked example.
 
-Status (2026-09-30, end of the Surface session): playable from a new game through the intro,
-the festival, loading a save and a full race (the user finished an event). Fixed that day: a crash
-at the intro video (thunk pool), the crash loading a save (0xBE stack fill), the crash entering an
-event (no cache: device). Rendering uses the SDK's xenos GPU emulation (D3D12, host render
-targets = RTV). Everything since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
+Status (2026-10-02): **playable on PC** - boot, festival, free roam, races, garage, buying and
+repainting cars (photos correct), saving. Legion Go (Ryzen Z1 Extreme): 30 fps (game cap) in
+normal play, 26-28 in the busiest spots. Graphics = the SDK's emulated Xbox 360 GPU: D3D12 (default)
+and Vulkan (`--gpu_backend=vulkan`), both correct. ROADMAP.md has the current plan (short);
+docs/roadmap-history.md the detailed log of everything done; docs/performance-review.md where the
+frame time goes and what to cut for the Switch.
 
-Fixed 2026-10-01: cars/objects passing through each other (vmsum3fp128 overflow semantics, see
-ROADMAP); the floating car was a low-fps effect. Fixed 2026-10-01 too: garage light bloom + broken car photos (readback_resolve=some is now the
-default in fh1_app.h); the HUD no longer flashes at 30 fps. Known problems: a soft rectangular edge around the car's contact shadow; ~6 tessellated draws per
-frame fail in the GPU backend ("PM4_DRAW_INDX_2 ... tess_mode=1"); on Intel only (fine on AMD), RTV shows a dark square bottom-right and a hard-edged car shadow (ROV draws both right).
+Earlier machines: Intel HD 630 and Iris Plus G7 (~7 fps). Since 2026-10-01 a Lenovo Legion Go
+(AMD Ryzen Z1 Extreme: Zen 4 + RDNA 3, 1920x1200). Full build ~14 min, app-only rebuild ~4 min.
 
-Performance so far only on Intel iGPUs: HD 630 and Iris Plus G7 both ~7 fps in the drive and in
-the festival (~3,800 draws per frame, the frame drawn in 3 strips), ~20 fps in videos. Speed
-experiments (all off by default) are in ROADMAP "Stop-gap speed".
-
-**Machine change (2026-10-01): the project moves to a Lenovo Legion Go (AMD Ryzen Z1 Extreme:
-Zen 4 CPU + RDNA 3 iGPU, 1920x1200 screen).** Baseline there (2026-09-30 evening, commit dea7f49,
-test-base / test-rov logs): festival + free-roam driving on RTV **28-30 fps** (the game's own
-30 fps cap; Surface 7.4), host GPU ~28 ms/frame, GPU thread busy 100%, ~3,300 draws/frame. On AMD
-the RTV picture is correct: no dark square, soft car shadow. ROV: 6-10 fps, GPU-bound (~100-120 ms
-of host GPU per frame, almost all draws) - still only a reference. Full build ~14 min.
-
-**Decision (user, 2026-09-30): make the game fully working with the current GPU emulation first,
-then build the native renderer on PC.** User's order after that: a stop-gap speed-up first, then
-the gameplay/visual bugs.
+User's decisions: game working with the GPU emulation first (done), then the native renderer on
+PC (Vulkan, Stage 3); the Switch port later in a separate repo. 60 fps unlock and in-emulation
+single-pass drawing were tried and dropped (they broke the picture).
 
 ## Legal rule (never break it)
 
@@ -206,27 +194,6 @@ lists the actions and saves the render targets as PNG.
 
 ## Next steps
 
-1. [done 2026-09-30] Legion Go set up and built; `DXGI adapter: AMD Radeon Graphics (0x1002)`.
-2. [done, results in "Goal and current state"] Baseline on the Z1 Extreme. With a save present the
-   game boots straight into the festival (~50 s on the Legion Go), so the unattended test is:
-
-       powershell -ExecutionPolicy Bypass -File tools\auto_test.ps1 -Name base -Seconds 140 `
-         -Shots "110,125,138" -Autoplay "34+0.3=start;36+0.3=start;38+0.3=start;41+0.3=a;43+0.3=a;46+0.3=a"
-
-   Run it twice: default (RTV) and with `-ExtraArgs "--render_target_path_d3d12=rov"`. Compare
-   `[fps]`, `[fps] host GPU per frame` and the screenshots with the Surface
-   (`build_logs\archive-2026-09-30-surface\`: festival 7.4 fps, ~130 ms host GPU per frame).
-   Questions: is ROV (correct picture) fast enough now? Does RTV still show the dark square and the
-   hard car shadow on AMD? (On Intel the stencil-reference export is missing and xenia falls back;
-   AMD has it.) Is the frame CPU-bound (`GPU thread busy` ~100% with low host-GPU time) or GPU-bound?
-3. Stop-gap speed: on the Z1 Extreme RTV already reaches the game's 30 fps cap, so this matters
-   only for weaker GPUs (and the Switch). Was: finish the single-strip mode (ROADMAP "Stop-gap speed":
-   force window offset 0 and a full scissor for draws, strip 1's copy destination, one resolve of
-   all rows), or real screen extents, depending on what the baseline shows.
-4. Gameplay/visual bugs: car above the road and clipping into cars (collision / ground queries;
-   see the save-loading crash notes in ROADMAP), HUD flashing, then whatever RTV still gets wrong.
-5. Then the native renderer on PC (`reference/nfsmw-app/src/nfsmw_nativo_*`, XenosRecomp shaders).
-   The Switch port is a separate repository, later.
-
-Done and verified (details in ROADMAP): log health check (harmless warnings listed there), the
-intro-video crash, the save-loading crash, the event crash (cache: mount), first event finished.
+See ROADMAP.md: (1) read back only resolves the CPU reads, (2) check the visibility-query depth
+pass, (3) hook the game's ring busy-waits, then the native render-target cache in the Vulkan
+backend and drawing the main scene once instead of 3 strips.
