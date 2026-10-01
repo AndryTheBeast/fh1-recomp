@@ -232,6 +232,28 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
     own rectangle is full-frame or per strip.
 - [ ] Log kernel/XAM calls the game needs that ReXGlue lacks (Kinect, Xbox Live, content/DLC paths)
 
+## Stage 3 — Native renderer on PC (Vulkan), started 2026-10-01
+Why: in busy races the emulated GPU needs ~37 ms of host GPU per frame (EDRAM emulation, 3-strip
+tiling, per-draw emulation); the quick cuts (MSAA 1x, single strip) break the picture. The user
+chose the native renderer (2026-10-01). Model: nfsmw-nx's renderer (reference/nfsmw-app/src/
+nfsmw_nativo_*, docs/native-renderer.md): the game's own D3D keeps writing the PM4 ring; a ring
+thread reads it and draws the same frame with Vulkan, without EDRAM. Vulkan, not D3D12, so the
+same renderer later moves to the Switch repo. The xenos emulation stays selectable as the
+reference picture and fallback (compare both to tell renderer bugs from game bugs).
+- [ ] Phase A - map FH1's Direct3D (XDK 2012, statically linked, around 0x829F0000-0x82A30000):
+      Swap, draw calls, shader creation/binding, resolve, command-buffer walker (sub_829F5FF0),
+      ring wait (sub_829F04A8/sub_823E91F0), predicated tiling block (device+116). Confirm with a
+      tracing wrapper (pattern: reference/nfsmw-app/src/nfsmw_d3d_trace.cpp) before replacing.
+- [ ] Phase B - shader library: extract FH1's shader microcode, translate with XenosRecomp
+      (shaders/, docs/shaders.md), build the library (no game data in git).
+- [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
+      Vulkan presenter; first frames: logos and title screen.
+- [ ] Phase D - festival and race: render targets/resolves (no EDRAM, one pass instead of 3
+      strips), readbacks the game needs (auto exposure, car photos), passes (shadows,
+      reflections, cubemaps); automatic screenshot comparison against the emulation.
+- [ ] Phase E - performance: pipeline cache, texture cache, native versions of the busiest
+      game functions with guards (nfsmw pattern).
+
 ## Stages 3-5 — Nintendo Switch (separate repository)
 The Switch port will be a separate repository, started from this one once the game is fully playable on PC.
 The plan carried over from nfsmw-nx, kept here for reference:
