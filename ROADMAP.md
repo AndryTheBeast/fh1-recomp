@@ -41,10 +41,12 @@ faster); forcing 1x MSAA (garbage on the car).
 
 ## Next — performance (from `docs/performance-review.md`)
 
-1. [ ] **Read back only what the CPU reads.** Every resolve is copied back today; the game reads
-       only the auto-exposure value and car photos. ~1-3 ms GPU + CPU copies.
-2. [ ] **Check the visibility-query depth pass.** 37 tiny depth draws around the game's occlusion
-       queries take ~1/6 of the frame in replay timings; batch or answer the queries late.
+1. [x] **Read back only what the CPU reads** (2026-10-02, `readback_resolve_skip_steady`): big
+       destinations resolved every frame are no longer copied back; resolve GPU time 5.0 -> 4.2 ms.
+       To verify by the user: a car photo after a repaint still saves correctly.
+2. [x] **Visibility queries checked**: the emulator answers them without GPU work, so the slow
+       depth draws in the replay timings were a measurement artifact. Their log lines (8 per
+       frame) and other per-frame log spam are now logged a few times only.
 3. [ ] **Stop the game's render thread spinning** while it waits for the GPU thread (half a core;
        a whole core on the Switch): hook the ring waits (`sub_829F04A8`, `sub_823E91F0`).
 4. [ ] Vulkan: frame monitor (F3) for the Vulkan presenter; persistent pipeline cache to cut hitches.
