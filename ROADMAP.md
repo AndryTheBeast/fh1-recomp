@@ -182,6 +182,10 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
     host-render-target shortcut.
   - [x] --gpu_force_msaa_1x (clears the MSAA field of RB_SURFACE_INFO): works, all RTs 1x, but only
         7.4 -> 7.7 fps. MSAA is not the cost; the draw count is.
+        Legion Go 2026-10-01 (run-msaa1x-20261001-121649): NOT usable - glowing blue garbage on
+        the car's rear (plate area, lights). The game lays out its EDRAM render targets for 4x
+        sample sizes; forcing 1x makes surfaces overlap. The single-strip experiment depends on
+        it too, so both need a real EDRAM-layout-aware approach (or the native renderer).
   - Predicated tiling (see the `[fps] tiling` line): the frame is replayed once per strip (bin
     select 3 / C / 30, plus 80000003 for the first pass). Per object the game emits EVENT_WRITE 0x19
     (reset extent), its draws, then EVENT_WRITE_EXT 0x1A to a 16-byte slot; its CPU code reads the
