@@ -10,6 +10,7 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 #include <rex/assert.h>
@@ -887,6 +888,12 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
 
   assert_true(x0 < x1 && y0 < y1);
   if (x0 >= x1 || y0 >= y1) {
+    // Normal with predicated tiling: each strip pass also issues the other strips' copy-outs,
+    // scissored away (FH1: 6 per frame). Log the first few only.
+    static std::atomic<uint32_t> empty_logged{0};
+    if (empty_logged.fetch_add(1, std::memory_order_relaxed) >= 20) {
+      return false;
+    }
     REXGPU_ERROR(
         "Resolve region is empty: rectangle ({},{})-({},{}) before the scissor, scissor "
         "({},{}) {}x{}, window offset ({},{}) {}, surface pitch {}, dest base {:08X}",

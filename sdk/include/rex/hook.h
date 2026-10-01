@@ -48,11 +48,16 @@
 // Define a raw hook with direct ctx/base access.
 #define REX_HOOK_RAW(name) extern "C" REX_FUNC(name)
 
-// Stub: logs a warning when called.
-#define REX_STUB(subroutine)              \
-  extern "C" REX_FUNC(subroutine) {       \
-    (void)base;                           \
-    REXKRNL_WARN("{} STUB", #subroutine); \
+// Stub: logs a warning the first 3 times it is called (games poll some stubs every frame:
+// FH1 calls XamXStudioRequest ~1,400 times a minute).
+#define REX_STUB(subroutine)                  \
+  extern "C" REX_FUNC(subroutine) {           \
+    (void)base;                               \
+    static int _stub_logged = 0;              \
+    if (_stub_logged < 3) {                   \
+      ++_stub_logged;                         \
+      REXKRNL_WARN("{} STUB", #subroutine);   \
+    }                                         \
   }
 
 #define REX_STUB_LOG(subroutine, msg)               \

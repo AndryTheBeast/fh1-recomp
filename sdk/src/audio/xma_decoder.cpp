@@ -601,7 +601,10 @@ void XmaDecoder::WriteRegister(uint32_t addr, uint32_t value) {
           REXAPU_DEBUG("XMA: Write to unhandled register ({:04X}, {}): {:08X}", r,
                        register_info->name, value);
         } else {
-          REXAPU_DEBUG("XMA: Write to unknown register ({:04X}): {:08X}", r, value);
+          static std::atomic<uint32_t> unknown_logged{0};
+          if (unknown_logged.fetch_add(1, std::memory_order_relaxed) < 20) {
+            REXAPU_DEBUG("XMA: Write to unknown register ({:04X}): {:08X}", r, value);
+          }
         }
         break;
       }

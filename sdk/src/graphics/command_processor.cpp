@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <atomic>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -1755,7 +1756,10 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
       frame_stats_.draw_ticks += rex::chrono::Clock::QueryHostTickCount() - draw_start;
       ++frame_stats_.draws;
       frame_stats_.failed_draws += draw_succeeded ? 0 : 1;
-      if (!draw_succeeded) {
+      static std::atomic<uint32_t> failed_logged{0};
+      // Failed resolves (edram_mode copy) are mostly the empty copy-outs of predicated tiling,
+      // 6 per frame in FH1: log the first few failures only.
+      if (!draw_succeeded && failed_logged.fetch_add(1, std::memory_order_relaxed) < 30) {
         auto vgt_output_path_cntl = register_file_->Get<reg::VGT_OUTPUT_PATH_CNTL>();
         auto vgt_hos_cntl = register_file_->Get<reg::VGT_HOS_CNTL>();
         auto rb_modecontrol = register_file_->Get<reg::RB_MODECONTROL>();
