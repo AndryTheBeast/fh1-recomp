@@ -47,6 +47,13 @@ class Fh1App : public rex::ReXApp {
   // --gpu_plugin=<name> on the command line still wins.
   void OnPreSetup(rex::RuntimeConfig& config) override {
     if (config.gpu_plugin.empty()) config.gpu_plugin = "xenos";
+    // FH1 reads render-to-texture results on the CPU: its auto exposure (without it a wrong
+    // exposure made car lights bloom into white streaks in the garage) and the car photos it
+    // saves when you buy a car (they were saved as garbage). "some" = previous frame, copied
+    // on demand; no measurable cost in free roam. --readback_resolve=<mode> still wins.
+    if (!rex::cvar::HasNonDefaultValue("readback_resolve")) {
+      rex::cvar::SetFlagByName("readback_resolve", "some");
+    }
   }
   // void OnLoadXexImage(std::string& xex_image) override {}
   // void OnPostLoadXexImage() override {}

@@ -19,8 +19,8 @@ event (no cache: device). Rendering uses the SDK's xenos GPU emulation (D3D12, h
 targets = RTV). Everything since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
 
 Fixed 2026-10-01: cars/objects passing through each other (vmsum3fp128 overflow semantics, see
-ROADMAP); the floating car was a low-fps effect. Known problems: the HUD flashes (once seen, on a
-frame drop); a soft rectangular edge around the car's contact shadow; ~6 tessellated draws per
+ROADMAP); the floating car was a low-fps effect. Fixed 2026-10-01 too: garage light bloom + broken car photos (readback_resolve=some is now the
+default in fh1_app.h); the HUD no longer flashes at 30 fps. Known problems: a soft rectangular edge around the car's contact shadow; ~6 tessellated draws per
 frame fail in the GPU backend ("PM4_DRAW_INDX_2 ... tess_mode=1"); on Intel only (fine on AMD), RTV shows a dark square bottom-right and a hard-edged car shadow (ROV draws both right).
 
 Performance so far only on Intel iGPUs: HD 630 and Iris Plus G7 both ~7 fps in the drive and in

@@ -167,6 +167,17 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
         Rock), twice per frame = the game's vblank pacing; only Sleep() overshoot (<1 ms) is lost.
     The "failed draws" (6/frame, edram_mode=6) are the empty resolves of the other strips, not
     tessellation - harmless.
+    2026-10-01 morning, user's race (run-race-20261001-111628): busy race scenes 17-22 fps with
+    the HOST GPU as the limit there (37 ms/frame: draws 16, EDRAM 8, textures 4.4). The log was
+    90 MB in 15 min (empty-resolve / failed-copy errors 12x per frame, XMA unknown-register and
+    XamXStudioRequest stub spam) - now rate-limited (~9 MB per session).
+  - [x] Garage: car lights bloomed into white streaks; Car Select photos of newly bought cars were
+        garbage (Thumbnail_N.xdc in the save = tiled 768x288 8888 texture, saved as garbage).
+        Both were CPU reads of resolve results (auto exposure, photo save) with readback off.
+        fh1_app.h now defaults --readback_resolve=some (no measurable cost); "full" stalls
+        (unplayable) and changes nothing more. Photos saved before the fix stay broken.
+  - [ ] Abarth rear plate is blank grey - maybe normal for FH1 (no custom plates); compare with
+        Xbox footage.
     Soft rectangle under the car: RTV and ROV render the same (test-rectrtv/rectrov), so not a
     host-render-target shortcut.
   - [x] --gpu_force_msaa_1x (clears the MSAA field of RB_SURFACE_INFO): works, all RTs 1x, but only
