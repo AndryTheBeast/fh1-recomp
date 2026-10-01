@@ -292,6 +292,15 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       (one Vulkan image per render target, resolves as direct copies/blits, tiling collapsed to
       one full-size pass). That fixes the black world and the cost in one step and is the core of
       the native renderer, built on parts proven to work on FH1.
+- [ ] Native render target cache for the Vulkan backend (next concrete step). Interface it must
+      provide (calls from vulkan/command_processor.cpp): Update (targets for a draw ->
+      render pass/framebuffer/attachments), Resolve, GetPath, Initialize/ClearCache/
+      EndSubmission/CompletedSubmissionUpdated, plus format flags. What it drops compared with
+      the emulation's host-RT path (pipeline/render_target/cache.h): EDRAM aliasing and its
+      ownership transfers (7-8 ms/frame of GPU in races), the per-strip replay (window offsets,
+      bin predication - handled in the command processor), and resolves through the EDRAM buffer
+      (copy from the target image into shared memory instead). Milestone 1: festival correct on
+      Vulkan (compare with D3D12 screenshots), at least D3D12's speed.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
       Vulkan presenter; first frames: logos and title screen.
 - [ ] Phase D - festival and race: render targets/resolves (no EDRAM, one pass instead of 3
