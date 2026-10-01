@@ -1245,16 +1245,8 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
     if (select_or && uint32_t(select) != 0xFFFFFFFFu) {
       select |= select_or;
     }
-    bool is_draw = opcode == PM4_DRAW_INDX || opcode == PM4_DRAW_INDX_2;
-    // Collapsed tiling (--gpu_collapsed_tiling_height): the one pass covers every strip, so draws
-    // the game assigned to strips 2-3 only (bin mask C / 30, objects lower on the screen) must run
-    // too. Register writes keep strip 1's select: the per-strip window offset / scissor packets of
-    // strips 2-3 would move the frame.
-    if (is_draw && uint32_t(select) != 0xFFFFFFFFu &&
-        REXCVAR_GET(gpu_collapsed_tiling_height) > 0) {
-      select |= 0x3F;
-    }
     bool any_pass = (select & bin_mask_) != 0;
+    bool is_draw = opcode == PM4_DRAW_INDX || opcode == PM4_DRAW_INDX_2;
     ++tiling_stats_.predicated;
     tiling_stats_.predicated_draws += is_draw;
     if (!any_pass || opcode == PM4_XE_SWAP) {
