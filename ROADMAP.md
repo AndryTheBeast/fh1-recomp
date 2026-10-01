@@ -366,6 +366,8 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       draw time 11 -> 7 ms. Picture still WRONG (test-st3): only the bottom ~256 rows show the
       world, the rest is grey sky colour - next: find which draws of the pass are missing
       (predicated packets for strips 2/3 are skipped: objects whose bin mask is C/30 only?).
+- Single-pass "strips 2-3 draws" fix (b0ff833) broke the picture in the user's test: reverted
+  (040db55). Single-pass mode stays experimental/off; distant scenery is still missing in it.
 - Frame rate unlock tried and DROPPED (user's decision, 2026-10-01): --vsync=false (guest vblank
   at 1 kHz) lifts the 30 fps cap (26-35 fps at the festival, host GPU ~25-34 ms/frame, so 60 would
   need ~2x on both CPU and GPU), but the user saw broken distant rendering with it. Back to the
