@@ -9,6 +9,7 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <rex/ui/frame_monitor_overlay.h>
 #include <algorithm>
 #include <climits>
 #include <cmath>
@@ -1117,6 +1118,29 @@ Presenter::PaintResult D3D12Presenter::PaintAndPresentImpl(bool execute_ui_drawe
   if (back_buffer_clear_needed) {
     command_list->ClearRenderTargetView(back_buffer_rtv, kBackBufferClearColor, 0, nullptr);
     back_buffer_clear_needed = false;
+  }
+
+  // Frame monitor (F3): filled rectangles over the guest output, no UI thread involved.
+  {
+    static thread_local FrameMonitorRects monitor_rects;
+    if (BuildFrameMonitorRects(paint_context_.swap_chain_width, paint_context_.swap_chain_height,
+                               monitor_rects)) {
+      static_assert(sizeof(FrameMonitorRects::Rect) == sizeof(D3D12_RECT));
+      auto fill = [&](const std::vector<FrameMonitorRects::Rect>& rects, const float* color) {
+        if (!rects.empty()) {
+          command_list->ClearRenderTargetView(back_buffer_rtv, color, UINT(rects.size()),
+                                              reinterpret_cast<const D3D12_RECT*>(rects.data()));
+        }
+      };
+      const float kBackground[4] = {0.05f, 0.05f, 0.05f, 1.0f};
+      const float kText[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+      const float kGraph[4] = {0.3f, 0.85f, 0.3f, 1.0f};
+      const float kGraphSlow[4] = {0.95f, 0.3f, 0.2f, 1.0f};
+      fill(monitor_rects.background, kBackground);
+      fill(monitor_rects.text, kText);
+      fill(monitor_rects.graph, kGraph);
+      fill(monitor_rects.graph_slow, kGraphSlow);
+    }
   }
 
   if (execute_ui_drawers) {

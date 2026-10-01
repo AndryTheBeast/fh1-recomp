@@ -8,6 +8,7 @@ set(REXUI_CORE_SOURCES
     imgui_dialog.cpp
     imgui_drawer.cpp
     immediate_drawer.cpp
+    frame_monitor_overlay.cpp
     keybinds.cpp
     menu_item.cpp
     presenter.cpp

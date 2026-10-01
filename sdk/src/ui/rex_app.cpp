@@ -23,6 +23,7 @@
 #include <rex/ui/overlay/achievement_toast.h>
 #include <rex/ui/overlay/achievements_overlay.h>
 #include <rex/ui/overlay/console_overlay.h>
+#include <rex/ui/frame_monitor_overlay.h>
 #include <rex/ui/overlay/debug_overlay.h>
 #include <rex/ui/overlay/settings_overlay.h>
 #include <rex/audio/audio_system.h>
@@ -445,9 +446,28 @@ void ReXApp::SetupOverlays(rex::ui::Presenter* presenter, rex::ui::ImmediateDraw
 #endif
     }
   };
-  rex::ui::RegisterBind("bind_debug_overlay", "F3", "Toggle debug overlay", toggle_debug_overlay);
+  (void)toggle_debug_overlay;
+  // F3: frame monitor drawn by the presenter itself (an ImGui window moves presentation to the UI
+  // thread and caused 100+ ms hitches).
+  ui::SetFrameMonitorProvider([this](ui::FrameMonitorContent& content) {
+    auto* graphics = runtime_ ? runtime_->graphics_system() : nullptr;
+    system::FrameMonitorStats stats;
+    if (!graphics || !graphics->GetFrameMonitorStats(stats)) {
+      return false;
+    }
+    content.lines.push_back(stats.renderer);
+    content.lines.push_back(fmt::format("{:.0f} FPS  {:.1f} MS", stats.fps, stats.frame_time_ms));
+    content.lines.push_back(
+        fmt::format("AVG {:.1f} MS  WORST {:.1f} MS", stats.average_ms, stats.worst_ms));
+    content.lines.push_back(fmt::format("FRAMES {}", stats.total_frames));
+    content.history_ms.assign(stats.history_ms,
+                              stats.history_ms + system::FrameMonitorStats::kHistory);
+    return true;
+  });
+  rex::ui::RegisterBind("bind_debug_overlay", "F3", "Toggle frame monitor",
+                        [] { ui::ToggleFrameMonitor(); });
   if (REXCVAR_GET(show_frame_monitor)) {
-    toggle_debug_overlay();
+    ui::SetFrameMonitorEnabled(true);
   }
   rex::ui::RegisterBind("bind_console", "Backtick", "Toggle console overlay", [this] {
     if (console_overlay_) {
