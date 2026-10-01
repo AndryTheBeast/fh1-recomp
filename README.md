@@ -22,8 +22,9 @@ festival, loading a save and a complete race, with no crashes, at a steady **30 
 cap on the Xbox 360) with a correct picture. Rendering still goes through ReXGlue's Xenos GPU emulation
 (Direct3D 12); a native renderer comes later.
 
-Still being fixed: the car rides slightly above the road and can pass through other cars, and the HUD
-sometimes flashes. Details and history in [ROADMAP.md](ROADMAP.md).
+Car-to-car and car-to-object collisions work (October 2026: the Xbox's `vmsum3fp128` dot product returns
+NaN on float overflow, and the game's collision code depends on it). Still being fixed: the HUD sometimes
+flashes, and a few graphics details. Details and history in [ROADMAP.md](ROADMAP.md).
 
 ### Test hardware
 

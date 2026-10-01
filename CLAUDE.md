@@ -18,8 +18,10 @@ at the intro video (thunk pool), the crash loading a save (0xBE stack fill), the
 event (no cache: device). Rendering uses the SDK's xenos GPU emulation (D3D12, host render
 targets = RTV). Everything since the fiber fix (dc8f275) is in ROADMAP.md Stage 2.
 
-Known problems: the car drives above the road and clips into other cars; the HUD flashes; on
-Intel only (fine on AMD), RTV shows a dark square bottom-right and a hard-edged car shadow (ROV draws both right).
+Fixed 2026-10-01: cars/objects passing through each other (vmsum3fp128 overflow semantics, see
+ROADMAP); the floating car was a low-fps effect. Known problems: the HUD flashes (once seen, on a
+frame drop); a soft rectangular edge around the car's contact shadow; ~6 tessellated draws per
+frame fail in the GPU backend ("PM4_DRAW_INDX_2 ... tess_mode=1"); on Intel only (fine on AMD), RTV shows a dark square bottom-right and a hard-edged car shadow (ROV draws both right).
 
 Performance so far only on Intel iGPUs: HD 630 and Iris Plus G7 both ~7 fps in the drive and in
 the festival (~3,800 draws per frame, the frame drawn in 3 strips), ~20 fps in videos. Speed
