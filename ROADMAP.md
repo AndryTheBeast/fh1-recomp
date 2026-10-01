@@ -47,8 +47,11 @@ faster); forcing 1x MSAA (garbage on the car).
 2. [x] **Visibility queries checked**: the emulator answers them without GPU work, so the slow
        depth draws in the replay timings were a measurement artifact. Their log lines (8 per
        frame) and other per-frame log spam are now logged a few times only.
-3. [ ] **Stop the game's render thread spinning** while it waits for the GPU thread (half a core;
-       a whole core on the Switch): hook the ring waits (`sub_829F04A8`, `sub_823E91F0`).
+3. [x] **Game render thread no longer spins flat out** (2026-10-02, fh1/src/fh1_perf_hooks.cpp,
+       `--fh1_yield_ring_wait`): the ring poll `sub_829F04A8` yields the core while waiting.
+       Render thread 99% -> 56% busy, 30 fps unchanged. Short sleeps cut it to 34% but cost frame
+       pacing on Windows (sleep overshoot); the Switch port should block on an event signalled
+       when the ring read pointer moves.
 4. [ ] Vulkan: frame monitor (F3) for the Vulkan presenter; persistent pipeline cache to cut hitches.
 
 ## Next — better test autoplay (user's request, 2026-10-02)
