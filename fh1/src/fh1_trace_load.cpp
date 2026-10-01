@@ -85,6 +85,10 @@ REX_HOOK_RAW(sub_829F55A8) {
 REXCVAR_DEFINE_BOOL(fh1_single_tile, false, "FH1",
                     "Speed experiment: draw the frame as one strip (use with --gpu_force_msaa_1x)");
 
+REXCVAR_DEFINE_BOOL(fh1_single_tile_gpu, true, "FH1",
+                    "With fh1_single_tile: extend the pass to the full frame on the GPU side "
+                    "(gpu_collapsed_tiling_height, 1x MSAA for that pass)");
+
 REX_EXTERN(__imp__sub_82A7D730);
 REX_HOOK_RAW(sub_82A7D730) {
   bool tiling_block = uint32_t(ctx.lr) == 0x829F60DC && ctx.r5.u32 == 248;
@@ -103,6 +107,15 @@ REX_HOOK_RAW(sub_82A7D730) {
       put(dest + 4, 1);
       put(dest + 16, x2);
       put(dest + 20, y2);
+      // The GPU side draws and resolves the whole height of that one pass (the recorded
+      // per-strip scissor still covers only the first strip).
+      if (REXCVAR_GET(fh1_single_tile_gpu)) {
+        static uint32_t last_height = 0;
+        if (last_height != y2) {
+          last_height = y2;
+          rex::cvar::SetFlagByName("gpu_collapsed_tiling_height", std::to_string(y2));
+        }
+      }
       static std::atomic<uint32_t> logged{0};
       if (logged.fetch_add(1) < 5) {
         REXLOG_INFO("[tiling] single tile: {} strips -> 1 of {}x{}", count, x2, y2);

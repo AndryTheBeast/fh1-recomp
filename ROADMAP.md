@@ -352,6 +352,20 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
      most remaining transfers carry real data (4x-at-pitch-P <-> 1x-at-2P aliasing with color too,
      depth read back as color in post-processing), which only the native render target cache
      removes.
+  User check 2026-10-01 (run-20261001-173124, ~7 min free roam + races, both fixes on): no
+  visual problems, 28-30 fps throughout, host GPU 19-29 ms/frame (races were ~37 ms before).
+  Soft rectangle under the car: the user thinks motion blur is not applied there (a blur mask
+  around the car slightly larger than the car?). Same in RTV and ROV - compare with console
+  footage before treating it as a bug.
+- [ ] Collapsed tiling (WIP, off by default): --fh1_single_tile (game draws one strip of
+      1280x720) + new GPU side gpu_collapsed_tiling_height (set by the hook, fh1_single_tile_gpu):
+      in the tiled pass (bin select != FFFFFFFF) draws/resolves get 1x MSAA (the full frame then
+      fits EDRAM: color 720 + depth 720 tiles), the window scissor extended to the frame height
+      and the resolve rectangle extended (draw_util::GetResolveInfo, g_collapsed_resolve_height;
+      the game's resolve vertices cover only strip 1). Draws 3,400 -> 2,200 per frame, GPU-thread
+      draw time 11 -> 7 ms. Picture still WRONG (test-st3): only the bottom ~256 rows show the
+      world, the rest is grey sky colour - next: find which draws of the pass are missing
+      (predicated packets for strips 2/3 are skipped: objects whose bin mask is C/30 only?).
   Already there: direct host resolve (vulkan TryResolveCopyDirectly) copies from the target
   image to shared memory without the EDRAM buffer.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
