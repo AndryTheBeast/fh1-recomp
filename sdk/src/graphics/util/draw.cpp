@@ -43,7 +43,6 @@ REXCVAR_DEFINE_BOOL(resolve_resolution_scale_fill_half_pixel_offset, true, "GPU"
 
 namespace rex::graphics {
 bool RtLogActive();  // pipeline/render_target/cache.cpp (--gpu_log_rt_frame)
-extern uint32_t g_collapsed_resolve_height;  // graphics/command_processor.cpp
 }  // namespace rex::graphics
 
 namespace rex::graphics::draw_util {
@@ -830,18 +829,6 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
     y0 += pa_sc_window_offset.window_y_offset;
     x1 += pa_sc_window_offset.window_x_offset;
     y1 += pa_sc_window_offset.window_y_offset;
-  }
-
-  // Collapsed tiled pass: the game's resolve rectangle covers only the first strip; extend it to
-  // the frame height. The copy-outs of the other strips (rectangles starting lower) still run,
-  // all to the first strip's destination (their RB_COPY_DEST_BASE writes are predicated off), and
-  // would copy the already cleared surface over the frame: make them empty.
-  if (g_collapsed_resolve_height) {
-    if (y0 > 0) {
-      y1 = y0;
-    } else {
-      y1 = std::max(y1, int32_t(g_collapsed_resolve_height));
-    }
   }
 
   // Rectangle before the scissor, for the "Resolve region is empty" diagnostic below.

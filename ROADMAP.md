@@ -357,26 +357,11 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
   Soft rectangle under the car: the user thinks motion blur is not applied there (a blur mask
   around the car slightly larger than the car?). Same in RTV and ROV - compare with console
   footage before treating it as a bug.
-- [ ] Collapsed tiling (WIP, off by default): --fh1_single_tile (game draws one strip of
-      1280x720) + new GPU side gpu_collapsed_tiling_height (set by the hook, fh1_single_tile_gpu):
-      in the tiled pass (bin select != FFFFFFFF) draws/resolves get 1x MSAA (the full frame then
-      fits EDRAM: color 720 + depth 720 tiles), the window scissor extended to the frame height
-      and the resolve rectangle extended (draw_util::GetResolveInfo, g_collapsed_resolve_height;
-      the game's resolve vertices cover only strip 1). Draws 3,400 -> 2,200 per frame, GPU-thread
-      draw time 11 -> 7 ms. Picture still WRONG (test-st3): only the bottom ~256 rows show the
-      world, the rest is grey sky colour - next: find which draws of the pass are missing
-      (predicated packets for strips 2/3 are skipped: objects whose bin mask is C/30 only?).
-- Single-pass "strips 2-3 draws" fix (b0ff833) broke the picture in the user's test: reverted
-  (040db55). The missing distant scenery was seen only in one test run (test-prof60) and the
-  user does not see it now; single-pass mode stays off by default (experimental).
-- Frame rate unlock tried and DROPPED (user's decision, 2026-10-01): --vsync=false (guest vblank
-  at 1 kHz) lifts the 30 fps cap (26-35 fps at the festival, host GPU ~25-34 ms/frame, so 60 would
-  need ~2x on both CPU and GPU), but the user saw broken distant rendering with it. Back to the
-  console's 30 fps; normal mode verified fine by the user afterwards (run-20261001-191853).
-  --video_mode_refresh_rate=120 also uncaps (game waits 2 vblanks). Revisit only with the
-  renderer much faster.
-- F3 frame monitor (renderer, fps, frame times, total frames, graph) drawn by the presenter;
-  --show_frame_monitor opens it at startup; run_fh1.bat now passes extra options through.
+- Collapsed tiling / single pass (--fh1_single_tile + GPU-side collapse): REMOVED 2026-10-01 at the
+  user's request - it broke the picture in their tests. What was learned: the game emits one strip
+  if the 248-byte tiling block (copied by sub_82A7D730 from 829F60DC) says count 1; the recorded
+  per-strip scissor/resolve rectangles still cover strip 1 only; draws 3,400 -> 1,700/frame. The
+  native renderer (no EDRAM limit) is the right place for one full-size pass.
   Already there: direct host resolve (vulkan TryResolveCopyDirectly) copies from the target
   image to shared memory without the EDRAM buffer.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,

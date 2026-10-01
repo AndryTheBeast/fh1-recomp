@@ -96,14 +96,6 @@ REXCVAR_DEFINE_BOOL(gpu_force_msaa_1x, false, "GPU",
                     "RB_SURFACE_INFO as the game writes it). A quarter of the samples to shade, "
                     "store, transfer and resolve at 4x; edges lose their antialiasing.");
 
-REXCVAR_DEFINE_INT32(gpu_collapsed_tiling_height, 0, "GPU",
-                     "Predicated tiling collapsed to one pass by the game (FH1: --fh1_single_tile "
-                     "sets this to the frame height): in the tiled pass, draw and resolve the whole "
-                     "frame height (the recorded per-strip scissor covers only the first strip) at "
-                     "1x MSAA, so the full frame fits in EDRAM. 0 = off");
-REXCVAR_DEFINE_INT32(gpu_collapsed_tiling_width, 0, "GPU",
-                     "With gpu_collapsed_tiling_height: the tiled surface's pitch (frame width); "
-                     "only 4x MSAA surfaces of this pitch are collapsed. 0 = any 4x surface");
 REXCVAR_DEFINE_INT32(gpu_trace_pm4_at_extent, 0, "GPU",
                      "Debug: log 400 PM4 packets after the Nth screen extent write (0 = off)");
 
@@ -189,9 +181,6 @@ bool RtLogActive();  // pipeline/render_target/cache.cpp
 uint32_t g_draw_scale_multiplier = 1;
 // Set by backends whose IssueDraw applies g_draw_scale_multiplier (D3D12 only for now).
 bool g_draw_scale_multiplier_supported = false;
-// While a collapsed tiled pass draw/resolve is issued (--gpu_collapsed_tiling_height): the frame
-// height its resolves must cover (read by draw_util::GetResolveInfo). 0 otherwise.
-uint32_t g_collapsed_resolve_height = 0;
 namespace {
 struct MsaaDepthAsSingleSample {
   bool active = false;
@@ -247,45 +236,6 @@ void MaybeDrawMsaaDepthAsSingleSample(RegisterFile& regs, MsaaDepthAsSingleSampl
     regs.values[reg] = FloatReg(RegFloat(regs.values[reg]) * 2.0f);
   }
   g_draw_scale_multiplier = 2;
-}
-
-// --gpu_collapsed_tiling_height: in the (single) pass of a tiled frame, extend the window scissor
-// to the frame height and draw at 1x MSAA (4x at 1280x720 needs ~3x the EDRAM).
-struct CollapsedTilingDraw {
-  bool active = false;
-  uint32_t saved_surface_info;
-  uint32_t saved_scissor_br;
-};
-
-void MaybeCollapseTiledDraw(RegisterFile& regs, uint64_t bin_select, CollapsedTilingDraw& state) {
-  state.active = false;
-  int32_t height = REXCVAR_GET(gpu_collapsed_tiling_height);
-  if (height <= 0 || uint32_t(bin_select) == 0xFFFFFFFFu) return;
-  // Only the tiled surface itself: the bin select stays set for the post-processing passes after
-  // it, which have their own (smaller) pitches. FH1's tiled pass: 4x MSAA, pitch = frame width.
-  auto surface_check = regs.Get<reg::RB_SURFACE_INFO>();
-  int32_t width = REXCVAR_GET(gpu_collapsed_tiling_width);
-  if (surface_check.msaa_samples != xenos::MsaaSamples::k4X ||
-      (width > 0 && surface_check.surface_pitch != uint32_t(width))) {
-    return;
-  }
-  state.active = true;
-  state.saved_surface_info = regs.values[XE_GPU_REG_RB_SURFACE_INFO];
-  state.saved_scissor_br = regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR];
-  auto surface = regs.Get<reg::RB_SURFACE_INFO>();
-  surface.msaa_samples = xenos::MsaaSamples::k1X;
-  regs.values[XE_GPU_REG_RB_SURFACE_INFO] = surface.value;
-  auto scissor_br = regs.Get<reg::PA_SC_WINDOW_SCISSOR_BR>();
-  scissor_br.br_y = std::max<uint32_t>(scissor_br.br_y, uint32_t(height));
-  regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] = scissor_br.value;
-  g_collapsed_resolve_height = uint32_t(height);
-}
-
-void RestoreCollapsedTiledDraw(RegisterFile& regs, const CollapsedTilingDraw& state) {
-  if (!state.active) return;
-  regs.values[XE_GPU_REG_RB_SURFACE_INFO] = state.saved_surface_info;
-  regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] = state.saved_scissor_br;
-  g_collapsed_resolve_height = 0;
 }
 
 void RestoreMsaaDepthDraw(RegisterFile& regs, const MsaaDepthAsSingleSample& state) {
@@ -571,9 +521,6 @@ void CommandProcessor::GetFrameMonitorStats(system::FrameMonitorStats& out) cons
     out.worst_ms = 1000.0 * double(worst) / double(freq);
   }
   std::string name = GetRendererName();
-  if (REXCVAR_GET(gpu_collapsed_tiling_height) > 0) {
-    name += ", single pass";
-  }
   std::snprintf(out.renderer, sizeof(out.renderer), "%s", name.c_str());
 }
 
@@ -1951,14 +1898,11 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
       bool major_mode_explicit =
           xenos::IsMajorModeExplicit(vgt_draw_initiator.major_mode, vgt_draw_initiator.prim_type);
       uint64_t draw_start = rex::chrono::Clock::QueryHostTickCount();
-      CollapsedTilingDraw collapsed_tiling;
-      MaybeCollapseTiledDraw(*register_file_, bin_select_, collapsed_tiling);
       MsaaDepthAsSingleSample msaa_depth_alias;
       MaybeDrawMsaaDepthAsSingleSample(*register_file_, msaa_depth_alias);
       draw_succeeded = IssueDraw(vgt_draw_initiator.prim_type, vgt_draw_initiator.num_indices,
                                  is_indexed ? &index_buffer_info : nullptr, major_mode_explicit);
       RestoreMsaaDepthDraw(*register_file_, msaa_depth_alias);
-      RestoreCollapsedTiledDraw(*register_file_, collapsed_tiling);
       frame_stats_.draw_ticks += rex::chrono::Clock::QueryHostTickCount() - draw_start;
       ++frame_stats_.draws;
       frame_stats_.failed_draws += draw_succeeded ? 0 : 1;
