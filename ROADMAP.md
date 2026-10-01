@@ -292,6 +292,13 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       (one Vulkan image per render target, resolves as direct copies/blits, tiling collapsed to
       one full-size pass). That fixes the black world and the cost in one step and is the core of
       the native renderer, built on parts proven to work on FH1.
+- [x] Vulkan black world FIXED 2026-10-01: the SPIR-V translator read a texture fetch's result
+      exponent bias (exp_adjust) from fetch constant word 4 bits 13:18 (part of the LOD bias)
+      instead of word 3 (xe_gpu_texture_fetch_t, as the DXBC translator does). FH1's post-process
+      downsample fetches with exp_adjust 2 (x4): Vulkan's bloom/luminance chain was 4x too dark at
+      every step, the auto exposure collapsed and the tone-mapped frame was black. Found by
+      comparing a D3D12 and a Vulkan RenderDoc capture pass by pass (tools/rdc_find.py,
+      tools/rdc_inputs.py). Vulkan (fbo path) now renders the festival like D3D12, 30 fps.
 - [ ] Native render target cache for the Vulkan backend (next concrete step). Interface it must
       provide (calls from vulkan/command_processor.cpp): Update (targets for a draw ->
       render pass/framebuffer/attachments), Resolve, GetPath, Initialize/ClearCache/
