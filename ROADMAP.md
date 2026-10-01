@@ -299,6 +299,12 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       every step, the auto exposure collapsed and the tone-mapped frame was black. Found by
       comparing a D3D12 and a Vulkan RenderDoc capture pass by pass (tools/rdc_find.py,
       tools/rdc_inputs.py). Vulkan (fbo path) now renders the festival like D3D12, 30 fps.
+- [x] Car photo garbage in Vulkan (user, 2026-10-01, Mustang mirror repaint): the saved
+      Thumbnail_2.xdc untiled to an older festival frame. readback_resolve=fast returns the
+      PREVIOUS resolve to the same destination - right for per-frame resolves (auto exposure),
+      wrong for one-off ones. Now (both backends) a resolve whose destination was not resolved in
+      the last 2 frames is read synchronously. Thumbnail tool: zlib raw from offset 0x14, 52-byte
+      header, 768x288 tiled 8888 (untile script in the session scratchpad; see CLAUDE.md lesson).
 - [ ] Native render target cache for the Vulkan backend (next concrete step). Interface it must
       provide (calls from vulkan/command_processor.cpp): Update (targets for a draw ->
       render pass/framebuffer/attachments), Resolve, GetPath, Initialize/ClearCache/

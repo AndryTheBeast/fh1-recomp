@@ -4540,6 +4540,12 @@ bool VulkanCommandProcessor::IssueCopy_ReadbackResolvePath() {
   bool is_scaled = texture_cache_->IsDrawResolutionScaled();
   uint64_t resolve_key = MakeReadbackResolveKey(written_address, written_length);
   ReadbackBuffer& readback = readback_buffers_[resolve_key];
+  // "fast"/"some" read the previous resolve to this destination (one resolve late). That is only
+  // right for resolves repeated every frame (auto exposure); a one-off resolve (FH1's car photos
+  // when buying or repainting a car) would return whatever an older resolve left there - the
+  // photo was saved as a scrambled earlier frame. Read those synchronously.
+  bool readback_previous_is_recent = readback.last_used_frame != 0 &&
+                                     readback.last_used_frame + 2 >= frame_current_;
   readback.last_used_frame = frame_current_;
   uint32_t write_index = readback.current_index;
   uint32_t readback_size = AlignReadbackBufferSize(written_length);
@@ -4718,7 +4724,8 @@ bool VulkanCommandProcessor::IssueCopy_ReadbackResolvePath() {
                           VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
 
   bool use_delayed_sync =
-      readback_mode == ReadbackResolveMode::kFast || readback_mode == ReadbackResolveMode::kSome;
+      (readback_mode == ReadbackResolveMode::kFast || readback_mode == ReadbackResolveMode::kSome) &&
+      readback_previous_is_recent;
   uint32_t read_index = write_index;
   if (use_delayed_sync) {
     read_index = 1 - write_index;
@@ -4737,7 +4744,9 @@ bool VulkanCommandProcessor::IssueCopy_ReadbackResolvePath() {
     }
   }
 
-  bool should_copy = (readback_mode == ReadbackResolveMode::kSome) ? is_cache_miss : true;
+  bool should_copy = (readback_mode == ReadbackResolveMode::kSome)
+                         ? (is_cache_miss || !readback_previous_is_recent)
+                         : true;
   if (should_copy && readback.buffers[read_index] != VK_NULL_HANDLE &&
       written_length <= readback.sizes[read_index] && readback.mapped_data[read_index] != nullptr) {
     VkMappedMemoryRange readback_memory_range = {};
