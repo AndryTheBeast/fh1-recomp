@@ -49,6 +49,16 @@ faster); forcing 1x MSAA (garbage on the car).
        a whole core on the Switch): hook the ring waits (`sub_829F04A8`, `sub_823E91F0`).
 4. [ ] Vulkan: frame monitor (F3) for the Vulkan presenter; persistent pipeline cache to cut hitches.
 
+## Next — better test autoplay (user's request, 2026-10-02)
+
+Tests today hold buttons on a fixed timetable (`--fh1_autoplay`, fh1/src/fh1_autoplay.h).
+1. [ ] Scripts: analog sticks/triggers, sequences, waits, named macros (open map, garage, start the
+       nearest event, skip cutscene).
+2. [ ] Game state from memory (menu open, loading, race running, car speed/position) so scripts
+       wait for conditions instead of fixed seconds.
+3. [ ] Driving and racing: first try handing the player's car to the game's own AI driver (used by
+       opponents and the attract-mode demo); otherwise steer along the GPS route.
+
 ## Next — native renderer (Stage 3, Vulkan)
 
 The emulated GPU spends most of its time on emulation itself (EDRAM, drawing the main scene 3
