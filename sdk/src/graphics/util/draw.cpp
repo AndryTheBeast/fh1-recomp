@@ -41,6 +41,10 @@ REXCVAR_DEFINE_BOOL(resolve_resolution_scale_fill_half_pixel_offset, true, "GPU"
 //     "is necessary for certain games to display the scene graphics).",
 //     "GPU");
 
+namespace rex::graphics {
+bool RtLogActive();  // pipeline/render_target/cache.cpp (--gpu_log_rt_frame)
+}  // namespace rex::graphics
+
 namespace rex::graphics::draw_util {
 
 bool IsRasterizationPotentiallyDone(const RegisterFile& regs, bool primitive_polygonal) {
@@ -1123,6 +1127,22 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
                : xenos::GetColorRenderTargetFormatName(
                      xenos::ColorRenderTargetFormat(color_edram_info.format)),
       dest_format_info.name, rb_copy_dest_base, copy_dest_extent_start, copy_dest_extent_end);
+
+  if (RtLogActive()) {
+    REXGPU_INFO(
+        "[rt] resolve {} base {} {} rect ({},{})-({},{}) msaa {}x -> {} at 0x{:08X} pitch {} "
+        "(copy {}, clear color {} depth {})",
+        is_depth ? "depth" : "color",
+        is_depth ? info_out.depth_original_base : info_out.color_original_base,
+        is_depth ? xenos::GetDepthRenderTargetFormatName(
+                       xenos::DepthRenderTargetFormat(depth_edram_info.format))
+                 : xenos::GetColorRenderTargetFormatName(
+                       xenos::ColorRenderTargetFormat(color_edram_info.format)),
+        x0, y0, x1, y1, 1u << uint32_t(rb_surface_info.msaa_samples), dest_format_info.name,
+        rb_copy_dest_base, info_out.copy_dest_coordinate_info.pitch_aligned_div_32 * 32,
+        uint32_t(rb_copy_control.copy_command), uint32_t(rb_copy_control.color_clear_enable),
+        uint32_t(rb_copy_control.depth_clear_enable));
+  }
 
   return true;
 }

@@ -301,6 +301,22 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       bin predication - handled in the command processor), and resolves through the EDRAM buffer
       (copy from the target image into shared memory instead). Milestone 1: festival correct on
       Vulkan (compare with D3D12 screenshots), at least D3D12's speed.
+- FH1's frame, from --gpu_log_rt_frame=N (new: logs every render target setup change and resolve
+  of frame N; build_logs/rt_frame_d3d12.txt, festival, D3D12):
+    1. exposure: 64x64 8888 passes;  2. shadow cascades: depth 1024x1024 (x2) and 520x520 (x2),
+    resolved to k_24_8 textures;  3. depth pre-pass 1280x720, resolved as k_24_8_FLOAT;
+    4. reflection cube map: 6 faces 256x256 2x MSAA 2_10_10_10_FLOAT + mip chain to 1x1;
+    5. MAIN SCENE 1280x720 4x MSAA 2_10_10_10_FLOAT + D24FS8 - the ONLY tiled pass: 3 strips
+       (window offset 0/-256/-512, scissors 0-256/256-512/512-720), each resolved to consecutive
+       destinations (color 1C4E1000/1C621000/1C761000, depth 1DAC5000/1DC05000/1DD45000);
+    6. bloom chain 320x192 ... 20x12 and a 32x32 k_32_FLOAT luminance;  7. tone map + final
+       1280x720 2_10_10_10, resolved to the front buffer.
+  Every pass ends with resolve + clear, and EDRAM base 0 is reused by every format in turn: no
+  pass reads another format's leftovers. => (a) native: main scene drawn once at full size, one
+  full-size resolve (the strip destinations are contiguous); no aliasing support needed.
+  (b) quick win for the emulation too: an EDRAM range that a resolve just cleared can be given to
+  the next render target with a clear instead of an ownership transfer (transfers = "render
+  targets (EDRAM)", 7-8 ms/frame of GPU in races).
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
       Vulkan presenter; first frames: logos and title screen.
 - [ ] Phase D - festival and race: render targets/resolves (no EDRAM, one pass instead of 3

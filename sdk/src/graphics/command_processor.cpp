@@ -160,6 +160,9 @@ TilingStats tiling_stats_;
 uint32_t tiling_stats_total_extents_ = 0;
 
 // Returns the frame count of the 10 s window when it logged, 0 otherwise.
+}  // namespace
+void RtLogNextFrame();  // pipeline/render_target/cache.cpp
+namespace {
 uint32_t LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
   uint64_t now = rex::chrono::Clock::QueryHostTickCount();
   uint64_t freq = rex::chrono::Clock::QueryHostTickFrequency();
@@ -1261,6 +1264,7 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
   }
 #endif
   rex::perf::Profiler::Flip();
+  RtLogNextFrame();  // --gpu_log_rt_frame counts frames here
   if (uint32_t frames = LogFrameStatsOnSwap(stats_host_gpu_wait_ticks_)) {
     std::string gpu_time = TakeGpuTimeSummary(frames);
     if (!gpu_time.empty()) {

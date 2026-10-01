@@ -13,9 +13,12 @@
 #include <cmath>
 #include <cstring>
 #include <iterator>
+#include <string>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
+
+#include <fmt/format.h>
 
 #include <rex/assert.h>
 #include <rex/cvar.h>
@@ -27,6 +30,19 @@
 #include <rex/graphics/xenos.h>
 #include <rex/logging.h>
 #include <rex/math.h>
+
+REXCVAR_DEFINE_INT32(gpu_log_rt_frame, 0, "GPU",
+                     "Debug: log every render target setup change and every resolve of guest "
+                     "frame N (counted by RenderTargetCache::BeginFrame); 0 = off");
+
+namespace rex::graphics {
+// Shared with util/draw.cpp (resolve logging).
+uint32_t g_rt_log_frame_counter = 0;
+bool RtLogActive() {
+  int32_t frame = REXCVAR_GET(gpu_log_rt_frame);
+  return frame > 0 && g_rt_log_frame_counter == uint32_t(frame);
+}
+}  // namespace rex::graphics
 
 REXCVAR_DEFINE_BOOL(mrt_edram_used_range_clamp_to_min, true, "GPU",
                     "Clamp MRT EDRAM used range to minimum");
@@ -397,6 +413,14 @@ void RenderTargetCache::BeginFrame() {
   ResetAccumulatedRenderTargets();
 }
 
+// Called once per guest frame (on Swap) by the command processor.
+void RtLogNextFrame() {
+  ++g_rt_log_frame_counter;
+  if (RtLogActive()) {
+    REXGPU_INFO("[rt] ===== frame {} =====", g_rt_log_frame_counter);
+  }
+}
+
 bool RenderTargetCache::Update(bool is_rasterization_done,
                                reg::RB_DEPTHCONTROL normalized_depth_control,
                                uint32_t normalized_color_mask, const Shader& vertex_shader) {
@@ -529,6 +553,28 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
       if (edram_bases[rt_other_index] == edram_base) {
         depth_and_color_rts_used_bits &= ~(uint32_t(1) << rt_other_index);
       }
+    }
+  }
+
+  // --gpu_log_rt_frame: one line per change of the render target setup within the logged frame.
+  if (RtLogActive()) {
+    static std::string last_setup;
+    auto window_offset = regs.Get<reg::PA_SC_WINDOW_OFFSET>();
+    auto scissor_tl = regs.Get<reg::PA_SC_WINDOW_SCISSOR_TL>();
+    auto scissor_br = regs.Get<reg::PA_SC_WINDOW_SCISSOR_BR>();
+    std::string setup = fmt::format("pitch {} msaa {}x window offset ({},{}) scissor ({},{})-({},{}):",
+                                    pitch_pixels, 1u << uint32_t(msaa_samples),
+                                    int32_t(window_offset.window_x_offset),
+                                    int32_t(window_offset.window_y_offset), uint32_t(scissor_tl.tl_x),
+                                    uint32_t(scissor_tl.tl_y), uint32_t(scissor_br.br_x), uint32_t(scissor_br.br_y));
+    for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
+      if (!(depth_and_color_rts_used_bits & (uint32_t(1) << i))) continue;
+      setup += i == 0 ? fmt::format(" depth base {} fmt {}", edram_bases[0], resource_formats[0])
+                      : fmt::format(" rt{} base {} fmt {}", i - 1, edram_bases[i], resource_formats[i]);
+    }
+    if (setup != last_setup) {
+      last_setup = setup;
+      REXGPU_INFO("[rt] {}", setup);
     }
   }
 
