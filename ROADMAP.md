@@ -335,6 +335,14 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
      transfers cuts "render targets (EDRAM)" GPU time 6.4 -> 3.8 ms/frame, but the shadows vanish
      and the car gets the same glowing blue garbage as --gpu_force_msaa_1x (test-ab_skip-*): the
      data IS needed, so do the real one-image version.
+     WIP --gpu_msaa_depth_as_1x (off by default, sdk/src/graphics/command_processor.cpp
+     MaybeDrawMsaaDepthAsSingleSample): rewrites RB_SURFACE_INFO to 1x/2P around such draws, but
+     does not apply yet: FH1's shadow draws have the viewport transform OFF (PA_CL_VTE_CNTL 0x300,
+     positions already in 4x-surface pixels), so doubling viewport registers does nothing. NEXT:
+     drop the viewport/scissor register patching and instead pass a per-draw resolution scale x2
+     to GetHostViewportInfo and the scissor in D3D12 IssueDraw (d3d12/command_processor.cpp
+     ~2427-2470; note the viewport cache key must include the scale). Keep RB_SURFACE_INFO and
+     poly-offset-scale patching.
   2. Zero-cleared ranges: after a resolve with clear whose clear value is all-zero bits, mark the
      EDRAM range; a new owner of a marked range gets a clear-to-zero instead of a transfer
      (zero bits mean zero in every host format) - removes most of the other 44%.
