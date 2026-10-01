@@ -49,10 +49,12 @@ class Fh1App : public rex::ReXApp {
     if (config.gpu_plugin.empty()) config.gpu_plugin = "xenos";
     // FH1 reads render-to-texture results on the CPU: its auto exposure (without it a wrong
     // exposure made car lights bloom into white streaks in the garage) and the car photos it
-    // saves when you buy a car (they were saved as garbage). "some" = previous frame, copied
-    // on demand; no measurable cost in free roam. --readback_resolve=<mode> still wins.
+    // saves when you buy or repaint a car (they were saved as garbage). "fast" = the previous
+    // frame's copy, every frame: the photo is rendered over several frames, and "some" only
+    // copied a destination's first resolve (the Subaru repaint photo was saved half stale).
+    // Same frame rate as "some" (27.7 vs 27.6 fps); "full" stalls. --readback_resolve still wins.
     if (!rex::cvar::HasNonDefaultValue("readback_resolve")) {
-      rex::cvar::SetFlagByName("readback_resolve", "some");
+      rex::cvar::SetFlagByName("readback_resolve", "fast");
     }
   }
   // void OnLoadXexImage(std::string& xex_image) override {}

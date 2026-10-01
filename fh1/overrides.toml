@@ -5,6 +5,16 @@
 #  reference/nfsmw-app/overrides.toml.
 # ============================================================================
 
+# setjmp / longjmp (XDK CRT). The game's libjpeg (paint shop, sub_82A1xxxx-82A2xxxx) reports
+# decode errors with longjmp back to its setjmp. Translated code cannot jump like that unless the
+# codegen knows these two: without them the error handler returned, the decoder carried on with a
+# torn-down state and read through a null pointer (crash entering the design creator, 2026-10-01:
+# sub_82A1CFB0 reading [0+420] = cinfo->global_state).
+#   setjmp  0x82A81E80: stores f14-f31, r13-r31, v64-v127, LR, CR, SP to [r3], returns 0
+#   longjmp 0x82A81950: reloads that buffer (r7 = r3), returns r4 (1 if 0); 8 call sites
+setjmp_address = 0x82A81E80
+longjmp_address = 0x82A81950
+
 [functions]
 
 # Tail calls (b) whose targets automatic discovery never turned into

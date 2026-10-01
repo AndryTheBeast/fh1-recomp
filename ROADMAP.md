@@ -174,8 +174,14 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
   - [x] Garage: car lights bloomed into white streaks; Car Select photos of newly bought cars were
         garbage (Thumbnail_N.xdc in the save = tiled 768x288 8888 texture, saved as garbage).
         Both were CPU reads of resolve results (auto exposure, photo save) with readback off.
-        fh1_app.h now defaults --readback_resolve=some (no measurable cost); "full" stalls
-        (unplayable) and changes nothing more. Photos saved before the fix stay broken.
+        fh1_app.h defaults --readback_resolve=fast: "some" only copies a destination's FIRST
+        resolve, and the photo is rendered over several frames - the Subaru repaint photo was
+        saved half stale with "some", correct with "fast"; same fps (27.7 vs 27.6). "full" stalls.
+  - [x] Crash entering the paint shop / design creator (run-20261001-124308): libjpeg error
+        (msg 59/35) -> its error_exit longjmps back to setjmp, which translated code could not do;
+        it returned instead and read cinfo->global_state through a null pointer (sub_82A1CFB0).
+        overrides.toml: setjmp_address 0x82A81E80, longjmp_address 0x82A81950 (9 setjmp, 8
+        longjmp sites, incl. Lua-style handlers in 82A04xxx and 830xxxxx). Verified by the user.
   - [x] Blank rear plates: normal - the user checked Xbox 360 gameplay footage, no car shows a
         plate there either. Not a bug.
     Soft rectangle under the car: RTV and ROV render the same (test-rectrtv/rectrov), so not a
