@@ -331,6 +331,10 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
   1. Shadow depth buffers: when a 4x MSAA depth target at pitch P meets a 1x target of the same
      format at pitch 2P on the same EDRAM base, keep one 1x image and draw the 4x passes into it
      at double resolution (viewport/scissor x2, no host MSAA) - removes 56% of the transfers.
+     Experiment 2026-10-01 (--gpu_skip_msaa_switch_transfers, off by default): skipping those
+     transfers cuts "render targets (EDRAM)" GPU time 6.4 -> 3.8 ms/frame, but the shadows vanish
+     and the car gets the same glowing blue garbage as --gpu_force_msaa_1x (test-ab_skip-*): the
+     data IS needed, so do the real one-image version.
   2. Zero-cleared ranges: after a resolve with clear whose clear value is all-zero bits, mark the
      EDRAM range; a new owner of a marked range gets a clear-to-zero instead of a transfer
      (zero bits mean zero in every host format) - removes most of the other 44%.

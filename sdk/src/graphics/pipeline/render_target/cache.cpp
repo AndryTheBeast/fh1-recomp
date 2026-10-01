@@ -44,6 +44,11 @@ bool RtLogActive() {
 }
 }  // namespace rex::graphics
 
+REXCVAR_DEFINE_BOOL(gpu_skip_msaa_switch_transfers, false, "GPU",
+                    "Experiment: skip ownership transfers between render targets that differ "
+                    "only in MSAA / pitch (same format) - FH1's shadow passes switch one depth "
+                    "buffer between 4x at pitch P and 1x at pitch 2P, ~56% of all transfers");
+
 REXCVAR_DEFINE_BOOL(mrt_edram_used_range_clamp_to_min, true, "GPU",
                     "Clamp MRT EDRAM used range to minimum");
 
@@ -1355,7 +1360,11 @@ void RenderTargetCache::ChangeOwnership(RenderTargetKey dest, uint32_t start_til
         // Only perform the copying when actually changing the latest owner, not
         // just the latest host depth owner - the transfer source is expected to
         // be different than the destination.
-        if (!transfer_source.IsEmpty() && transfer_source != dest) {
+        bool msaa_switch_only = transfer_source.is_depth == dest.is_depth &&
+                                transfer_source.resource_format == dest.resource_format &&
+                                transfer_source.base_tiles == dest.base_tiles;
+        if (!transfer_source.IsEmpty() && transfer_source != dest &&
+            !(msaa_switch_only && REXCVAR_GET(gpu_skip_msaa_switch_transfers))) {
           uint32_t transfer_end_tiles = std::min(it->second.end_tiles, extent_end);
           if (!resolve_clear_cutout ||
               Transfer::GetRangeRectangles(it->first, transfer_end_tiles, dest.base_tiles,
