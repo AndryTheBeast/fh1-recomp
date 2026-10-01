@@ -154,6 +154,21 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
       Legion Go (Z1 Extreme), RTV, festival + free-roam driving: 28-30 fps = the game's 30 fps cap,
       28 ms host GPU/frame (draws 11, EDRAM 7, resolves 4.5, textures 3), GPU thread busy 100%
       (13 ms of CPU time in ~3,300 draws). Not needed on this PC; kept for weaker GPUs / Switch.
+  - Races dip to 22-26 fps (user's race, run-20261001-000832): up to 5,600 draws/frame, host GPU
+    26-28 ms (not the limit), GPU command thread 100% busy. Profiled 2026-10-01 night with the
+    new --fh1_profile=N (fh1/src/fh1_profiler.cpp, in-process sampler) at Red Rock, car parked:
+      - game main thread 99% busy, about half of it waiting for the GPU thread: sub_829F04A8
+        (spin loop, cctpl/db16cyc, polls the ring read pointer) + sub_823E91F0 (waits for ring
+        space). sub_82438EA8 = CRT pow(), 9% - candidate for a host pow() later.
+      - GPU thread: ~16% of wall time writing registers one by one from type-0 packets ->
+        now WriteRegisterRangeFromRing (bulk constant path): busy 57% -> 48%, same picture.
+        ~15% is inside the AMD driver (names like GetSettingsBlobsAll = nearest driver export).
+      - --gpu_log_waits: WAIT_REG_MEM time is nearly all on one memory word (1FCA4006 at Red
+        Rock), twice per frame = the game's vblank pacing; only Sleep() overshoot (<1 ms) is lost.
+    The "failed draws" (6/frame, edram_mode=6) are the empty resolves of the other strips, not
+    tessellation - harmless.
+    Soft rectangle under the car: RTV and ROV render the same (test-rectrtv/rectrov), so not a
+    host-render-target shortcut.
   - [x] --gpu_force_msaa_1x (clears the MSAA field of RB_SURFACE_INFO): works, all RTs 1x, but only
         7.4 -> 7.7 fps. MSAA is not the cost; the draw count is.
   - Predicated tiling (see the `[fps] tiling` line): the frame is replayed once per strip (bin

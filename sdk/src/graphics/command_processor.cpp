@@ -1,4 +1,4 @@
-﻿/**
+/**
  ******************************************************************************
  * Xenia : Xbox 360 Emulator Research Project                                 *
  ******************************************************************************
@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -106,6 +107,10 @@ REXCVAR_DEFINE_BOOL(gpu_trace_pm4_strip_packets, false, "GPU",
 REXCVAR_DEFINE_STRING(gpu_bin_select_or, "", "GPU",
                       "Experiment (predicated tiling): hex bits OR'ed into every bin select the "
                       "game sets, except all-ones (e.g. 3C to also run strips 2-3 packets)");
+
+REXCVAR_DEFINE_BOOL(gpu_log_waits, false, "GPU",
+                    "Debug: every 10 s log what WAIT_REG_MEM waited on (register / memory "
+                    "word, condition), how often and for how long");
 
 REXCVAR_DEFINE_BOOL(gpu_screen_extent_top_only, false, "GPU",
                     "Experiment: report every screen extent (EVENT_WRITE_EXT) as the top 256 rows");
@@ -1377,6 +1382,31 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
       }
     }
   } while (!matched);
+
+  // --gpu_log_waits: which register / memory word the waits are for, and their total time.
+  if (REXCVAR_GET(gpu_log_waits)) {
+    static std::mutex waits_mutex;
+    static std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> waits;  // count, ticks
+    static uint64_t last_log = 0;
+    uint64_t now = rex::chrono::Clock::QueryHostTickCount();
+    uint64_t key = (uint64_t(is_memory) << 63) | (uint64_t(wait_info & 7) << 56) | poll_reg_addr;
+    std::lock_guard<std::mutex> lock(waits_mutex);
+    auto& w = waits[key];
+    ++w.first;
+    w.second += now - wait_start;
+    uint64_t freq = rex::chrono::Clock::QueryHostTickFrequency();
+    if (now - last_log >= freq * 10) {
+      last_log = now;
+      std::string s;
+      for (auto& [k, v] : waits) {
+        s += fmt::format(" {}{:08X}(cond {}): {} waits {:.1f} ms;", (k >> 63) ? "mem " : "reg ",
+                         uint32_t(k), uint32_t((k >> 56) & 7), v.first,
+                         1000.0 * double(v.second) / double(freq));
+      }
+      REXGPU_INFO("[waits] last 10 s:{}", s);
+      waits.clear();
+    }
+  }
 
   return true;
 }

@@ -192,6 +192,9 @@ lists the actions and saves the render targets as PNG.
   x64_seq_vector.cc) - they encode many such console quirks. tools/run_ppc_tests.ps1 runs the
   instruction suite (upstream binutils in FH1-recomp\ppc_binutils, not in git); add a test for
   every quirk fixed.
+- Performance work: --fh1_profile=N logs the busiest threads' top functions every N s (wait
+  functions excluded from "working"); --gpu_log_waits shows what WAIT_REG_MEM waits on. In FH1
+  the game main thread waits for the GPU command thread, so per-draw CPU cost there is the lever.
 - Finding a game subsystem without symbols: --fh1_dump_image + the strings/xref scripts approach
   (ROADMAP, car collisions): strings -> lis/addi cross-references -> function -> hook and log.
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
