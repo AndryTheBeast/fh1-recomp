@@ -31,6 +31,18 @@ class KernelState;
 
 namespace rex::system {
 
+// Frame monitor data for the overlay (F3): frames = the game's swaps as the GPU thread sees them.
+struct FrameMonitorStats {
+  static constexpr uint32_t kHistory = 120;
+  uint64_t total_frames = 0;
+  double fps = 0;              // over the last second
+  double frame_time_ms = 0;    // last frame
+  double average_ms = 0;       // over the last second
+  double worst_ms = 0;         // over the last second
+  float history_ms[kHistory] = {};  // oldest first
+  char renderer[96] = {};
+};
+
 class IGraphicsSystem {
  public:
   virtual ~IGraphicsSystem() = default;
@@ -92,6 +104,12 @@ class IGraphicsSystem {
   }
 
   virtual void Shutdown() = 0;
+
+  // Fills the frame monitor data; false if the backend does not provide it.
+  virtual bool GetFrameMonitorStats(FrameMonitorStats& out) const {
+    (void)out;
+    return false;
+  }
 };
 
 }  // namespace rex::system

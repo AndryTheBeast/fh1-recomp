@@ -16,6 +16,8 @@
 #include <filesystem>
 #include <functional>
 
+#include <rex/system/interfaces/graphics.h>
+
 namespace rex::ui {
 
 struct FrameStats {
@@ -36,6 +38,9 @@ class DebugOverlayDialog : public ImGuiDialog {
   ~DebugOverlayDialog();
 
   void SetStatsProvider(FrameStatsProvider provider) { stats_provider_ = std::move(provider); }
+  // Frame monitor source: frame rate, frame times, total frames and the renderer in use.
+  using MonitorProvider = std::function<bool(system::FrameMonitorStats&)>;
+  void SetMonitorProvider(MonitorProvider provider) { monitor_provider_ = std::move(provider); }
   // File where the position is saved (on Switch it is restored when the overlay opens).
   void SetPositionFile(std::filesystem::path path) { position_file_ = std::move(path); }
 
@@ -48,6 +53,7 @@ class DebugOverlayDialog : public ImGuiDialog {
   void PositionAfterBegin(ImGuiIO& io);
 
   FrameStatsProvider stats_provider_;
+  MonitorProvider monitor_provider_;
   // Position as a fraction of the screen, so it works the same on the TV and on the handheld screen.
   std::filesystem::path position_file_;
   bool position_loaded_ = false;

@@ -138,7 +138,7 @@ void DebugOverlayDialog::OnDraw(ImGuiIO& io) {
 #ifdef REXGLUE_ENABLE_PERF_COUNTERS
   ImGui::SetNextWindowSize(ImVec2(280, 280), ImGuiCond_FirstUseEver);
 #else
-  ImGui::SetNextWindowSize(ImVec2(220, 60), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(300, 150), ImGuiCond_FirstUseEver);
 #endif
   ImGui::SetNextWindowBgAlpha(0.5f);
   // It only shows data: no navigation and no focus when it appears. On Switch
@@ -150,7 +150,15 @@ void DebugOverlayDialog::OnDraw(ImGuiIO& io) {
 #if REX_PLATFORM_SWITCH
     PositionAfterBegin(io);
 #endif
-    if (stats_provider_) {
+    system::FrameMonitorStats monitor;
+    if (monitor_provider_ && monitor_provider_(monitor)) {
+      ImGui::TextUnformatted(monitor.renderer);
+      ImGui::Text("%.0f FPS   %.1f ms", monitor.fps, monitor.frame_time_ms);
+      ImGui::Text("avg %.1f ms   worst %.1f ms (1 s)", monitor.average_ms, monitor.worst_ms);
+      ImGui::Text("Frames: %llu", static_cast<unsigned long long>(monitor.total_frames));
+      ImGui::PlotLines("##frametimes", monitor.history_ms, system::FrameMonitorStats::kHistory, 0,
+                       "frame time (0-66 ms)", 0.0f, 66.7f, ImVec2(280, 50));
+    } else if (stats_provider_) {
       auto stats = stats_provider_();
       if (stats.frame_count > 0) {
         ImGui::Text("Guest: %.1f FPS (%.2f ms)", stats.fps, stats.frame_time_ms);

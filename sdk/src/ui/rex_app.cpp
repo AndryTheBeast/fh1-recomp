@@ -62,6 +62,9 @@ NX_NORETURN void __libnx_exit(int rc);
 #include <filesystem>
 #include <string_view>
 
+REXCVAR_DEFINE_BOOL(show_frame_monitor, false, "UI",
+                    "Open the debug overlay (F3: frame rate, frame times, total frames, renderer) "
+                    "at startup");
 REXCVAR_DEFINE_STRING(gpu_plugin, "", "GPU",
                       "GPU emulation plugin to load at startup (e.g. 'xenos'); empty disables "
                       "GPU emulation")
@@ -426,18 +429,26 @@ void ReXApp::SetupOverlays(rex::ui::Presenter* presenter, rex::ui::ImmediateDraw
   // gated eager font upload in SetImmediateDrawer is skipped (font uploads
   // lazily on the first Draw instead).
   imgui_drawer_->SetPresenterAndImmediateDrawer(presenter, drawer);
-  rex::ui::RegisterBind("bind_debug_overlay", "F3", "Toggle debug overlay", [this] {
+  auto toggle_debug_overlay = [this] {
     if (debug_overlay_) {
       debug_overlay_.reset();
     } else {
       debug_overlay_ =
           std::make_unique<ui::DebugOverlayDialog>(imgui_drawer_.get(), frame_stats_provider_);
+      debug_overlay_->SetMonitorProvider([this](system::FrameMonitorStats& out) {
+        auto* graphics = runtime_ ? runtime_->graphics_system() : nullptr;
+        return graphics && graphics->GetFrameMonitorStats(out);
+      });
 #if REX_PLATFORM_SWITCH
       // The position set with L+R and the right stick, stored next to the configuration file.
       debug_overlay_->SetPositionFile(config_path_.parent_path() / "overlay_depuracion.txt");
 #endif
     }
-  });
+  };
+  rex::ui::RegisterBind("bind_debug_overlay", "F3", "Toggle debug overlay", toggle_debug_overlay);
+  if (REXCVAR_GET(show_frame_monitor)) {
+    toggle_debug_overlay();
+  }
   rex::ui::RegisterBind("bind_console", "Backtick", "Toggle console overlay", [this] {
     if (console_overlay_) {
       console_overlay_.reset();

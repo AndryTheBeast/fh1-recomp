@@ -52,6 +52,8 @@ class GraphicsSystem : public system::IGraphicsSystem {
 
   virtual std::string name() const = 0;
 
+  bool GetFrameMonitorStats(system::FrameMonitorStats& out) const override;
+
   memory::Memory* memory() const { return memory_; }
   runtime::FunctionDispatcher* function_dispatcher() const { return function_dispatcher_; }
   system::KernelState* kernel_state() const { return kernel_state_; }

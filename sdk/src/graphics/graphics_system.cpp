@@ -331,6 +331,14 @@ void GraphicsSystem::MarkVblank() {
   DispatchInterruptCallback(0, 2);
 }
 
+bool GraphicsSystem::GetFrameMonitorStats(system::FrameMonitorStats& out) const {
+  if (!command_processor_) {
+    return false;
+  }
+  command_processor_->GetFrameMonitorStats(out);
+  return true;
+}
+
 void GraphicsSystem::ClearCaches() {
   command_processor_->CallInThread([&]() { command_processor_->ClearCaches(); });
 }

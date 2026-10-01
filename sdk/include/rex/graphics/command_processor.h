@@ -26,6 +26,7 @@
 #include <rex/graphics/xenos.h>
 #include <rex/memory.h>
 #include <rex/memory/ring_buffer.h>
+#include <rex/system/interfaces/graphics.h>
 #include <rex/system/xthread.h>
 #include <rex/thread.h>
 #include <rex/ui/presenter.h>
@@ -83,6 +84,11 @@ class CommandProcessor {
 
   CommandProcessor(GraphicsSystem* graphics_system, system::KernelState* kernel_state);
   virtual ~CommandProcessor();
+
+  // Short description of the renderer for the frame monitor (backend and render target path).
+  virtual std::string GetRendererName() const { return "Xenos"; }
+  // Frame monitor data (swap timing recorded on the GPU thread).
+  void GetFrameMonitorStats(system::FrameMonitorStats& out) const;
 
   uint32_t counter() const { return counter_; }
   void increment_counter() { counter_++; }

@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <atomic>
+#include <cstdio>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -297,7 +298,34 @@ void RestoreMsaaDepthDraw(RegisterFile& regs, const MsaaDepthAsSingleSample& sta
 void RtLogNextFrame();  // pipeline/render_target/cache.cpp
 bool RtLogActive();
 namespace {
+// Frame monitor (F3 overlay): swap times recorded on the GPU thread, read by the UI thread.
+struct FrameMonitor {
+  std::mutex mutex;
+  uint64_t total_frames = 0;
+  uint64_t last_swap = 0;
+  // Ring of frame times in ticks with their end times, for the last-second figures and the graph.
+  static constexpr uint32_t kRing = 256;
+  uint64_t frame_ticks[kRing] = {};
+  uint64_t frame_end[kRing] = {};
+  uint32_t next = 0;
+};
+FrameMonitor g_frame_monitor;
+
+void RecordFrameMonitorSwap() {
+  uint64_t now = rex::chrono::Clock::QueryHostTickCount();
+  std::lock_guard<std::mutex> lock(g_frame_monitor.mutex);
+  FrameMonitor& m = g_frame_monitor;
+  ++m.total_frames;
+  if (m.last_swap) {
+    m.frame_ticks[m.next] = now - m.last_swap;
+    m.frame_end[m.next] = now;
+    m.next = (m.next + 1) % FrameMonitor::kRing;
+  }
+  m.last_swap = now;
+}
+
 uint32_t LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
+  RecordFrameMonitorSwap();
   uint64_t now = rex::chrono::Clock::QueryHostTickCount();
   uint64_t freq = rex::chrono::Clock::QueryHostTickFrequency();
   FrameStats& s = frame_stats_;
@@ -513,6 +541,40 @@ bool CommandProcessor::IsReadbackMemexportEnabled(bool legacy_backend_flag) cons
     return legacy_backend_flag;
   }
   return REXCVAR_GET(readback_memexport);
+}
+
+void CommandProcessor::GetFrameMonitorStats(system::FrameMonitorStats& out) const {
+  uint64_t freq = rex::chrono::Clock::QueryHostTickFrequency();
+  uint64_t now = rex::chrono::Clock::QueryHostTickCount();
+  {
+    std::lock_guard<std::mutex> lock(g_frame_monitor.mutex);
+    const FrameMonitor& m = g_frame_monitor;
+    out.total_frames = m.total_frames;
+    constexpr uint32_t kRing = FrameMonitor::kRing;
+    uint32_t last = (m.next + kRing - 1) % kRing;
+    out.frame_time_ms = 1000.0 * double(m.frame_ticks[last]) / double(freq);
+    for (uint32_t i = 0; i < system::FrameMonitorStats::kHistory; ++i) {
+      uint32_t idx = (m.next + kRing - system::FrameMonitorStats::kHistory + i) % kRing;
+      out.history_ms[i] = float(1000.0 * double(m.frame_ticks[idx]) / double(freq));
+    }
+    uint64_t sum = 0, worst = 0;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < kRing; ++i) {
+      uint32_t idx = (last + kRing - i) % kRing;
+      if (!m.frame_end[idx] || now - m.frame_end[idx] > freq) break;
+      sum += m.frame_ticks[idx];
+      worst = std::max(worst, m.frame_ticks[idx]);
+      ++count;
+    }
+    out.fps = double(count);
+    out.average_ms = count ? 1000.0 * double(sum) / double(freq) / count : 0.0;
+    out.worst_ms = 1000.0 * double(worst) / double(freq);
+  }
+  std::string name = GetRendererName();
+  if (REXCVAR_GET(gpu_collapsed_tiling_height) > 0) {
+    name += ", single pass";
+  }
+  std::snprintf(out.renderer, sizeof(out.renderer), "%s", name.c_str());
 }
 
 void CommandProcessor::SetDesiredSwapPostEffect(SwapPostEffect swap_post_effect) {
