@@ -282,6 +282,16 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
       by stripping the Vulkan emulation's EDRAM render-target cache, tiling and per-draw cost step
       by step (always playable, always comparable) instead of porting nfsmw's renderer, whose draw
       code is built around its offline XenosRecomp shader library.
+      Follow-up (same day): --render_target_path_vulkan=fsi draws the 3D world CORRECTLY (night
+      scene at the dam, test-vk_fsi-*), but at 0.1-15 fps (ROV-like). So the Vulkan backend's
+      shaders, textures and vertex fetch handle FH1; only its render-target paths are the
+      problem (fbo: black world - RenderDoc capture build_logs/rdc-rdcvk-*.rdc shows the
+      1280x2048 EDRAM-shaped R8G8B8A8 target saturated white; fsi: too slow).
+      => PLAN: keep the Vulkan emulation's command processing, shader translation, texture cache
+      and shared memory; replace its EDRAM render-target cache with native render targets
+      (one Vulkan image per render target, resolves as direct copies/blits, tiling collapsed to
+      one full-size pass). That fixes the black world and the cost in one step and is the core of
+      the native renderer, built on parts proven to work on FH1.
 - [ ] Phase C - bring the native renderer into fh1/src (fh1_nativo_*), selectable with a cvar,
       Vulkan presenter; first frames: logos and title screen.
 - [ ] Phase D - festival and race: render targets/resolves (no EDRAM, one pass instead of 3
