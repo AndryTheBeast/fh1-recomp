@@ -23,6 +23,9 @@
 //      memscan_sample NAME       save their current values (tools/memscan_match.py)
 //      memscan_filter OP [V]     keep candidates: inc dec same changed gt lt abs_gt abs_lt
 //      memscan_list N            log N candidates;  memscan_ptrs MAXOFF DEPTH  pointer chains
+//      memscan_pick NAME [MIN]   name the candidate with the most copies (value > MIN)
+//      logvar NAME               log a picked variable
+//      waitvar NAME >V|<V [for S] [timeout T]   wait until the variable passes V
 //      def NAME ... end          define a macro;  do NAME [xN]  runs it
 //      include FILE              run another script (path relative to this one)
 //      quit                      end the test now (auto_test stops the game)

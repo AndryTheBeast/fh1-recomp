@@ -6,9 +6,8 @@
 def boot_to_festival
   log boot: waiting for the title screen
   wait 34
-  tap start x3 gap 1.7
-  wait 1.5
-  tap a x3 gap 2.6
+  tap start x3 gap 1.2
+  tap a x3 gap 1.2   # the single-player screen accepts quick presses, ~2 s after Start
   log boot: loading the festival
   waitdraws >1500 for 3 timeout 90   # the 3D world is on screen
   wait 2
@@ -35,4 +34,65 @@ def pause_menu
   wait 2
   tap b
   wait 1.5
+end
+
+# Finds the car speed variable (m/s) for this run - its memory address changes every session.
+# Needs ~30 s and a little space in front of and behind the car. Cycles alternate forwards (RT)
+# and backwards (LT from a standstill reverses) so the car ends up near where it started: speed
+# magnitude rises while accelerating, stays high during a short handbrake slide (locked wheels drop
+# to ~0), and is ~0 after the handbrake stop. A = handbrake. Leaves the car stopped with the
+# variable 'speed' picked (waitvar speed ... / logvar speed); the value is signed when reversing.
+def speed_cycle_forward
+  set rt
+  wait 1.5
+  memscan_filter absinc
+  wait 1
+  memscan_filter absinc
+  memscan_filter abs_gt 3
+  clear
+  hold a 0.5
+  memscan_filter abs_gt 2
+  hold a 4
+  wait 1
+  memscan_filter abs_lt 0.3
+end
+
+def speed_cycle_backward
+  set lt
+  wait 1.5
+  memscan_filter absinc
+  wait 1
+  memscan_filter absinc
+  memscan_filter abs_gt 2
+  clear
+  hold a 0.5
+  memscan_filter abs_gt 1
+  hold a 4
+  wait 1
+  memscan_filter abs_lt 0.3
+end
+
+def calibrate_speed
+  log calibrating the car speed variable
+  set rt
+  wait 2
+  memscan_start 2 300
+  wait 1
+  memscan_filter absinc
+  clear
+  hold a 0.5
+  memscan_filter abs_gt 2
+  hold a 4
+  wait 1
+  memscan_filter abs_lt 0.3
+  do speed_cycle_backward
+  do speed_cycle_forward
+  do speed_cycle_backward
+  set rt
+  wait 1.5
+  memscan_pick speed 1.5
+  memscan_list 30
+  clear
+  hold a 4
+  wait 1
 end

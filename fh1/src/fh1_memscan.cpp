@@ -4,7 +4,8 @@
 //                             (writes memscan-addrs.bin in the autoplay folder)
 //   memscan_sample NAME       save the candidates' current values (memscan-NAME.bin)
 //   memscan_filter OP [V]     keep candidates by comparing with the previous filter/start:
-//                             inc, dec, same, changed, gt V, lt V, abs_gt V, abs_lt V
+//                             inc, dec, absinc, absdec, same, changed, gt V, lt V, abs_gt V,
+//                             abs_lt V
 //   memscan_list N            log up to N candidates with their values
 //   memscan_ptrs MAXOFF DEPTH log pointer chains from the executable's data (static) to the
 //                             candidates: [static] -> +off -> ... -> candidate (each step reads a
@@ -25,6 +26,7 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <fmt/format.h>
@@ -39,6 +41,7 @@ namespace {
 std::mutex g_mutex;
 std::vector<uint32_t> g_addresses;  // guest addresses of the candidates
 std::vector<float> g_previous;      // their values at the last start/filter
+std::unordered_map<std::string, uint32_t> g_variables;  // picked variables
 
 constexpr uint32_t kStaticStart = 0x82000000, kStaticEnd = 0x84000000;
 
@@ -150,6 +153,10 @@ size_t Filter(const std::string& op, float v) {
       keep = b > a;
     } else if (op == "dec") {
       keep = b < a;
+    } else if (op == "absinc") {
+      keep = std::fabs(b) > std::fabs(a);
+    } else if (op == "absdec") {
+      keep = std::fabs(b) < std::fabs(a);
     } else if (op == "same") {
       keep = b == a;
     } else if (op == "changed") {
@@ -244,6 +251,45 @@ void Pointers(uint32_t max_offset, int depth) {
     REXLOG_INFO("[memscan] level {}: {} pointers", level, next.size());
     levels.push_back(std::move(next));
   }
+}
+
+bool Pick(const std::string& name, float min_value) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  uint8_t* base = GuestBase();
+  if (!base || g_addresses.empty()) return false;
+  std::vector<float> now;
+  ReadCurrent(now);
+  int best = -1, best_copies = 0;
+  for (size_t i = 0; i < now.size(); ++i) {
+    if (!(std::fabs(now[i]) > min_value)) continue;
+    int copies = 0;
+    for (size_t j = 0; j < now.size(); ++j) {
+      if (std::fabs(now[j] - now[i]) <= 0.02f * std::fabs(now[i])) ++copies;
+    }
+    if (copies > best_copies) {
+      best_copies = copies;
+      best = int(i);
+    }
+  }
+  if (best < 0) {
+    REXLOG_WARN("[memscan] pick {}: no candidate above {}", name, min_value);
+    return false;
+  }
+  g_variables[name] = g_addresses[best];
+  REXLOG_INFO("[memscan] picked {} = {:08X} (value {:.3f}, {} copies)", name, g_addresses[best],
+              now[best], best_copies);
+  return true;
+}
+
+bool Variable(const std::string& name, float& out) {
+  uint32_t address;
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    auto it = g_variables.find(name);
+    if (it == g_variables.end()) return false;
+    address = it->second;
+  }
+  return Read(address, out);
 }
 
 bool Read(uint32_t guest_address, float& out) {

@@ -18,6 +18,12 @@ size_t Filter(const std::string& op, float v);
 void List(size_t n);
 // Logs pointer chains from the executable's data to the candidates.
 void Pointers(uint32_t max_offset, int depth);
+// Picks the candidate whose current value (> min_value) has the most near-equal copies among
+// the candidates (a game value is usually stored in several places) and remembers it as a named
+// variable. Returns false if none qualifies.
+bool Pick(const std::string& name, float min_value);
+// Current value of a picked variable; false if it was never picked.
+bool Variable(const std::string& name, float& out);
 // Read one big-endian float / word of guest memory.
 bool Read(uint32_t guest_address, float& out);
 bool Read32(uint32_t guest_address, uint32_t& out);

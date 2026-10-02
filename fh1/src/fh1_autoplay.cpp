@@ -319,6 +319,17 @@ class ScriptRunner {
         memscan::List(size_t(in.lo));
       } else if (in.op == "memscan_ptrs") {
         memscan::Pointers(uint32_t(in.lo), int(in.hi));
+      } else if (in.op == "memscan_pick") {
+        memscan::Pick(in.text, in.lo);
+      } else if (in.op == "logvar") {
+        float v = 0;
+        if (memscan::Variable(in.text, v)) {
+          REXLOG_INFO("[autoplay] {:.1f} s: {} = {:.3f}", t, in.text, v);
+        } else {
+          REXLOG_WARN("[autoplay] {:.1f} s: variable {} not picked", t, in.text);
+        }
+      } else if (in.op == "waitvar") {
+        WaitVar(in, t);
       } else if (in.op == "waitfile") {
         WaitFile(in, t);
       } else if (in.op == "waitdraws") {
@@ -354,6 +365,32 @@ class ScriptRunner {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     REXLOG_WARN("[autoplay] waitfile '{}' timed out after {:.0f} s", in.text, in.timeout);
+  }
+
+  // Waits until a picked variable is above/below a value (for hold_for seconds).
+  void WaitVar(const Instr& in, double t) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(in.timeout);
+    auto ok_since = std::chrono::steady_clock::time_point();
+    bool ok_run = false;
+    float v = 0;
+    while (!stop_ && std::chrono::steady_clock::now() < deadline) {
+      if (!memscan::Variable(in.text, v)) {
+        REXLOG_WARN("[autoplay] waitvar: variable {} not picked", in.text);
+        return;
+      }
+      bool ok = in.greater ? v > in.lo : v < in.lo;
+      auto now = std::chrono::steady_clock::now();
+      if (ok && !ok_run) ok_since = now;
+      ok_run = ok;
+      if (ok && std::chrono::duration<double>(now - ok_since).count() >= in.hold_for) {
+        REXLOG_INFO("[autoplay] {:.1f} s: {} {} {} (now {:.3f})", t, in.text,
+                    in.greater ? ">" : "<", in.lo, v);
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    REXLOG_WARN("[autoplay] waitvar {} {}{} timed out after {:.0f} s (now {:.3f})", in.text,
+                in.greater ? ">" : "<", in.lo, in.timeout, v);
   }
 
   // Waits until every frame for hold_for seconds has more (or fewer) draws than the threshold.
@@ -508,6 +545,31 @@ bool ParseScript(const std::filesystem::path& path, MacroMap& macros, std::vecto
       if (w.size() != 3) return fail("memscan_ptrs MAXOFF DEPTH");
       in.lo = float(std::strtoul(w[1].c_str(), nullptr, 0));
       in.hi = std::strtof(w[2].c_str(), nullptr);
+    } else if (in.op == "memscan_pick") {
+      // memscan_pick NAME [MIN]
+      if (w.size() < 2 || w.size() > 3) return fail("memscan_pick NAME [MIN]");
+      in.text = w[1];
+      in.lo = w.size() == 3 ? std::strtof(w[2].c_str(), nullptr) : 1.0f;
+    } else if (in.op == "logvar") {
+      if (w.size() != 2) return fail("logvar NAME");
+      in.text = w[1];
+    } else if (in.op == "waitvar") {
+      // waitvar NAME >V|<V [for S] [timeout T]
+      if (w.size() < 3 || (w[2][0] != '>' && w[2][0] != '<')) {
+        return fail("waitvar NAME >V|<V [for S] [timeout T]");
+      }
+      in.text = w[1];
+      in.greater = w[2][0] == '>';
+      in.lo = std::strtof(w[2].c_str() + 1, nullptr);
+      for (size_t i = 3; i + 1 < w.size(); i += 2) {
+        if (w[i] == "for") {
+          in.hold_for = std::strtod(w[i + 1].c_str(), nullptr);
+        } else if (w[i] == "timeout") {
+          in.timeout = std::strtod(w[i + 1].c_str(), nullptr);
+        } else {
+          return fail("waitvar NAME >V|<V [for S] [timeout T]");
+        }
+      }
     } else if (in.op == "waitfile") {
       // waitfile PATTERN [TIMEOUT]
       if (w.size() < 2 || w.size() > 3) return fail("waitfile PATTERN [TIMEOUT]");

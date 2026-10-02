@@ -1,0 +1,16 @@
+# Checks the speed calibration: find the variable, then accelerate until 15 m/s and stop.
+include common.txt
+
+do boot_to_festival
+wait 3
+do calibrate_speed
+logvar speed
+set rt
+waitvar speed >15 timeout 20
+shot at_15ms
+clear
+hold a 4
+waitvar speed <0.3 for 1 timeout 15
+shot stopped
+logvar speed
+quit
