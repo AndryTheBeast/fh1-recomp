@@ -668,7 +668,25 @@ inline bool FormatoColorAdmitido(uint32_t f) {
   using F = xenos::ColorRenderTargetFormat;
   return f == uint32_t(F::k_8_8_8_8) || f == uint32_t(F::k_8_8_8_8_GAMMA) || f == uint32_t(F::k_2_10_10_10) ||
          f == uint32_t(F::k_2_10_10_10_FLOAT) || f == uint32_t(F::k_2_10_10_10_AS_10_10_10_10) ||
-         f == uint32_t(F::k_2_10_10_10_FLOAT_AS_16_16_16_16);
+         f == uint32_t(F::k_2_10_10_10_FLOAT_AS_16_16_16_16) ||
+         // FH1: its scene and post-processing also draw into 16- and 32-bit-per-channel targets (FormatoHostFh1).
+         f == uint32_t(F::k_16_16) || f == uint32_t(F::k_16_16_16_16) || f == uint32_t(F::k_16_16_FLOAT) ||
+         f == uint32_t(F::k_16_16_16_16_FLOAT) || f == uint32_t(F::k_32_FLOAT) || f == uint32_t(F::k_32_32_FLOAT);
+}
+
+// FH1: host image format of the wide render-target formats (VK_FORMAT_UNDEFINED = the usual 8-bit or HDR choice).
+// The 16-bit fixed formats (range -32..32 on the Xbox 360) are kept as half floats for now.
+inline VkFormat FormatoHostFh1(uint32_t f) {
+  using F = xenos::ColorRenderTargetFormat;
+  switch (xenos::ColorRenderTargetFormat(f)) {
+    case F::k_16_16:
+    case F::k_16_16_FLOAT: return VK_FORMAT_R16G16_SFLOAT;
+    case F::k_16_16_16_16:
+    case F::k_16_16_16_16_FLOAT: return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case F::k_32_FLOAT: return VK_FORMAT_R32_SFLOAT;
+    case F::k_32_32_FLOAT: return VK_FORMAT_R32G32_SFLOAT;
+    default: return VK_FORMAT_UNDEFINED;
+  }
 }
 constexpr uint32_t kAltoMaximoDestino = 2048;
 constexpr VkImageSubresourceRange kRangoColor = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
@@ -4039,10 +4057,14 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
     // NFSC: the HDR formats get a real float image (formato is already canonical: 12 -> 3, 10 -> 2).
     const bool hdr = REXCVAR_GET(nfsc_hdr_float) &&
                      formato == uint32_t(xenos::ColorRenderTargetFormat::k_2_10_10_10_FLOAT);
+    const VkFormat formato_fh1 = FormatoHostFh1(formato);
+    const VkFormat formato_host = formato_fh1 != VK_FORMAT_UNDEFINED ? formato_fh1
+                                  : hdr                              ? VK_FORMAT_R16G16B16A16_SFLOAT
+                                                                     : kFormatoColor;
     if (!Crear(imagen, pitch, alto,
                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-               hdr ? VK_FORMAT_R16G16B16A16_SFLOAT : kFormatoColor)) {
+               formato_host)) {
       Rechazar(8, "no se pudo crear un destino de render");
       return nullptr;
     }
@@ -4052,21 +4074,24 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
                 base, formato, pitch, alto, uint32_t(std::lround(diag.float32[0] * 255.0f)),
                 uint32_t(std::lround(diag.float32[1] * 255.0f)),
                 uint32_t(std::lround(diag.float32[2] * 255.0f)));
-    if (hdr) {
-      imagenes_hdr_.insert(imagen.imagen);
+    if (formato_host != kFormatoColor) {
+      imagenes_hdr_[imagen.imagen] = formato_host;
       REXLOG_INFO("[nfsc] HDR render target base {:03X} {}x{} is R16G16B16A16_SFLOAT", base, pitch, alto);
     }
     return &destinos_.emplace(clave, imagen).first->second;
   }
-  std::unordered_set<VkImage> imagenes_hdr_;  // NFSC: float scene targets (nfsc_hdr_float)
+  // NFSC: float scene targets (nfsc_hdr_float); FH1: every render target that is not 8-bit, with its format.
+  std::unordered_map<VkImage, VkFormat> imagenes_hdr_;
 
   // NFSC: every image-to-image copy goes through here. A plain copy cannot convert between the float scene target and
   // the 8-bit textures, so when exactly one side is float the regions are blitted (nearest, 1 to 1) instead.
   void CopiarImagenes(VkCommandBuffer cmd, VkImage origen, VkImageLayout capa_origen, VkImage destino,
                       VkImageLayout capa_destino, uint32_t n, const VkImageCopy* regiones) {
-    const bool origen_hdr = imagenes_hdr_.count(origen) != 0;
-    const bool destino_hdr = imagenes_hdr_.count(destino) != 0;
-    if (origen_hdr == destino_hdr || !blit_) {
+    // FH1: compared by format (several wide formats now), not only "float or not".
+    const auto io = imagenes_hdr_.find(origen), id = imagenes_hdr_.find(destino);
+    const VkFormat fo = io != imagenes_hdr_.end() ? io->second : VK_FORMAT_UNDEFINED;
+    const VkFormat fd = id != imagenes_hdr_.end() ? id->second : VK_FORMAT_UNDEFINED;
+    if (fo == fd || !blit_) {
       copiar_imagen_(cmd, origen, capa_origen, destino, capa_destino, n, regiones);
       return;
     }

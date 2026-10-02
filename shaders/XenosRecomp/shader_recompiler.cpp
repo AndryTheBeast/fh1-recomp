@@ -1610,16 +1610,35 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
         if (isPixelShader)
         {
             value = reinterpret_cast<const PixelShader*>(shader)->interpolators[i];
+#ifdef NFSMW_RECOMP
+            // FH1 (from nfsc-recomp): interpolants are named by position (TEXCOORDi = the i-th one), as the Xbox 360
+            // links them, so shaders from real containers and from microcode alone (tools/nfsc_synth_containers.py)
+            // link with each other whatever semantics their containers declare.
+            println("\tfloat4 r{} = iTexCoord{};", uint32_t(interpolator.reg), i);
+#else
             println("\tfloat4 r{} = i{}{};", uint32_t(interpolator.reg), USAGE_VARIABLES[uint32_t(interpolator.usage)], uint32_t(interpolator.usageIndex));
+#endif
             printedRegisters[interpolator.reg] = true;
         }
         else
         {
             auto vertexShader = reinterpret_cast<const VertexShader*>(shader);
             value = vertexShader->vertexElementsAndInterpolators[vertexShader->field18 + vertexShader->vertexElementCount + i];
+#ifdef NFSMW_RECOMP
+            (void)interpolator;  // positional names, see the pixel shader side; all 16 are registered below
+            interpolators.emplace(i, fmt::format("oTexCoord{}", i));
+#else
             interpolators.emplace(i, fmt::format("o{}{}", USAGE_VARIABLES[uint32_t(interpolator.usage)], uint32_t(interpolator.usageIndex)));
+#endif
         }
     }
+#ifdef NFSMW_RECOMP
+    if (!isPixelShader)
+    {
+        for (uint32_t k = 0; k < 16; k++)
+            interpolators.emplace(k, fmt::format("oTexCoord{}", k));
+    }
+#endif
 
     if (!isPixelShader)
     {

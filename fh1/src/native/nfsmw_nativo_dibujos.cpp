@@ -2405,7 +2405,11 @@ class DibujosVulkanImpl final : public DibujosVulkan {
         if (formato != uint32_t(F::k_8_8_8_8) && formato != uint32_t(F::k_8_8_8_8_GAMMA) &&
             formato != uint32_t(F::k_2_10_10_10) && formato != uint32_t(F::k_2_10_10_10_FLOAT) &&
             formato != uint32_t(F::k_2_10_10_10_AS_10_10_10_10) &&
-            formato != uint32_t(F::k_2_10_10_10_FLOAT_AS_16_16_16_16)) {
+            formato != uint32_t(F::k_2_10_10_10_FLOAT_AS_16_16_16_16) &&
+            // FH1: wide formats (FormatoHostFh1 in nfsmw_nativo_destinos.cpp).
+            formato != uint32_t(F::k_16_16) && formato != uint32_t(F::k_16_16_16_16) &&
+            formato != uint32_t(F::k_16_16_FLOAT) && formato != uint32_t(F::k_16_16_16_16_FLOAT) &&
+            formato != uint32_t(F::k_32_FLOAT) && formato != uint32_t(F::k_32_32_FLOAT)) {
           return Rechazar(200 + formato, "formato de destino de color todavia no soportado");
         }
       }

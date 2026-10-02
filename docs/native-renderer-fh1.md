@@ -138,3 +138,16 @@ pass) stay off by default and are paused.
   presented from the game's resolve chain (black: no draws yet). Depth copies (~8/frame) skipped.
   Lesson: never wait for the GPU while a command buffer is recording (replacing a resolved texture
   first ended the recording and crashed the driver); replaced images are retired per slot.
+- 2026-10-02 **Change of base: nfsc-recomp's renderer adopted** (fh1/src/native, see its README).
+  The user's friend (GoatHonks) ported the whole nfsmw-nx native renderer to Need for Speed: Carbon
+  (nfsc-recomp, same 2008 shader containers as FH1, hookless vertex-shader identification, AMD
+  barrier fix, positional interpolants, shaders rebuilt from microcode). With his permission it is
+  copied in and built next to our own N1-N3a code; run with `--nfsmw_renderizador=nativo` and the
+  library next to fh1.exe as `nfsmw_shaders.nfsp`. FH1 fixes on top: microcode located through the
+  2008 shader header (FH1 puts data first in the physical part; without it only 3 of 9 shaders
+  matched), our tolerant vertex-shader pass, k_2_10_10_10 resolves, 16/32-bit render-target
+  formats, shared constants widened for fh1Fetch. **First native picture**: the FORZA HORIZON logo
+  and PRESS START drawn with textures (title video background still white), 30 fps, no crash.
+  Missing shaders: `--nfsc_dump_ring_shaders=DIR` writes unknown microcode, `tools/nfsc_synth_containers.py`
+  rebuilds containers, our translator now names interpolants by position (as the hardware links
+  them) so rebuilt and real shaders link.
