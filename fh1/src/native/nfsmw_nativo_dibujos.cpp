@@ -1079,6 +1079,9 @@ REXCVAR_DEFINE_INT32(nfsc_debug_view_interp, -1, "NFSC",
                      "Debug: every pixel shader is replaced by one that shows interpolant TEXCOORD<N> (0-7) as colour")
     .range(-1, 7)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(fh1_vertices_10_11_11, false, "FH1",
+                    "Native renderer: draw k_10_11_11 vertex data (raw bits through a float input, unpacked in the shader). "
+                    "Off: on AMD the festival went black with it (float denormal/NaN handling probably alters the bits)");
 REXCVAR_DEFINE_BOOL(nfsc_barreras, true, "NFSC",
                     "Full GPU memory barriers between copies, clears and render passes (needed on AMD). false = as the "
                     "Most Wanted port (no barriers: only for comparisons)")
@@ -1699,6 +1702,7 @@ VkFormat FormatoAtributo(uint32_t formato, bool entrada_entera, bool con_signo, 
                     VK_FORMAT_A2B10G10R10_UINT_PACK32, VK_FORMAT_A2B10G10R10_SINT_PACK32);
     case 16:  // k_10_11_11: packed normal decoded by the shader itself
       if (rojo_azul) break;
+      if (!entrada_entera && !REXCVAR_GET(fh1_vertices_10_11_11)) break;
       if (!entrada_entera) {
         // FH1: positions and texcoords in this format: the raw bits go through a float input and remapInput unpacks
         // them (remap code bit 12, set by the caller).
