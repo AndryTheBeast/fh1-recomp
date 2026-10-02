@@ -74,6 +74,12 @@ Tests today hold buttons on a fixed timetable (`--fh1_autoplay`, fh1/src/fh1_aut
        `replay FILE GO` in tools/autoplay/replay_route.txt). Self-test: a 15 s scripted drive
        replayed to within about a car width. If long routes drift, correct them with the car
        position (found per run by calibrate_position / memscan; heap address changes per session).
+       First real route (build_logs/route.txt, user, 2026-10-02): open-loop replay diverged at
+       once - the route starts with a hard left turn next to the paint-shop tower and the replay
+       hit the tower. NEXT: replay with position correction (record positions with the inputs,
+       steer back towards the recorded line); make calibrate_position reliable at the paint shop
+       first (1 good run of 5: handbrake-held stop checks + copy-count pick still picked wrong
+       values there).
        Dead ends: the dev launch settings (engageaionstart, bestplayerai, ...) drive a UI camera;
        AutoSteer* are UI cursor settings.
 
