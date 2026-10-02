@@ -42,30 +42,27 @@ the native renderer); 60 fps unlock with vsync off (broke distant rendering); fo
 (garbage on the car); scripted autoplay with a memory scanner, input recorder and route replay
 (removed at the user's request; git history ffdb286..e8b043f).
 
-## Next — native renderer (Stage 3, Vulkan)
+## Next — native renderer (Stage 3), the nfsmw-nx way
 
-The emulated GPU spends most of its time on emulation itself: EDRAM, drawing the main scene 3
-times for the console's tiling, transfers, readbacks. The native renderer keeps the parts proven on
-FH1 (command processing, SPIR-V shader translation, textures) and replaces the rest:
+Decision 2026-10-02: build a real native renderer like nfsmw-nx did for Most Wanted instead of
+polishing the emulated GPU (plan and reuse table: `docs/native-renderer-fh1.md`).
 
-1. [~] **Native render targets in the Vulkan backend**: one image per render target, no EDRAM
-       aliasing or ownership transfers (keep the one aliasing FH1 needs: 4x at pitch P = 1x at 2P),
-       resolves as direct copies into textures. 2026-10-02: of 104 kinds of EDRAM copies the
-       festival needs exactly one (`c0.720.16.4>c0.720.16.1`, the 4x/1x colour alias); the depth
-       alias trick now works on Vulkan too. Details: `docs/native-render-targets.md`.
-2. [~] **Draw the main scene once** instead of 3 strips (~2,000 fewer draws per frame, ~-40% CPU on
-       the GPU thread) - possible once render targets are not limited to the 10 MB EDRAM.
-       Prototype (off by default): `--fh1_single_tile --gpu_tall_main_pass --gpu_tall_single_strip`
-       + the transfer settings: the game draws one strip, one seamless full-height pass, draws
-       3,700 -> 2,230 per frame, GPU thread draw time 15.0 -> 9.4 ms. Open: the festival's big
-       structures (dome, stages) are missing - next is a RenderDoc comparison.
-3. [ ] Readbacks only where the CPU needs them; compare every change against D3D12 screenshots.
-4. [ ] Per-draw cost of the GPU command thread (driver ~30%, emulation bookkeeping the rest).
+- [ ] **N0 shader library**: FH1's `.fxobj` files hold ~2,900 shader containers in the 2008
+      layout XenosRecomp reads directly; extract all (also from the LZX track archives),
+      translate, compile, pack `fh1_shaders.nfsp`.
+- [ ] **N1 own graphics system** (`fh1_renderer=native`): presenter, command ring, vblank, GPU
+      waits - the game runs without the emulated GPU.
+- [ ] **N2 shader identity hooks** (FH1's D3D shader constructors and Draw*).
+- [ ] **N3 draws and textures**: logos, title, menus.
+- [ ] **N4 render targets and resolves**: main scene drawn once, MSAA, aliases, readbacks -
+      festival like D3D12.
+- [ ] **N5 races, garage, photos; performance.**
 
-Milestone: festival and a race correct on Vulkan, faster than D3D12 today.
+Paused experiments on the emulated GPU (off by default, `docs/native-render-targets.md`): EDRAM
+transfer skipping (16 kinds needed while driving) and the tall single-pass main scene (15.0 -> 9.4
+ms of draw time, but motion-blur smear and missing structures).
 
-Small items alongside: F3 frame monitor for the Vulkan presenter; persistent Vulkan pipeline cache
-(fewer first-time hitches).
+Small items alongside: F3 frame monitor for the Vulkan presenter; persistent Vulkan pipeline cache.
 
 ## Later — Nintendo Switch (separate repository)
 
