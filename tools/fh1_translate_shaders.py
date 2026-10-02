@@ -27,7 +27,15 @@ def translate(name):
     out_dir = os.path.join(work, base + '_out')
     os.makedirs(src_dir)
     shutil.copy(os.path.join(containers_dir, name), src_dir)
-    r = subprocess.run([translator, src_dir, out_dir, common], capture_output=True, text=True, errors='replace')
+    # A damaged container (memory dumps) can make the translator run away with memory; on
+    # 2026-10-02 that starved the whole PC. Stop it after 60 s.
+    try:
+        r = subprocess.run([translator, src_dir, out_dir, common], capture_output=True, text=True,
+                           errors='replace', timeout=60)
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(src_dir, ignore_errors=True)
+        shutil.rmtree(out_dir, ignore_errors=True)
+        return name, False, 'translator timed out (60 s)'
     produced = os.path.join(out_dir, base + '.hlsl')
     ok = os.path.exists(produced)
     if ok:
