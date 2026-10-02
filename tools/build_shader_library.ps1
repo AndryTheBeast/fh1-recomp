@@ -6,7 +6,7 @@
   translate them to HLSL (XenosRecomp), compile to SPIR-V (DXC with SPIR-V support, from
   FH1-recomp\tools_dxc - the Windows SDK's dxc.exe has none), pack.
 #>
-param([string]$Dxc = "")
+param([string]$Dxc = "", [string]$Merge = "")
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent $PSScriptRoot
 $Top = Split-Path -Parent $Repo
@@ -20,10 +20,10 @@ foreach ($d in "containers", "hlsl", "spirv") { $p = Join-Path $Out $d; if (Test
 $lib = Join-Path $Out "fh1_shaders.nfsp"
 if (Test-Path $lib) { Remove-Item -Force $lib }
 
-& python (Join-Path $PSScriptRoot "fh1_extract_shaders.py") (Join-Path $Top "game_root") (Join-Path $Out "containers")
-& (Join-Path $Repo "shaders\fh1_hlsl.exe") (Join-Path $Out "containers") (Join-Path $Out "hlsl") `
-  (Join-Path $Repo "shaders\XenosRecomp\shader_common.h") > (Join-Path $Out "traduccion.log")
-Get-Content (Join-Path $Out "traduccion.log") -Tail 1
+$mergeArgs = @()
+if ($Merge) { $mergeArgs = @("--merge", $Merge) }
+& python (Join-Path $PSScriptRoot "fh1_extract_shaders.py") (Join-Path $Top "game_root") (Join-Path $Out "containers") @mergeArgs
+& python (Join-Path $PSScriptRoot "fh1_translate_shaders.py") (Join-Path $Out "containers") (Join-Path $Out "hlsl")
 & python (Join-Path $PSScriptRoot "fh1_compile_shaders.py") (Join-Path $Out "hlsl") (Join-Path $Out "spirv") $Dxc
 & (Join-Path $Repo "shaders\fh1_empaquetar.exe") (Join-Path $Out "containers") (Join-Path $Out "spirv") $lib
 if ($LASTEXITCODE -ne 0) { throw "packing failed" }

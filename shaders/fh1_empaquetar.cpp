@@ -26,6 +26,14 @@ int main(int argc, char** argv) try {
   for (const auto& e : fs::directory_iterator(originales))
     if (e.is_regular_file() && e.path().extension() == ".bin") rutas.push_back(e.path());
   std::sort(rutas.begin(), rutas.end());
+  // FH1: containers that did not translate or compile (damaged memory dumps) have no SPIR-V: left out.
+  size_t sin_spirv = 0;
+  std::erase_if(rutas, [&](const fs::path& ruta) {
+    bool falta = !fs::exists(compilados / (ruta.stem().string() + ".spv"));
+    sin_spirv += falta;
+    return falta;
+  });
+  if (sin_spirv) std::printf("%zu contenedores sin SPIR-V, fuera de la biblioteca\n", sin_spirv);
   std::vector<fh1::native::Shader> shaders;
   for (const auto& ruta : rutas) {
     fh1::native::Shader s;

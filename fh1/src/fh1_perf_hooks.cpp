@@ -29,8 +29,11 @@ thread_local uint32_t g_ring_wait_streak = 0;
 }  // namespace
 
 REX_EXTERN(__imp__sub_829F04A8);
+void Fh1ShaderDumpTick(const uint8_t* base);  // fh1_shader_dump.cpp
+
 REX_HOOK_RAW(sub_829F04A8) {
   __imp__sub_829F04A8(ctx, base);
+  Fh1ShaderDumpTick(base);
   if (!REXCVAR_GET(fh1_yield_ring_wait)) {
     return;
   }

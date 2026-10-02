@@ -77,3 +77,13 @@ pass) stay off by default and are paused.
   `FH1-recomp\tools_dxc\`); the Windows SDK's dxc.exe has no SPIR-V. `fh1/src/fh1_shader_library.*`
   is FH1's copy of nfsmw's library reader/writer (2008 containers, 256 MB cap), not yet in fh1.exe.
   Still to add: the `.fxobj` inside the tracks' LZX `bin.zip` archives (and default.xex).
+- 2026-10-02 track shaders: 184 `.fxobj` (the world's: trees, flags, terrain blends) exist only in
+  the tracks' `bin.zip`, zip method 21. Not deflate, not raw LZX (libmspack lzxd fails at every
+  window size, also with swapped bytes; `tools/fh1_lzx_probe.cpp`), no XMemCompress frame headers
+  visible. Memory dump route: `--fh1_dump_shaders=SECONDS --fh1_dump_shaders_dir=DIR` scans guest
+  memory (fh1/src/fh1_shader_dump.cpp) - at the festival it finds 2,453 distinct containers, 1,947
+  not on the disc, but many are damaged or patched in memory (impossible registers, huge sizes that
+  exhaust the PC while translating), so merging them blindly (`build_shader_library.ps1 -Merge`)
+  is not usable yet. Next: find how the game decodes method 21 (its zip reader in the recompiled
+  code) and decode the archives offline. Translation is now one process per container
+  (`tools/fh1_translate_shaders.py`) and the packer leaves out containers without SPIR-V.

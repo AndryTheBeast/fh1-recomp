@@ -34,7 +34,7 @@ def compile_one(path):
 
 files = sorted(glob.glob(os.path.join(hlsl_dir, '*.hlsl')))
 ok, errors = 0, []
-with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 1)) as pool:
     for base, code, text in pool.map(compile_one, files):
         if code == 0:
             ok += 1
