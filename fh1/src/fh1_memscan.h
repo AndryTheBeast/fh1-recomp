@@ -22,6 +22,9 @@ void Pointers(uint32_t max_offset, int depth);
 // the candidates (a game value is usually stored in several places) and remembers it as a named
 // variable. Returns false if none qualifies.
 bool Pick(const std::string& name, float min_value);
+// Picks a 3-float vector among the candidates (an address A with A+8 also a candidate: x, y, z
+// with y the height, which may not change on flat ground) and names <name>x/<name>y/<name>z.
+bool PickVector(const std::string& name);
 // Names a known address as a variable.
 void Define(const std::string& name, uint32_t guest_address);
 // Current value of a picked variable; false if it was never picked.

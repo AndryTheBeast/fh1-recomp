@@ -285,6 +285,43 @@ bool Pick(const std::string& name, float min_value) {
   return true;
 }
 
+bool PickVector(const std::string& name) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  uint8_t* base = GuestBase();
+  if (!base) return false;
+  // Candidate x (A) with z (A+8) also a candidate. Among those, prefer the x value with the most
+  // near-equal copies among the candidates: the car position is kept in several places (physics,
+  // render matrix, camera target), positions of other things relative to the car are unique.
+  std::vector<float> now;
+  ReadCurrent(now);
+  int best = -1, best_copies = 0;
+  for (size_t i = 0; i < g_addresses.size(); ++i) {
+    uint32_t a = g_addresses[i];
+    if (!(std::fabs(now[i]) > 1.0f)) continue;
+    if (!std::binary_search(g_addresses.begin(), g_addresses.end(), a + 8)) continue;
+    int copies = 0;
+    for (size_t j = 0; j < now.size(); ++j) {
+      if (std::fabs(now[j] - now[i]) <= 0.01f) ++copies;
+    }
+    if (copies > best_copies) {
+      best_copies = copies;
+      best = int(i);
+    }
+  }
+  if (best < 0) {
+    REXLOG_WARN("[memscan] pickvec {}: no x/z pair among {} candidates", name, g_addresses.size());
+    return false;
+  }
+  uint32_t a = g_addresses[best];
+  g_variables[name + "x"] = a;
+  g_variables[name + "y"] = a + 4;
+  g_variables[name + "z"] = a + 8;
+  REXLOG_INFO("[memscan] picked vector {} at {:08X}: {:.2f} {:.2f} {:.2f} ({} copies of x)", name, a,
+              LoadBigEndianFloat(base + a), LoadBigEndianFloat(base + a + 4),
+              LoadBigEndianFloat(base + a + 8), best_copies);
+  return true;
+}
+
 void Define(const std::string& name, uint32_t guest_address) {
   std::lock_guard<std::mutex> lock(g_mutex);
   g_variables[name] = guest_address;

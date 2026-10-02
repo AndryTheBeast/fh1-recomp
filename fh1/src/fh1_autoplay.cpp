@@ -192,6 +192,7 @@ struct Instr {
   double hold_for = 0;
   double timeout = 120;
   float lo = 0, hi = 0;  // memscan_start
+  std::string seconds_path;  // replay: recording file
 };
 
 // Files the game opened, for 'waitfile' (lower-case paths with a running number).
@@ -207,6 +208,8 @@ std::string Lower(std::string_view s) {
   for (char& c : out) c = char(std::tolower(static_cast<unsigned char>(c)));
   return out;
 }
+
+std::vector<std::string> Words(std::string_view line);  // below
 
 class ScriptRunner {
  public:
@@ -324,6 +327,8 @@ class ScriptRunner {
       } else if (in.op == "memscan_pick") {
         memscan::Pick(in.text, in.lo);
 
+      } else if (in.op == "memscan_pickvec") {
+        memscan::PickVector(in.text);
       } else if (in.op == "defvar") {
         memscan::Define(in.text, uint32_t(in.seconds));
       } else if (in.op == "logvar") {
@@ -339,6 +344,8 @@ class ScriptRunner {
         WaitFile(in, t);
       } else if (in.op == "waitdraws") {
         WaitDraws(in, t);
+      } else if (in.op == "replay") {
+        Replay(in, t);
       } else if (in.op == "quit") {
         REXLOG_INFO("[autoplay] {:.1f} s: quit", t);
         Sleep(2.0);  // let the log reach the file before auto_test kills the game
@@ -370,6 +377,70 @@ class ScriptRunner {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     REXLOG_WARN("[autoplay] waitfile '{}' timed out after {:.0f} s", in.text, in.timeout);
+  }
+
+  // Plays back a --fh1_record file: the "in" lines after the first "mark" containing in.text
+  // (e.g. GO), with their original timing relative to that mark. The pad is set to each recorded
+  // state in turn (it replaces the script's own held/set controls while it runs).
+  void Replay(const Instr& in, double t) {
+    std::ifstream file(in.seconds_path);
+    if (!file) {
+      REXLOG_WARN("[autoplay] replay: cannot read {}", in.seconds_path);
+      return;
+    }
+    struct Event {
+      double time;
+      Step pad;
+    };
+    std::vector<Event> events;
+    std::string line;
+    double mark_time = -1;
+    while (std::getline(file, line)) {
+      std::string_view l = Trim(line);
+      if (l.empty() || l[0] == '#') continue;
+      double time = std::strtod(std::string(l).c_str(), nullptr);
+      auto sp = l.find(' ');
+      if (sp == std::string_view::npos) continue;
+      std::string_view rest = l.substr(sp + 1);
+      if (mark_time < 0) {
+        if (rest.substr(0, 5) == "mark " && rest.find(in.text) != std::string_view::npos) {
+          mark_time = time;
+        }
+        continue;
+      }
+      if (rest.substr(0, 3) != "in ") continue;
+      // in BUTTONS lt=.. rt=.. lx=.. ly=.. rx=.. ry=..
+      Event e;
+      e.time = time - mark_time;
+      auto words = Words(rest.substr(3));
+      for (size_t i = 0; i < words.size(); ++i) {
+        if (i == 0) {
+          if (words[0] != "-") ParseControls(words[0], e.pad);
+        } else {
+          ParseControl(words[i], e.pad);
+        }
+      }
+      events.push_back(e);
+    }
+    if (mark_time < 0) {
+      REXLOG_WARN("[autoplay] replay: no mark containing '{}' in {}", in.text, in.seconds_path);
+      return;
+    }
+    REXLOG_INFO("[autoplay] {:.1f} s: replaying {} inputs ({:.0f} s) from {}", t, events.size(),
+                events.empty() ? 0.0 : events.back().time, in.seconds_path);
+    auto start = std::chrono::steady_clock::now();
+    for (const Event& e : events) {
+      auto when = start + std::chrono::duration<double>(e.time);
+      while (!stop_ && std::chrono::steady_clock::now() < when) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      }
+      if (stop_) return;
+      std::lock_guard<std::mutex> lock(mutex_);
+      held_ = FromStep(e.pad);
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    held_ = PadState();
+    REXLOG_INFO("[autoplay] replay finished");
   }
 
   // Waits until a picked variable is above/below a value (for hold_for seconds).
@@ -556,6 +627,15 @@ bool ParseScript(const std::filesystem::path& path, MacroMap& macros, std::vecto
       if (w.size() < 2 || w.size() > 3) return fail("memscan_pick NAME [MIN]");
       in.text = w[1];
       in.lo = w.size() == 3 ? std::strtof(w[2].c_str(), nullptr) : 1.0f;
+    } else if (in.op == "replay") {
+      // replay FILE [MARK]  (FILE relative to the script; MARK defaults to GO)
+      if (w.size() < 2 || w.size() > 3) return fail("replay FILE [MARK]");
+      std::filesystem::path f(w[1]);
+      in.seconds_path = (f.is_absolute() ? f : path.parent_path() / f).string();
+      in.text = w.size() == 3 ? w[2] : "GO";
+    } else if (in.op == "memscan_pickvec") {
+      if (w.size() != 2) return fail("memscan_pickvec NAME");
+      in.text = w[1];
     } else if (in.op == "defvar") {
       // defvar NAME ADDRESS (hex with 0x)
       if (w.size() != 3) return fail("defvar NAME ADDRESS");

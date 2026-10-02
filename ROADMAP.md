@@ -67,14 +67,15 @@ Tests today hold buttons on a fixed timetable (`--fh1_autoplay`, fh1/src/fh1_aut
        stop - A is the handbrake; the user's idea) and names it; then `waitvar speed >15`,
        `waitvar speed <0.3 for 1`, `logvar speed`. Verified against the speedometer. Tools:
        `memscan_*` commands (fh1/src/fh1_memscan.cpp), tools/memscan_match.py.
-3. [ ] Driving and racing. Findings 2026-10-02: the image has a developer launch-settings block
-       (sub_824F8150: launchtype, car, numlaps, aiskill, engageaionstart, engagerandomsatnav,
-       bestplayerai, enableaitoggle, autodriveway, perfautomation*) that the retail game never
-       fills; its only reader (sub_8268A900) drives a UI camera (dynamic cast CUI4ViewCamera ->
-       CUI4CarTargetCamera), not the player car. AutoSteerController/AutoSteerKinect are UI cursor
-       settings. Next idea: record a route driven by the user (car position from memory, found
-       like the speed) and let tests follow it with steering correction; race selection from the
-       map/event markers on that route.
+3. [~] Driving and racing (2026-10-02, the user's plan): tests start from a fixed test save
+       (build_logs/testsaves/paintshop, car parked at the paint shop; `auto_test.ps1 -SaveFrom`
+       runs each test on a fresh copy via --user_data_root, the real save is never used) and
+       replay a drive the user recorded (`--fh1_record` + tools/autoplay/record_route.txt, then
+       `replay FILE GO` in tools/autoplay/replay_route.txt). Self-test: a 15 s scripted drive
+       replayed to within about a car width. If long routes drift, correct them with the car
+       position (found per run by calibrate_position / memscan; heap address changes per session).
+       Dead ends: the dev launch settings (engageaionstart, bestplayerai, ...) drive a UI camera;
+       AutoSteer* are UI cursor settings.
 
 ## Next — native renderer (Stage 3, Vulkan)
 

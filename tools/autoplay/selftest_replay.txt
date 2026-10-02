@@ -1,0 +1,5 @@
+include common.txt
+do boot_to_festival
+replay ../../../build_logs/route_selftest.txt GO
+shot after
+quit

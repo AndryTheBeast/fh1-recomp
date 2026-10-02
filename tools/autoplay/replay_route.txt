@@ -1,0 +1,10 @@
+# Replays a recorded route on the paint-shop test save (same start every time):
+#   powershell -ExecutionPolicy Bypass -File tools\auto_test.ps1 -Name route -Seconds 900
+#     -Script tools\autoplay\replay_route.txt -SaveFrom ..\build_logs\testsaves\paintshop
+include common.txt
+
+do boot_to_festival
+log replay starts
+replay ../../../build_logs/route.txt GO
+shot end
+quit

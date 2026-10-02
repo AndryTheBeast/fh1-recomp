@@ -25,9 +25,12 @@
 //                                abs_gt abs_lt delta_lt delta_gt
 //      memscan_list N            log N candidates;  memscan_ptrs MAXOFF DEPTH  pointer chains
 //      memscan_pick NAME [MIN]   name the candidate with the most copies (value > MIN)
+//      memscan_pickvec NAME      name an x/y/z float triple among the candidates NAMEx/y/z
 //      defvar NAME ADDRESS       name a known float address (e.g. defvar posx 0x2ED1C5C8)
 //      logvar NAME               log a picked variable
 //      waitvar NAME >V|<V [for S] [timeout T]   wait until the variable passes V
+//      replay FILE [MARK]        play back a --fh1_record recording from its first 'mark MARK'
+//                                (default GO) with the original timing (path relative to script)
 //      def NAME ... end          define a macro;  do NAME [xN]  runs it
 //      include FILE              run another script (path relative to this one)
 //      quit                      end the test now (auto_test stops the game)

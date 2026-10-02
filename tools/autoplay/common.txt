@@ -96,3 +96,52 @@ def calibrate_speed
   hold a 4
   wait 1
 end
+
+# Finds the car position (posx, posy, posz; metres, y = height) for this run: floats that stay
+# exactly the same while the car is stopped (traffic and moving things fail) and change, by less
+# than the car could travel, while it drives (the static world fails). Forward/backward drives,
+# ~25 s; needs a little open space in front of and behind the car (the test save at the paint shop).
+def pos_stopped_check
+  # Handbrake held through the check: released, the car can roll on the festival's slopes.
+  set a
+  wait 3
+  memscan_filter delta_lt 0.05
+  wait 1
+  memscan_filter delta_lt 0.05
+  clear
+end
+
+def pos_drive_check
+  wait 2
+  memscan_filter delta_gt 0.05
+  memscan_filter delta_lt 80
+end
+
+def calibrate_position
+  log calibrating the car position variables
+  set a
+  wait 2
+  memscan_start 0.5 20000
+  clear
+  do pos_stopped_check
+  set rt
+  do pos_drive_check
+  clear
+  do pos_stopped_check
+  set lt
+  do pos_drive_check
+  clear
+  do pos_stopped_check
+  set rt
+  do pos_drive_check
+  clear
+  do pos_stopped_check
+  set lt
+  do pos_drive_check
+  clear
+  do pos_stopped_check
+  memscan_list 12
+  memscan_pickvec pos
+  logvar posx
+  logvar posz
+end
