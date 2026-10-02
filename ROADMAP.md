@@ -67,8 +67,14 @@ Tests today hold buttons on a fixed timetable (`--fh1_autoplay`, fh1/src/fh1_aut
        stop - A is the handbrake; the user's idea) and names it; then `waitvar speed >15`,
        `waitvar speed <0.3 for 1`, `logvar speed`. Verified against the speedometer. Tools:
        `memscan_*` commands (fh1/src/fh1_memscan.cpp), tools/memscan_match.py.
-3. [ ] Driving and racing: first try handing the player's car to the game's own AI driver (used by
-       opponents and the attract-mode demo); otherwise steer along the GPS route.
+3. [ ] Driving and racing. Findings 2026-10-02: the image has a developer launch-settings block
+       (sub_824F8150: launchtype, car, numlaps, aiskill, engageaionstart, engagerandomsatnav,
+       bestplayerai, enableaitoggle, autodriveway, perfautomation*) that the retail game never
+       fills; its only reader (sub_8268A900) drives a UI camera (dynamic cast CUI4ViewCamera ->
+       CUI4CarTargetCamera), not the player car. AutoSteerController/AutoSteerKinect are UI cursor
+       settings. Next idea: record a route driven by the user (car position from memory, found
+       like the speed) and let tests follow it with steering correction; race selection from the
+       map/event markers on that route.
 
 ## Next — native renderer (Stage 3, Vulkan)
 

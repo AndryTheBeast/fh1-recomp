@@ -321,6 +321,7 @@ class ScriptRunner {
         memscan::Pointers(uint32_t(in.lo), int(in.hi));
       } else if (in.op == "memscan_pick") {
         memscan::Pick(in.text, in.lo);
+
       } else if (in.op == "logvar") {
         float v = 0;
         if (memscan::Variable(in.text, v)) {
@@ -545,6 +546,7 @@ bool ParseScript(const std::filesystem::path& path, MacroMap& macros, std::vecto
       if (w.size() != 3) return fail("memscan_ptrs MAXOFF DEPTH");
       in.lo = float(std::strtoul(w[1].c_str(), nullptr, 0));
       in.hi = std::strtof(w[2].c_str(), nullptr);
+
     } else if (in.op == "memscan_pick") {
       // memscan_pick NAME [MIN]
       if (w.size() < 2 || w.size() > 3) return fail("memscan_pick NAME [MIN]");

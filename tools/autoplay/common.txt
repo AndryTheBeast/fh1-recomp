@@ -5,8 +5,8 @@
 # then A confirms the profile/continue prompts. The festival is drivable ~50-60 s after launch.
 def boot_to_festival
   log boot: waiting for the title screen
-  wait 34
-  tap start x3 gap 1.2
+  wait 33
+  tap start x3 gap 0.7
   tap a x3 gap 1.2   # the single-player screen accepts quick presses, ~2 s after Start
   log boot: loading the festival
   waitdraws >1500 for 3 timeout 90   # the 3D world is on screen
