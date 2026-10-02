@@ -418,8 +418,30 @@ float4 tfetchTexcoord(uint swappedTexcoords, float4 value, uint semanticIndex)
 }
 
 // NFSMW: 3 bits per component: 0-3 = data component, 4 = 0, 5 = 1, 7 = unchanged.
+// FH1: k_10_11_11 vertex data (positions, texcoords) arrives as raw bits in .x (R32_SFLOAT) and is unpacked
+// here when the renderer sets bit 12 of the remap code (bit 13 signed, bit 14 integer, not normalized).
+float fh1UnpackPacked(uint bits, uint shift, uint width, bool isSigned, bool integer)
+{
+    uint v = (bits >> shift) & ((1u << width) - 1u);
+    if (isSigned)
+    {
+        int s = int(v << (32u - width)) >> (32u - width);
+        return integer ? float(s) : max(float(s) / float((1u << (width - 1u)) - 1u), -1.0);
+    }
+    return integer ? float(v) : float(v) / float((1u << width) - 1u);
+}
+
 float4 remapInput(float4 value, uint code)
 {
+    if ((code & 0x1000u) != 0u)
+    {
+        uint bits = asuint(value.x);
+        bool isSigned = (code & 0x2000u) != 0u;
+        bool integer = (code & 0x4000u) != 0u;
+        value = float4(fh1UnpackPacked(bits, 0u, 11u, isSigned, integer), fh1UnpackPacked(bits, 11u, 11u, isSigned, integer),
+                       fh1UnpackPacked(bits, 22u, 10u, isSigned, integer), 1.0);
+        code &= 0xFFFu;
+    }
     if (code == 0xFFF)
         return value;
 

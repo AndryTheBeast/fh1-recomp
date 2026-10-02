@@ -1698,7 +1698,12 @@ VkFormat FormatoAtributo(uint32_t formato, bool entrada_entera, bool con_signo, 
                     VK_FORMAT_A2B10G10R10_USCALED_PACK32, VK_FORMAT_A2B10G10R10_SSCALED_PACK32,
                     VK_FORMAT_A2B10G10R10_UINT_PACK32, VK_FORMAT_A2B10G10R10_SINT_PACK32);
     case 16:  // k_10_11_11: packed normal decoded by the shader itself
-      if (!entrada_entera || rojo_azul) break;
+      if (rojo_azul) break;
+      if (!entrada_entera) {
+        // FH1: positions and texcoords in this format: the raw bits go through a float input and remapInput unpacks
+        // them (remap code bit 12, set by the caller).
+        return VK_FORMAT_R32_SFLOAT;
+      }
       r11g11b10 = true;
       return VK_FORMAT_R32_UINT;
     case 25:  // k_16_16
@@ -8516,7 +8521,15 @@ class DibujosVulkanImpl final : public DibujosVulkan {
         Avisar(22, "elemento de vertices sin ubicacion libre en el shader: se omite");
         continue;
       }
-      const uint32_t codigo = CodigoRemapeo(original, d1 & 0xFFF);
+      uint32_t codigo = CodigoRemapeo(original, d1 & 0xFFF);
+      if (formato == 16 && !EntradaEntera(elemento.uso)) {
+        // FH1: packed k_10_11_11 (see FormatoAtributo): unpacked in the shader, sign and integer modes from the fetch.
+        if (ubicacion >= 16) {
+          Rechazar(26, "vertice k_10_11_11 en una ubicacion sin remapeo");
+          return nullptr;
+        }
+        codigo |= 0x1000u | (((d1 >> 12) & 0x1) ? 0x2000u : 0u) | (((d1 >> 13) & 0x1) ? 0x4000u : 0u);
+      }
       if (codigo != kRemapeoIdentidad && avisos_swizzle_ < 24) {
         ++avisos_swizzle_;
         REXLOG_INFO("[nativo] C6: VS n{} {}{} (formato {}): swizzle original {:03X}, parcheado {:03X}, "
