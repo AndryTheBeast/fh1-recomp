@@ -89,7 +89,7 @@ struct PushConstants
 struct NfsmwBloqueVs { float4 v[256]; };
 // FH1: pixel shaders use all 256 constants (NFS: 224).
 struct NfsmwBloquePs { float4 v[256]; };
-struct NfsmwBloqueCompartidas { float4 v[33]; };
+struct NfsmwBloqueCompartidas { float4 v[41]; };  // FH1: 164 words (nfsc-recomp: loop constants at 122-153; FH1 154-163)
 [[vk::binding(0, 4)]] ConstantBuffer<NfsmwBloqueVs> g_UboVertex;
 [[vk::binding(1, 4)]] ConstantBuffer<NfsmwBloquePs> g_UboPixel;
 [[vk::binding(2, 4)]] ConstantBuffer<NfsmwBloqueCompartidas> g_UboCompartidas;
@@ -135,14 +135,14 @@ uint g_SpecConstants();
 #endif
 
 // FH1: vertex data the declaration does not list (the cars' extra streams), read straight from guest
-// memory (shared constants: g_GuestBase at 488, g_FetchAddress at 496, after the 1/size area at
-// 360 + slot * 8). The renderer fills g_GuestBase (device address of guest physical memory) and, for fetch
+// memory (shared constants: g_GuestBase at 616, g_FetchAddress at 624, after nfsc-recomp's loop
+// constants at 488-615). g_GuestBase 0 = guest memory not available: the fetch returns 0. The renderer fills g_GuestBase (device address of guest physical memory) and, for fetch
 // constants 24-31, g_FetchAddress(c) = the stream's guest byte address | its endian in bits 0-1
 // (0 none, 1 8in16, 2 8in32, 3 16in32). Component layouts as in the SDK's SPIR-V translator
 // (spirv_translator_fetch.cpp); fraction formats are normalized (signed: max(v / (2^(w-1) - 1), -1)).
 #ifdef __spirv__
-#define g_GuestBase       (NFSMW_UBO ? (uint64_t(NFSMW_COMPARTIDA_UINT(488)) | (uint64_t(NFSMW_COMPARTIDA_UINT(492)) << 32)) : vk::RawBufferLoad<uint64_t>(g_PushConstants.SharedConstants + 488))
-#define g_FetchAddress(C) (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT(496 + ((C) - 24) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 496 + ((C) - 24) * 4))
+#define g_GuestBase       (NFSMW_UBO ? (uint64_t(NFSMW_COMPARTIDA_UINT(616)) | (uint64_t(NFSMW_COMPARTIDA_UINT(620)) << 32)) : vk::RawBufferLoad<uint64_t>(g_PushConstants.SharedConstants + 616))
+#define g_FetchAddress(C) (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT(624 + ((C) - 24) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 624 + ((C) - 24) * 4))
 
 uint fh1Swap(uint w, uint endian)
 {
@@ -156,6 +156,8 @@ uint fh1Swap(uint w, uint endian)
 uint fh1FetchWord(uint c, uint index, uint stride, int offset, uint i)
 {
     uint address = g_FetchAddress(c);
+    if (g_GuestBase == 0 || address < 4u)
+        return 0u;
     uint byteAddress = (address & ~3u) + (index * stride + uint(offset) + i) * 4u;
     return fh1Swap(vk::RawBufferLoad<uint>(g_GuestBase + byteAddress), address & 3u);
 }

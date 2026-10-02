@@ -183,6 +183,7 @@ class VulkanDevice {
     // VK_EXT_robustness2
 
     bool nullDescriptor = false;
+    bool maintenance5 = false;  // nfsc-recomp: unwritten PointSize defaults to 1.0 (native renderer point lists)
 
     // VK_EXT_extended_dynamic_state3 (#456). Only what the NFSMW native renderer uses (dynamic blend
     // enable, blend equation and color write mask).
@@ -217,6 +218,7 @@ class VulkanDevice {
     bool ext_EXT_custom_border_color = false;
     // Has optional features not implied by this being true.
     bool ext_EXT_robustness2 = false;
+    bool ext_KHR_maintenance5 = false;
     // Has optional features not implied by this being true.
     bool ext_1_3_KHR_maintenance4 = false;  // #414
     // Has optional features not implied by this being true.

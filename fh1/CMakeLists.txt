@@ -35,6 +35,20 @@ set(FH1_SOURCES
     src/fh1_native_shaders.cpp
     src/fh1_native_targets.cpp
     src/fh1_shader_library.cpp
+    # Native renderer from nfsc-recomp (GoatHonks), itself nfsmw-nx's (StevensND), GPL-3.0: see src/native/README.md.
+    # Run with --nfsmw_renderizador=nativo.
+    src/native/nfsmw_nativo_sistema.cpp
+    src/native/nfsmw_nativo_destinos.cpp
+    src/native/nfsmw_nativo_shaders.cpp
+    src/native/nfsmw_shader_library.cpp
+    src/native/nfsmw_nativo_ganchos.cpp
+    src/native/nfsmw_nativo_dibujos.cpp
+    src/native/nfsmw_nativo_texturas_pool.cpp
+    src/native/nfsmw_nativo_captura.cpp
+    src/native/nfsmw_ajustes_graficos.cpp
+    src/native/nfsc_native_stubs.cpp
+    src/native/nfsc_espera_corta.cpp
+    src/native/ring_progress.cpp
 )
 
 if(WIN32)
@@ -61,6 +75,10 @@ endif()
 target_include_directories(fh1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sdk/thirdparty/xxHash)
 # The SDK presenter's SPIR-V for drawing the game image (fh1_native_targets.cpp).
 target_include_directories(fh1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sdk/src/ui/shaders)
+# The copied native renderer: its headers, two SDK headers nfsc-recomp added (compat/rex), and the
+# NFSC_NATIVE_RENDERER switch that keeps Most Wanted's game hooks out.
+target_include_directories(fh1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/native ${CMAKE_CURRENT_SOURCE_DIR}/src/native/compat)
+target_compile_definitions(fh1 PRIVATE NFSC_NATIVE_RENDERER=1)
 if(NOT REXGLUE_PLATFORM_SWITCH AND TARGET renderdoc)
     target_include_directories(fh1 PRIVATE
         $<TARGET_PROPERTY:renderdoc,INTERFACE_INCLUDE_DIRECTORIES>)

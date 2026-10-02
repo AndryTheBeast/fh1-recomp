@@ -245,6 +245,8 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
       XE_UI_VULKAN_STRUCT_EXTENSION(EXT_custom_border_color)
       // Required for true null descriptors in bindless texture bindings.
       XE_UI_VULKAN_STRUCT_EXTENSION(EXT_robustness2)
+      // nfsc-recomp: point lists drawn by vertex shaders that do not write a point size.
+      XE_UI_VULKAN_STRUCT_EXTENSION(KHR_maintenance5)
     }
     if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 1, 0)) {
       // #237.
@@ -344,6 +346,9 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
   VulkanFeatures<VkPhysicalDeviceRobustness2FeaturesEXT,
                  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT>
       features_EXT_robustness2;
+  VulkanFeatures<VkPhysicalDeviceMaintenance5FeaturesKHR,
+                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR>
+      features_KHR_maintenance5;
   // Native renderer of NFSMW.
   VulkanFeatures<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT,
                  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT>
@@ -388,6 +393,9 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     }
     if (device->extensions_.ext_EXT_robustness2) {
       features_EXT_robustness2.Link(supported_features_2, device_create_info);
+    }
+    if (device->extensions_.ext_KHR_maintenance5) {
+      features_KHR_maintenance5.Link(supported_features_2, device_create_info);
     }
     if (device->extensions_.ext_EXT_extended_dynamic_state3) {
       features_EXT_extended_dynamic_state3.Link(supported_features_2, device_create_info);
@@ -764,6 +772,10 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
     if (with_gpu_emulation) {
       XE_UI_VULKAN_FEATURE_2(features_EXT_robustness2, nullDescriptor)
     }
+  }
+
+  if (device->extensions_.ext_KHR_maintenance5) {
+    XE_UI_VULKAN_FEATURE_2(features_KHR_maintenance5, maintenance5)
   }
 
   if (device->extensions_.ext_EXT_extended_dynamic_state3) {

@@ -13,6 +13,7 @@
 #include "fh1_autoplay.h"
 #include "fh1_crash_report.h"
 #include "fh1_native_system.h"
+#include "nfsmw_nativo_sistema.h"
 
 void Fh1StartProfiler();  // fh1_profiler.cpp
 namespace fh1::census { void Start(); }  // fh1_d3d_census_report.cpp
@@ -53,6 +54,10 @@ class Fh1App : public rex::ReXApp {
     // app's own graphics system in config.graphics, and ReXApp then does not load the GPU plugin.
     if (fh1::native::Active()) {
       config.graphics = fh1::native::CreateGraphicsSystem();
+    }
+    // --nfsmw_renderizador=nativo: the full native renderer copied from nfsc-recomp / nfsmw-nx (src/native).
+    if (!config.graphics && nfsmw::nativo::Activo()) {
+      config.graphics = nfsmw::nativo::CrearSistemaGrafico();
     }
     if (config.gpu_plugin.empty()) config.gpu_plugin = "xenos";
     // FH1 reads render-to-texture results on the CPU: its auto exposure (without it a wrong
