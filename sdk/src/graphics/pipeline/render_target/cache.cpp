@@ -35,7 +35,28 @@ REXCVAR_DEFINE_INT32(gpu_log_rt_frame, 0, "GPU",
                      "Debug: log every render target setup change and every resolve of guest "
                      "frame N (counted by RenderTargetCache::BeginFrame); 0 = off");
 
+REXCVAR_DECLARE(bool, gpu_skip_all_transfers);
+REXCVAR_DECLARE(std::string, gpu_keep_transfers);
+
 namespace rex::graphics {
+// Compact transfer signature for --gpu_keep_transfers and the frame log.
+// (Templates: RenderTargetKey is a protected type of RenderTargetCache.)
+template <typename Key>
+static std::string TransferSignature(Key source, Key dest) {
+  auto one = [](Key k) {
+    return fmt::format("{}{}.{}.{}.{}", k.is_depth ? 'd' : 'c', uint32_t(k.resource_format),
+                       uint32_t(k.base_tiles), uint32_t(k.pitch_tiles_at_32bpp),
+                       1u << uint32_t(k.msaa_samples));
+  };
+  return one(source) + ">" + one(dest);
+}
+template <typename Key>
+static bool TransferKept(Key source, Key dest) {
+  if (!REXCVAR_GET(gpu_skip_all_transfers)) return true;
+  std::string list = "," + REXCVAR_GET(gpu_keep_transfers) + ",";
+  if (list == ",,") return false;
+  return list.find("," + TransferSignature(source, dest) + ",") != std::string::npos;
+}
 // Shared with util/draw.cpp (resolve logging).
 uint32_t g_rt_log_frame_counter = 0;
 bool RtLogActive() {
@@ -52,6 +73,19 @@ REXCVAR_DEFINE_BOOL(gpu_skip_msaa_switch_transfers, false, "GPU",
                     "Experiment: skip ownership transfers between render targets that differ "
                     "only in MSAA / pitch (same format) - FH1's shadow passes switch one depth "
                     "buffer between 4x at pitch P and 1x at pitch 2P, ~56% of all transfers");
+
+REXCVAR_DEFINE_BOOL(gpu_skip_all_transfers, false, "GPU",
+                    "Experiment for the native renderer: skip every EDRAM ownership transfer "
+                    "(render targets never inherit data from other render targets)");
+
+REXCVAR_DEFINE_STRING(gpu_keep_transfers, "", "GPU",
+                      "With gpu_skip_all_transfers: comma-separated transfer signatures still "
+                      "performed, as printed by --gpu_log_rt_frame ('sig' field), e.g. "
+                      "d1.720.16.1>c3.0.32.4 (depth/color, format, base tiles, pitch tiles, MSAA)");
+
+REXCVAR_DEFINE_BOOL(gpu_log_transfer_kinds, false, "GPU",
+                    "Debug: log each new kind of EDRAM ownership transfer (signature, as for "
+                    "gpu_keep_transfers) the first time it happens, with the frame number");
 
 REXCVAR_DEFINE_BOOL(mrt_edram_used_range_clamp_to_min, true, "GPU",
                     "Clamp MRT EDRAM used range to minimum");
@@ -751,6 +785,21 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
                         : nullptr);
   }
 
+  if (REXCVAR_GET(gpu_log_transfer_kinds) && !interlock_barrier_only) {
+    static std::unordered_set<std::string> seen;
+    for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
+      for (const Transfer& t : last_update_transfers_[i]) {
+        if (!t.source) continue;
+        std::string sig = TransferSignature(t.source->key(), rt_keys[i]);
+        if (seen.insert(sig).second) {
+          REXGPU_INFO("[rt] new transfer kind {} (frame {}, tiles {}-{}, kept {})", sig,
+                      g_rt_log_frame_counter, t.start_tiles, t.end_tiles,
+                      TransferKept(t.source->key(), rt_keys[i]));
+        }
+      }
+    }
+  }
+
   if (RtLogActive() && !interlock_barrier_only) {
     auto describe = [](RenderTargetKey k) {
       return fmt::format("{}{} base {} pitch {} {}x", k.is_depth ? "depth fmt " : "color fmt ",
@@ -759,9 +808,10 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
     };
     for (uint32_t i = 0; i < 1 + xenos::kMaxColorRenderTargets; ++i) {
       for (const Transfer& t : last_update_transfers_[i]) {
-        REXGPU_INFO("[rt] transfer tiles {}-{} from {} to {}", t.start_tiles, t.end_tiles,
+        REXGPU_INFO("[rt] transfer tiles {}-{} from {} to {} sig {}", t.start_tiles, t.end_tiles,
                     t.source ? describe(t.source->key()) : std::string("?"),
-                    describe(rt_keys[i]));
+                    describe(rt_keys[i]),
+                    t.source ? TransferSignature(t.source->key(), rt_keys[i]) : std::string("?"));
       }
       for (const ClearTransfer& t : last_update_clear_transfers_[i]) {
         REXGPU_INFO("[rt] clear instead of transfer tiles {}-{} value {:X} in {}", t.start_tiles,
@@ -1460,7 +1510,8 @@ void RenderTargetCache::ChangeOwnership(RenderTargetKey dest, uint32_t start_til
                                 transfer_source.resource_format == dest.resource_format &&
                                 transfer_source.base_tiles == dest.base_tiles;
         if (!transfer_source.IsEmpty() && transfer_source != dest &&
-            !(msaa_switch_only && REXCVAR_GET(gpu_skip_msaa_switch_transfers))) {
+            !(msaa_switch_only && REXCVAR_GET(gpu_skip_msaa_switch_transfers)) &&
+            TransferKept(transfer_source, dest)) {
           uint32_t transfer_end_tiles = std::min(it->second.end_tiles, extent_end);
           if (!resolve_clear_cutout ||
               Transfer::GetRangeRectangles(it->first, transfer_end_tiles, dest.base_tiles,

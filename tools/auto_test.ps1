@@ -37,6 +37,7 @@ public static class Fh1Win {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
 }
 "@
 [Fh1Win]::SetProcessDPIAware() | Out-Null
@@ -53,7 +54,12 @@ function Shot($proc, [string]$path) {
   if ($w -le 0 -or $hgt -le 0) { return }
   $bmp = New-Object System.Drawing.Bitmap $w, $hgt
   $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.CopyFromScreen($r.L, $r.T, 0, 0, $bmp.Size)
+  # PrintWindow with PW_RENDERFULLCONTENT (2) copies the game window even when another window
+  # covers it (the foreground request is often refused for background processes).
+  $hdc = $g.GetHdc()
+  $ok = [Fh1Win]::PrintWindow($h, $hdc, 2)
+  $g.ReleaseHdc($hdc)
+  if (-not $ok) { $g.CopyFromScreen($r.L, $r.T, 0, 0, $bmp.Size) }
   $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
   $g.Dispose(); $bmp.Dispose()
   Write-Host "screenshot: $path"
