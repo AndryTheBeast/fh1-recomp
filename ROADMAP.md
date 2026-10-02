@@ -47,9 +47,9 @@ the native renderer); 60 fps unlock with vsync off (broke distant rendering); fo
 Decision 2026-10-02: build a real native renderer like nfsmw-nx did for Most Wanted instead of
 polishing the emulated GPU (plan and reuse table: `docs/native-renderer-fh1.md`).
 
-- [ ] **N0 shader library**: FH1's `.fxobj` files hold ~2,900 shader containers in the 2008
-      layout XenosRecomp reads directly; extract all (also from the LZX track archives),
-      translate, compile, pack `fh1_shaders.nfsp`.
+- [x] **N0 shader library** (2026-10-02): `tools/build_shader_library.ps1` builds
+      `fh1_shaders.nfsp` with 3,816 of 3,849 shaders (loose files, the tracks' LZX archives -
+      now decodable - and the engine's shaders in default.xex).
 - [ ] **N1 own graphics system** (`fh1_renderer=native`): presenter, command ring, vblank, GPU
       waits - the game runs without the emulated GPU.
 - [ ] **N2 shader identity hooks** (FH1's D3D shader constructors and Draw*).
