@@ -50,8 +50,8 @@ polishing the emulated GPU (plan and reuse table: `docs/native-renderer-fh1.md`)
 - [x] **N0 shader library** (2026-10-02): `tools/build_shader_library.ps1` builds
       `fh1_shaders.nfsp` with 3,816 of 3,849 shaders (loose files, the tracks' LZX archives -
       now decodable - and the engine's shaders in default.xex).
-- [ ] **N1 own graphics system** (`fh1_renderer=native`): presenter, command ring, vblank, GPU
-      waits - the game runs without the emulated GPU.
+- [x] **N1 own graphics system** (2026-10-02, `--fh1_renderer=native`): the game runs to gameplay at
+      30 fps without the emulated GPU (screen shows a test colour).
 - [ ] **N2 shader identity hooks** (FH1's D3D shader constructors and Draw*).
 - [ ] **N3 draws and textures**: logos, title, menus.
 - [ ] **N4 render targets and resolves**: main scene drawn once, MSAA, aliases, readbacks -

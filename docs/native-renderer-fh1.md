@@ -104,3 +104,10 @@ pass) stay off by default and are paused.
   `s0`-`s15` sampler names for engine shaders without names, repeated vertex usages declared once.
   Left: 13 shaders use integer loop constants missing from their tables (`i0`, `i16`), 20 crash the
   translator (exit 0xC0000409) - all engine shaders from the image; to look at when one is needed.
+- 2026-10-02 **N1 done**: `--fh1_renderer=native` (fh1/src/fh1_native_system.cpp, from nfsmw's
+  stage C1) replaces the xenos plugin: MMIO registers, ring thread (register writes with their side
+  effects, MEM_WRITE / COND_WRITE / REG_TO_MEM / EVENT_WRITE_* / WAIT_REG_MEM / indirect buffers /
+  predication by bin select), vblank and PM4 interrupts, test colour per Swap. Unattended run: the
+  game boots, takes the autoplay presses and reaches gameplay at its 30 fps cap (~3.6 million
+  packets/s, mostly 0x60 / 0x22 / 0x61 / 0x27 / 0x2D / 0x2F), one startup WAIT_REG_MEM timeout,
+  no crash. Default (emulated GPU) unchanged. Next: N2 (which shader each draw uses) and N3 (draws).
