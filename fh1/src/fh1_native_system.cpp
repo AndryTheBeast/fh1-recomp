@@ -15,6 +15,7 @@
 #include "fh1_native_system.h"
 
 #include "fh1_native_shaders.h"
+#include "fh1_native_targets.h"
 
 #include <algorithm>
 #include <array>
@@ -169,6 +170,10 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
       if (library.empty()) library = rex::filesystem::GetExecutableFolder() / "fh1_shaders.nfsp";
       shaders_.Load(library);
     }
+    // Step N3a: render targets, copies and presentation of the game's image.
+    if (provider_ && provider_->vulkan_device()) {
+      targets_ = Targets::Create(provider_->vulkan_device(), memory_);
+    }
     last_report_ = Clock::now();
     vblank_thread_ = rex::system::object_ref<rex::system::XHostThread>(
         new rex::system::XHostThread(kernel_state_, 128 * 1024, 0, [this]() { return VblankLoop(); }));
@@ -220,6 +225,7 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
       }
       Report(true);
     }
+    targets_.reset();  // uses the device: before the provider goes
     DestroyVulkan();
     if (presenter_) {
       if (app_context_) app_context_->CallInUIThreadSynchronous([this]() { presenter_.reset(); });
@@ -428,8 +434,24 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
         }
         break;
       }
-      case xenos::PM4_XE_SWAP:
-        Present();
+      case xenos::PM4_XE_SWAP: {
+        uint32_t frontbuffer = 0, width = 0, height = 0;
+        if (words >= 4) {
+          data.Read();
+          frontbuffer = data.Read();
+          width = data.Read();
+          height = data.Read();
+        }
+        Present(frontbuffer, width, height);
+        break;
+      }
+      case xenos::PM4_DRAW_INDX:
+      case xenos::PM4_DRAW_INDX_2:
+        // A draw in copy mode is a resolve (and/or clear) of the current render target (N3a).
+        if ((Register(rex::graphics::XE_GPU_REG_RB_MODECONTROL) & 0x7) == uint32_t(xenos::EdramMode::kCopy) &&
+            targets_) {
+          Copy();
+        }
         break;
       case xenos::PM4_INDIRECT_BUFFER:
       case xenos::PM4_INDIRECT_BUFFER_PFD: {
@@ -650,10 +672,43 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
 
   // --- Test presentation --------------------------------------------------------------------------
 
-  void Present() {
+  void Copy() {
+    namespace reg = rex::graphics;
+    CopyRegisters r;
+    r.rb_surface_info = Register(reg::XE_GPU_REG_RB_SURFACE_INFO);
+    r.rb_color_info[0] = Register(reg::XE_GPU_REG_RB_COLOR_INFO);
+    r.rb_color_info[1] = Register(reg::XE_GPU_REG_RB_COLOR1_INFO);
+    r.rb_color_info[2] = Register(reg::XE_GPU_REG_RB_COLOR2_INFO);
+    r.rb_color_info[3] = Register(reg::XE_GPU_REG_RB_COLOR3_INFO);
+    r.rb_depth_info = Register(reg::XE_GPU_REG_RB_DEPTH_INFO);
+    r.rb_copy_control = Register(reg::XE_GPU_REG_RB_COPY_CONTROL);
+    r.rb_copy_dest_base = Register(reg::XE_GPU_REG_RB_COPY_DEST_BASE);
+    r.rb_copy_dest_pitch = Register(reg::XE_GPU_REG_RB_COPY_DEST_PITCH);
+    r.rb_copy_dest_info = Register(reg::XE_GPU_REG_RB_COPY_DEST_INFO);
+    r.rb_color_clear = Register(reg::XE_GPU_REG_RB_COLOR_CLEAR);
+    r.rb_color_clear_lo = Register(reg::XE_GPU_REG_RB_COLOR_CLEAR_LO);
+    r.rb_depth_clear = Register(reg::XE_GPU_REG_RB_DEPTH_CLEAR);
+    r.pa_sc_window_offset = Register(reg::XE_GPU_REG_PA_SC_WINDOW_OFFSET);
+    r.pa_sc_window_scissor_tl = Register(reg::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL);
+    r.pa_sc_window_scissor_br = Register(reg::XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR);
+    r.pa_su_sc_mode_cntl = Register(reg::XE_GPU_REG_PA_SU_SC_MODE_CNTL);
+    r.pa_su_vtx_cntl = Register(reg::XE_GPU_REG_PA_SU_VTX_CNTL);
+    r.fetch_vertices[0] = Register(reg::XE_GPU_REG_SHADER_CONSTANT_FETCH_00_0);
+    r.fetch_vertices[1] = Register(reg::XE_GPU_REG_SHADER_CONSTANT_FETCH_00_1);
+    targets_->Copy(r);
+  }
+
+  void Present(uint32_t frontbuffer, uint32_t width, uint32_t height) {
     const uint64_t swap = swaps_.fetch_add(1, std::memory_order_relaxed) + 1;
     counter_.fetch_add(1, std::memory_order_relaxed);
     if (!presenter_) return;
+    // N3a: the resolved texture the Swap names. VdSwap also puts it in fetch constant 0 (as nfsmw reads
+    // it); the packet's own frontbuffer address is the fallback.
+    if (targets_) {
+      const uint32_t fetch_base =
+          (Register(rex::graphics::XE_GPU_REG_SHADER_CONSTANT_FETCH_00_1) & 0xFFFFF000) & 0x1FFFFFFF;
+      if (targets_->Present(presenter_.get(), fetch_base ? fetch_base : frontbuffer, width, height)) return;
+    }
     presenter_->RefreshGuestOutput(kOutputWidth, kOutputHeight, kOutputWidth, kOutputHeight,
                                    [this, swap](rex::ui::Presenter::GuestOutputRefreshContext& context) {
                                      return ClearOutput(static_cast<OutputContext&>(context), swap);
@@ -818,6 +873,12 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
                 "timeouts; type-3 opcodes:{}",
                 double(swaps - reported_swaps_) / std::max(seconds, 0.001), swaps, vblanks_.load(),
                 interrupts_.load(), packets_, wait_timeouts_.load(), top);
+    if (targets_) {
+      const TargetStats t = targets_->Stats();
+      REXLOG_INFO("[native] targets: {} copies, {} clears, {} presented, {} rejected, {} depth copies skipped; "
+                  "{} render targets, {} resolved textures",
+                  t.copies, t.clears, t.presented, t.rejected, t.depth_copies, t.render_targets, t.resolved);
+    }
     if (shaders_.loaded()) {
       const ShaderStats st = shaders_.Stats();
       REXLOG_INFO("[native] shaders: {} uploads, {} distinct microcodes: {} identified ({} ambiguous), {} not "
@@ -834,6 +895,7 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
     uint64_t version = 0;
   };
 
+  std::unique_ptr<Targets> targets_;
   Shaders shaders_;
   std::vector<uint32_t> scratch_;
   const ShaderEntry* current_vs_ = nullptr;

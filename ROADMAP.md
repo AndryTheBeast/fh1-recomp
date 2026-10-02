@@ -54,7 +54,8 @@ polishing the emulated GPU (plan and reuse table: `docs/native-renderer-fh1.md`)
       30 fps without the emulated GPU (screen shows a test colour).
 - [~] **N2 shader identity**: 92% of the shaders the game uploads are identified from the command
       stream alone (pixel 99%, vertex 84%); the rest needs hooks on FH1's D3D shader constructors.
-- [ ] **N3 draws and textures**: logos, title, menus.
+- [~] **N3 draws and textures**: logos, title, menus. N3a done (render targets, clears, resolves,
+      presentation of the game's resolved image - black until draws exist); next N3b, the draws.
 - [ ] **N4 render targets and resolves**: main scene drawn once, MSAA, aliases, readbacks -
       festival like D3D12.
 - [ ] **N5 races, garage, photos; performance.**

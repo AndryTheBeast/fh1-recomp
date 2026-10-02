@@ -129,3 +129,12 @@ pass) stay off by default and are paused.
   a tolerant second pass accepts both (123 of the vertex shaders). The remaining 29 vertex shaders
   have reordered fetch blocks or remapped export registers: nfsmw's answer is hooks on the game's
   shader constructors and Draw* (exact identity) - FH1's D3D functions still to be located (N2b).
+- 2026-10-02 **N3a done** (fh1/src/fh1_native_targets.*, lean version of nfsmw's stage C2): render
+  targets as Vulkan images per (EDRAM base, format, pitch) in FH1's formats (8888, 2_10_10_10,
+  2_10_10_10_FLOAT, 16/32-bit), copy-mode draws as clears (RB_COLOR_CLEAR converted like the SDK)
+  and blits into resolved textures per destination address, and each Swap draws the resolved
+  texture named by fetch constant 0 into the presenter with the SDK's output shaders. Festival:
+  30 fps, ~87 copies + clears per frame, 16 render targets, ~100 resolved textures, every frame
+  presented from the game's resolve chain (black: no draws yet). Depth copies (~8/frame) skipped.
+  Lesson: never wait for the GPU while a command buffer is recording (replacing a resolved texture
+  first ended the recording and crashed the driver); replaced images are retired per slot.
