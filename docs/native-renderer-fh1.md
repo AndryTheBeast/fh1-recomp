@@ -160,3 +160,13 @@ pass) stay off by default and are paused.
   same base, samples 1C4E1000, depth 1DAC5000 and the exposure chain) outputs white. Merging
   formats 1 and 2 into one image did not help (reverted). Next: find what makes PS n767 white
   (exposure textures 1CA95000/1CB0D000 f26, depth f23), then menus and the festival (needs Start).
+- 2026-10-03 00:40: **the festival is playable on the native renderer** (user drove; 30 fps, stutters
+  while new pipelines compile). Fixed: festival-load crash (Most Wanted address read in the occlusion
+  report). Open, in order: (1) k_10_11_11 vertex positions/texcoords (~30% of festival draws,
+  cause 316): raw bits through an R32_SFLOAT input broke the picture on AMD (`fh1_vertices_10_11_11`,
+  off) - next idea: read them from guest memory (fh1Fetch) or convert on the CPU; (2) speckled edges:
+  FH1 draws scene depth at 640 pitch 4x MSAA (surface 0A020280) and uses it as 1280x720 1x; sharing
+  one image with viewport x2 (`fh1_msaa_4x_como_1x`, off) turned the festival pink/black - needs a
+  closer look at which passes write what; (3) white title/menus (composite PS n767); (4) 2x MSAA
+  reflection resolves. Collect unknown shaders with `--nfsc_dump_ring_shaders`, rebuild with
+  tools/nfsc_synth_containers.py (library 3,849).
