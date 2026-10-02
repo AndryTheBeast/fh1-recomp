@@ -44,3 +44,4 @@ fh1/assets/
 fh1/out/
 *.stfs
 *.god
+shaders/fh1_hlsl.exe

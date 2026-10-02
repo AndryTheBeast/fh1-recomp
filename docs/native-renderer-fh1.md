@@ -51,3 +51,14 @@ the addresses in the system part.
 The emulated GPU (D3D12 default, Vulkan) stays as the playable path until the native one
 matches it. The experiments in `docs/native-render-targets.md` (transfer skipping, tall main
 pass) stay off by default and are paused.
+
+## Progress
+
+- 2026-10-02 N0 first pass: `tools/fh1_extract_shaders.py` cut 2,921 containers (2,918 distinct:
+  1,407 pixel, 1,511 vertex) from the loose `media/shaders/**/*.fxobj` files;
+  `tools/build_shader_tools.ps1` builds the translator (`shaders/nfsmw_hlsl.cpp` + XenosRecomp,
+  clang, no downloads) as `shaders/fh1_hlsl.exe`. Translation to HLSL: **2,463 of 2,918** - every
+  pixel shader; 455 vertex shaders rejected with "FETCH de vertices sin elemento declarado" (a
+  vertex fetch at an instruction the declaration table does not list - probably FH1's mini
+  fetches; next to fix). DXC is in the Windows SDK (`Windows Kitsin.0.26100.0d\dxc.exe`).
+  Output in build_logs/shaders/ (game data: never in git).
