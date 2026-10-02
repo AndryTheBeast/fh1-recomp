@@ -32,6 +32,8 @@ set(FH1_SOURCES
     src/fh1_perf_hooks.cpp
     src/fh1_shader_dump.cpp
     src/fh1_native_system.cpp
+    src/fh1_native_shaders.cpp
+    src/fh1_shader_library.cpp
 )
 
 if(WIN32)
@@ -54,6 +56,8 @@ if(NOT REXGLUE_PLATFORM_SWITCH AND TARGET imgui)
     target_include_directories(fh1 PRIVATE
         $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
+# xxhash.h for the native renderer's shader library (fh1_shader_library.cpp, fh1_native_shaders.cpp).
+target_include_directories(fh1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sdk/thirdparty/xxHash)
 if(NOT REXGLUE_PLATFORM_SWITCH AND TARGET renderdoc)
     target_include_directories(fh1 PRIVATE
         $<TARGET_PROPERTY:renderdoc,INTERFACE_INCLUDE_DIRECTORIES>)

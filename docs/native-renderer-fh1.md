@@ -111,3 +111,12 @@ pass) stay off by default and are paused.
   game boots, takes the autoplay presses and reaches gameplay at its 30 fps cap (~3.6 million
   packets/s, mostly 0x60 / 0x22 / 0x61 / 0x27 / 0x2D / 0x2F), one startup WAIT_REG_MEM timeout,
   no crash. Default (emulated GPU) unchanged. Next: N2 (which shader each draw uses) and N3 (draws).
+- 2026-10-02 **N2 first stage** (fh1/src/fh1_native_shaders.*, from nfsmw's nfsmw_nativo_shaders.*
+  with a 2008 container reader): the ring's IM_LOAD / IM_LOAD_IMMEDIATE uploads are looked up in
+  the library (`--fh1_shader_library=PATH`, default next to fh1.exe). Festival run: **354 of 386
+  distinct shaders identified (92%)** - pixel 200/203, vertex 154/183. FH1's D3D patches vertex
+  shaders more than NFS's: besides the masked fetch fields it rewrites the destination swizzle of
+  every fetch and replaces exports the pixel shader does not read with `C8000000 00000000 02000000`;
+  a tolerant second pass accepts both (123 of the vertex shaders). The remaining 29 vertex shaders
+  have reordered fetch blocks or remapped export registers: nfsmw's answer is hooks on the game's
+  shader constructors and Draw* (exact identity) - FH1's D3D functions still to be located (N2b).

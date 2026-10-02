@@ -14,6 +14,8 @@
 
 #include "fh1_native_system.h"
 
+#include "fh1_native_shaders.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -26,6 +28,7 @@
 #include <unordered_set>
 
 #include <rex/cvar.h>
+#include <rex/filesystem.h>
 #include <rex/graphics/registers.h>
 #include <rex/graphics/xenos.h>
 #include <rex/kernel/xboxkrnl/video.h>
@@ -49,6 +52,11 @@ REXCVAR_DEFINE_STRING(fh1_renderer, "xenos", "FH1",
                       "development (step N1: the game runs without the emulation, the screen shows a "
                       "test colour)")
     .allowed({"xenos", "native"})
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+
+REXCVAR_DEFINE_STRING(fh1_shader_library, "", "FH1",
+                      "Native renderer: shader library (fh1_shaders.nfsp from "
+                      "tools/build_shader_library.ps1); empty = next to the executable")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 namespace fh1::native {
@@ -154,6 +162,13 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
       }
     }
     if (active_.exchange(true)) return X_STATUS_SUCCESS;
+    // Step N2: the shader library is built from the game data, so it is not distributed. Without it
+    // the game still runs, without shader identification.
+    {
+      std::filesystem::path library = std::string(REXCVAR_GET(fh1_shader_library));
+      if (library.empty()) library = rex::filesystem::GetExecutableFolder() / "fh1_shaders.nfsp";
+      shaders_.Load(library);
+    }
     last_report_ = Clock::now();
     vblank_thread_ = rex::system::object_ref<rex::system::XHostThread>(
         new rex::system::XHostThread(kernel_state_, 128 * 1024, 0, [this]() { return VblankLoop(); }));
@@ -595,10 +610,42 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
           bin_select_ = (high << 32) | data.Read();
         }
         break;
+      case xenos::PM4_IM_LOAD: {
+        // Shader upload by address: type in bits 0-1 (0 vertex, 1 pixel), size in words.
+        if (words < 2) break;
+        const uint32_t address_type = data.Read(), start_size = data.Read();
+        LoadShader((address_type & 0x3) == 0, memory_->TranslatePhysical(address_type & ~uint32_t(0x3)),
+                   start_size & 0xFFFF);
+        break;
+      }
+      case xenos::PM4_IM_LOAD_IMMEDIATE: {
+        // Shader upload inline: type, start/size, then the microcode.
+        if (words < 2) break;
+        const uint32_t type = data.Read(), start_size = data.Read();
+        const uint32_t size = std::min(start_size & 0xFFFF, words - 2);
+        scratch_.resize(size);
+        for (uint32_t i = 0; i < size; ++i) scratch_[i] = data.Read();
+        IdentifyShader((type & 0x3) == 0);
+        break;
+      }
       default:
-        // Draws, resolves (draws in copy mode), shader loads, NOPs...: not needed for N1.
+        // Draws, resolves (draws in copy mode), NOPs...: not handled yet.
         break;
     }
+  }
+
+  // --- Shaders (step N2) ---------------------------------------------------------------------------
+
+  void LoadShader(bool vertex, const uint8_t* source, uint32_t size) {
+    scratch_.resize(size);
+    for (uint32_t i = 0; i < size; ++i) scratch_[i] = rex::memory::load_and_swap<uint32_t>(source + i * 4);
+    IdentifyShader(vertex);
+  }
+
+  void IdentifyShader(bool vertex) {
+    if (!shaders_.loaded()) return;
+    const ShaderEntry* entry = shaders_.Identify(vertex, scratch_);
+    (vertex ? current_vs_ : current_ps_) = entry;
   }
 
   // --- Test presentation --------------------------------------------------------------------------
@@ -771,6 +818,14 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
                 "timeouts; type-3 opcodes:{}",
                 double(swaps - reported_swaps_) / std::max(seconds, 0.001), swaps, vblanks_.load(),
                 interrupts_.load(), packets_, wait_timeouts_.load(), top);
+    if (shaders_.loaded()) {
+      const ShaderStats st = shaders_.Stats();
+      REXLOG_INFO("[native] shaders: {} uploads, {} distinct microcodes: {} identified ({} ambiguous), {} not "
+                  "identified; vertex {}/{} ({} by the tolerant pass), pixel {}/{}",
+                  st.loads, st.distinct, st.identified, st.ambiguous, st.unidentified, st.identified_vertex,
+                  st.identified_vertex + st.unidentified_vertex, st.loose, st.identified_pixel,
+                  st.identified_pixel + st.unidentified_pixel);
+    }
     reported_swaps_ = swaps;
   }
 
@@ -779,6 +834,10 @@ class NativeGraphicsSystem final : public rex::system::IGraphicsSystem {
     uint64_t version = 0;
   };
 
+  Shaders shaders_;
+  std::vector<uint32_t> scratch_;
+  const ShaderEntry* current_vs_ = nullptr;
+  const ShaderEntry* current_ps_ = nullptr;
   rex::ui::WindowedAppContext* app_context_ = nullptr;
   std::unique_ptr<rex::ui::vulkan::VulkanProvider> provider_;
   std::unique_ptr<rex::ui::Presenter> presenter_;

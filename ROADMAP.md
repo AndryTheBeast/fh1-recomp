@@ -52,7 +52,8 @@ polishing the emulated GPU (plan and reuse table: `docs/native-renderer-fh1.md`)
       now decodable - and the engine's shaders in default.xex).
 - [x] **N1 own graphics system** (2026-10-02, `--fh1_renderer=native`): the game runs to gameplay at
       30 fps without the emulated GPU (screen shows a test colour).
-- [ ] **N2 shader identity hooks** (FH1's D3D shader constructors and Draw*).
+- [~] **N2 shader identity**: 92% of the shaders the game uploads are identified from the command
+      stream alone (pixel 99%, vertex 84%); the rest needs hooks on FH1's D3D shader constructors.
 - [ ] **N3 draws and textures**: logos, title, menus.
 - [ ] **N4 render targets and resolves**: main scene drawn once, MSAA, aliases, readbacks -
       festival like D3D12.
