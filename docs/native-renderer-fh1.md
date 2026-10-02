@@ -42,7 +42,16 @@ the addresses in the system part.
   freezing.
 - **N2 - shader identity hooks**: FH1's D3D shader constructors and Draw* functions
   (`fh1/src/fh1_d3d_census.cpp` already lists the D3D functions).
-- **N3 - draws and textures**: first frames - logos, title, menus.
+- **N3 - draws and textures**: first frames - logos, title, menus. In nfsmw's order:
+  - N3a (nfsmw C2, `nfsmw_nativo_destinos.*`): render targets as Vulkan images, clears
+    (RB_COLOR_CLEAR), resolves as copies into the destination texture (rectangle and base like
+    `draw_util::GetResolveInfo`), and presenting the texture the Swap's fetch constant 0 names,
+    through the gamma ramp. Without draws this already shows the game's clear colours per frame;
+  - N3b (nfsmw C3-C6, `nfsmw_nativo_dibujos.*`): draws - pipelines from the library's SPIR-V
+    (push constants with three buffer addresses, textures in sets 0-2, samplers in set 3, constant
+    UBOs in set 4), vertex input from the patched fetches, indices, 2D textures by fetch constant,
+    blend/depth/stencil/cull state, viewport and scissor; FH1 adds `g_GuestBase` /
+    `g_FetchAddress` for the cars' extra streams (shader_common.h).
 - **N4 - render targets and resolves**: main scene drawn once at full size, MSAA, the aliases,
   readbacks. Milestone: the festival looks like D3D12.
 - **N5 - races, garage, car photos; then performance** (the nfsmw lessons: constants through a
