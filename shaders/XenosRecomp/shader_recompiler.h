@@ -1,4 +1,5 @@
 #pragma once
+#include <set>
 
 #include "shader.h"
 #include "shader_code.h"
@@ -27,6 +28,20 @@ struct ShaderRecompiler : StringBuffer
     bool isPixelShader = false;
     const uint8_t* constantTableData = nullptr;
     std::unordered_map<uint32_t, VertexElement> vertexElements;
+#ifdef NFSMW_RECOMP
+    // FH1: vertex fetches the declaration does not list (the cars' extra streams: fetch constants
+    // 29-31, some indexed by a computed register, some mini fetches). They read guest memory directly
+    // (fh1Fetch in shader_common.h); the renderer fills g_GuestBase and g_FetchAddress(c) for the
+    // constants listed in the HLSL as "// FH1_FETCH_CONSTANT" lines.
+    std::set<uint32_t> rawFetchConstants;
+    // Vertex inputs whose usage has no fixed location (USAGE_LOCATIONS): the next free one, from 16.
+    uint32_t nextFreeLocation = 16;
+    std::string freeLocationNotes;
+    // The last full vertex fetch: mini fetches reuse its constant, index and stride.
+    bool haveFullFetch = false;
+    uint32_t fullFetchConst = 0, fullFetchSrc = 0, fullFetchSwizzle = 0, fullFetchStride = 0;
+    bool fullFetchRounded = false;
+#endif
     std::unordered_map<uint32_t, std::string> interpolators;
     std::unordered_map<uint32_t, const ConstantInfo*> float4Constants;
     std::unordered_map<uint32_t, const char*> boolConstants;

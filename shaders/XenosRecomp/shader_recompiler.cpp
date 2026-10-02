@@ -182,6 +182,17 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
     else
         cerrarPredicado();
     const size_t marcaPredicado = out.size();
+#ifdef NFSMW_RECOMP
+    if (!instr.isMiniFetch)
+    {
+        haveFullFetch = true;
+        fullFetchConst = instr.constIndex;
+        fullFetchSrc = instr.srcRegister;
+        fullFetchSwizzle = instr.srcSwizzle & 3;
+        fullFetchStride = instr.stride;
+        fullFetchRounded = instr.isIndexRounded;
+    }
+#endif
 
     indent();
     print("r{}.", instr.dstRegister);
@@ -191,7 +202,33 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
 
     auto findResult = vertexElements.find(address);
     if (findResult == vertexElements.end())
+    {
+#ifdef NFSMW_RECOMP
+        // FH1: a fetch from a stream the declaration does not list: read guest memory directly.
+        // A mini fetch takes the constant, index and stride of the last full fetch.
+        if (instr.isMiniFetch && !haveFullFetch)
+            throw std::runtime_error(fmt::format("FETCH mini sin FETCH completo antes (direccion {})", address));
+        uint32_t c = instr.isMiniFetch ? fullFetchConst : uint32_t(instr.constIndex);
+        uint32_t src = instr.isMiniFetch ? fullFetchSrc : uint32_t(instr.srcRegister);
+        uint32_t swz = instr.isMiniFetch ? fullFetchSwizzle : (instr.srcSwizzle & 3);
+        uint32_t stride = instr.isMiniFetch ? fullFetchStride : uint32_t(instr.stride);
+        bool rounded = instr.isMiniFetch ? fullFetchRounded : (instr.isIndexRounded != 0);
+        if (c < 24)
+            throw std::runtime_error(fmt::format("FETCH directo con constante {} (solo 24-31)", c));
+        rawFetchConstants.insert(c);
+        print("fh1Fetch({}, r{}.{}, {}, {}, {}, {}, {}, {})", c, src, "xyzw"[swz], rounded ? "true" : "false",
+              stride, int32_t(instr.offset), uint32_t(instr.format), instr.signedRfModeAll ? "true" : "false",
+              instr.numFormatAll ? "false" : "true");
+        out += '.';
+        printDstSwizzle(instr.dstSwizzle, true);
+        out += ";\n";
+        printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
+        cerrarSiEscribePredicado(marcaPredicado);
+        return;
+#else
         throw std::runtime_error("FETCH de vertices sin elemento declarado");
+#endif
+    }
 
 #ifdef NFSMW_RECOMP
     // NFSMW: D3D patches the fetch swizzle according to the vertex declaration; the
@@ -285,6 +322,12 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
 #endif
 
     auto findResult = samplers.find(instr.constIndex);
+#ifdef NFSMW_RECOMP
+    // FH1: vertex shaders sample through fetch constants 16-19 (D3D vertex samplers 0-3), while their
+    // constant table lists the sampler register (0-3).
+    if (findResult == samplers.end() && !isPixelShader && instr.constIndex >= 16)
+        findResult = samplers.find(instr.constIndex - 16);
+#endif
     if (findResult != samplers.end())
     {
         constNamePtr = findResult->second;
@@ -1164,6 +1207,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     assert((shaderContainer->flags & 0xFFFF0000) == 0x102A0000);
     assert(shaderContainer->constantTableOffset != NULL);
 
+#ifdef NFSMW_RECOMP
+    // FH1: vertex shaders may sample textures; Vulkan needs an explicit level there (FH1_SAMPLE in
+    // shader_common.h).
+    if ((shaderContainer->flags & 0x1) != 0)
+        out += "#define FH1_VERTEX_SHADER 1\n";
+#endif
     out += include;
     out += '\n';
 
@@ -1399,14 +1448,28 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
             out += '\t';
 
+            bool locationFound = false;
             for (auto& usageLocation : USAGE_LOCATIONS)
             {
                 if (usageLocation.usage == vertexElement.usage && usageLocation.usageIndex == vertexElement.usageIndex)
                 {
                     print("[[vk::location({})]] ", usageLocation.location);
+                    locationFound = true;
                     break;
                 }
             }
+#ifdef NFSMW_RECOMP
+            // FH1: usages without a fixed location (e.g. NORMAL1) take free ones from 16 (a shader
+            // with explicit locations must give every input one). Listed for the renderer.
+            if (!locationFound)
+            {
+                print("[[vk::location({})]] ", nextFreeLocation);
+                freeLocationNotes += fmt::format("// FH1_INPUT_LOCATION usage {} index {} location {}\n",
+                                                 uint32_t(vertexElement.usage), uint32_t(vertexElement.usageIndex),
+                                                 nextFreeLocation);
+                ++nextFreeLocation;
+            }
+#endif
 
             println("in {0} i{1}{2} : {3}{2},", usageType, USAGE_VARIABLES[uint32_t(vertexElement.usage)],
                 uint32_t(vertexElement.usageIndex), USAGE_SEMANTICS[uint32_t(vertexElement.usage)]);
@@ -1556,12 +1619,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     out += "\tint aL = 0;\n";
     out += "\tbool p0 = false;\n";
     out += "\tfloat ps = 0.0;\n";
+#ifdef NFSMW_RECOMP
+    // FH1: some vertex shaders use cube map instructions too.
+    out += "\tCubeMapData cubeMapData = (CubeMapData)0;\n";
+#endif
     if (isPixelShader)
     {
 #ifdef UNLEASHED_RECOMP
         out += "\tfloat2 pixelCoord = 0.0;\n";
 #endif
+#ifndef NFSMW_RECOMP
         out += "\tCubeMapData cubeMapData = (CubeMapData)0;\n";
+#endif
     }
 
     const be<uint32_t>* code = reinterpret_cast<const be<uint32_t>*>(shaderData + shaderContainer->virtualSize + shader->physicalOffset);
@@ -2025,4 +2094,14 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 #endif
 
     out += "}";
+
+#ifdef NFSMW_RECOMP
+    {
+        std::string notes;
+        for (uint32_t c : rawFetchConstants)
+            notes += fmt::format("// FH1_FETCH_CONSTANT {}\n", c);
+        notes += freeLocationNotes;
+        out.insert(0, notes);
+    }
+#endif
 }

@@ -62,3 +62,18 @@ pass) stay off by default and are paused.
   vertex fetch at an instruction the declaration table does not list - probably FH1's mini
   fetches; next to fix). DXC is in the Windows SDK (Windows Kits 10, bin/10.0.26100.0/x64/dxc.exe).
   Output in build_logs/shaders/ (game data: never in git).
+- 2026-10-02 **N0 library done (loose .fxobj)**: all 2,918 shaders translate and compile;
+  `tools/build_shader_library.ps1` rebuilds `build_logs/shaders/fh1_shaders.nfsp` (84 MB) from the
+  disc in one go. Translator changes (all under `NFSMW_RECOMP`, in `shaders/XenosRecomp/`):
+  - vertex fetches the declaration does not list (cars: fetch constants 29-31, computed index
+    `r0.w`, mini fetches) read guest memory directly: `fh1Fetch()` in `shader_common.h`, with
+    `g_GuestBase` (shared constants +488) and `g_FetchAddress(c)` (+496, constants 24-31, guest
+    byte address | endian in bits 0-1). The HLSL lists the constants used ("// FH1_FETCH_CONSTANT");
+  - vertex-shader samplers: fetch constants 16-19 = table registers 0-3;
+  - `cubeMapData` declared in vertex shaders too; level-0 sampling in vertex shaders (`FH1_SAMPLE`);
+  - vertex inputs whose usage has no fixed location get 16+ ("// FH1_INPUT_LOCATION");
+  - the shared constants block is 33 float4 now (was 23).
+  DXC: the official release (github.com/microsoft/DirectXShaderCompiler, unpacked in
+  `FH1-recomp\tools_dxc\`); the Windows SDK's dxc.exe has no SPIR-V. `fh1/src/fh1_shader_library.*`
+  is FH1's copy of nfsmw's library reader/writer (2008 containers, 256 MB cap), not yet in fh1.exe.
+  Still to add: the `.fxobj` inside the tracks' LZX `bin.zip` archives (and default.xex).

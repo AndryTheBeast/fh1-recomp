@@ -45,3 +45,4 @@ fh1/out/
 *.stfs
 *.god
 shaders/fh1_hlsl.exe
+shaders/fh1_empaquetar.exe

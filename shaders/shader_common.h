@@ -88,7 +88,7 @@ struct PushConstants
 // a component: v[B / 16][(B % 16) / 4], and asuint reads it without changing a bit.
 struct NfsmwBloqueVs { float4 v[256]; };
 struct NfsmwBloquePs { float4 v[224]; };
-struct NfsmwBloqueCompartidas { float4 v[23]; };
+struct NfsmwBloqueCompartidas { float4 v[33]; };
 [[vk::binding(0, 4)]] ConstantBuffer<NfsmwBloqueVs> g_UboVertex;
 [[vk::binding(1, 4)]] ConstantBuffer<NfsmwBloquePs> g_UboPixel;
 [[vk::binding(2, 4)]] ConstantBuffer<NfsmwBloqueCompartidas> g_UboCompartidas;
@@ -133,6 +133,101 @@ uint g_SpecConstants();
 
 #endif
 
+// FH1: vertex data the declaration does not list (the cars' extra streams), read straight from guest
+// memory (shared constants: g_GuestBase at 488, g_FetchAddress at 496, after the 1/size area at
+// 360 + slot * 8). The renderer fills g_GuestBase (device address of guest physical memory) and, for fetch
+// constants 24-31, g_FetchAddress(c) = the stream's guest byte address | its endian in bits 0-1
+// (0 none, 1 8in16, 2 8in32, 3 16in32). Component layouts as in the SDK's SPIR-V translator
+// (spirv_translator_fetch.cpp); fraction formats are normalized (signed: max(v / (2^(w-1) - 1), -1)).
+#ifdef __spirv__
+#define g_GuestBase       (NFSMW_UBO ? (uint64_t(NFSMW_COMPARTIDA_UINT(488)) | (uint64_t(NFSMW_COMPARTIDA_UINT(492)) << 32)) : vk::RawBufferLoad<uint64_t>(g_PushConstants.SharedConstants + 488))
+#define g_FetchAddress(C) (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT(496 + ((C) - 24) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 496 + ((C) - 24) * 4))
+
+uint fh1Swap(uint w, uint endian)
+{
+    if (endian == 1u || endian == 2u)
+        w = ((w & 0x00FF00FFu) << 8) | ((w >> 8) & 0x00FF00FFu);
+    if (endian == 2u || endian == 3u)
+        w = (w << 16) | (w >> 16);
+    return w;
+}
+
+uint fh1FetchWord(uint c, uint index, uint stride, int offset, uint i)
+{
+    uint address = g_FetchAddress(c);
+    uint byteAddress = (address & ~3u) + (index * stride + uint(offset) + i) * 4u;
+    return fh1Swap(vk::RawBufferLoad<uint>(g_GuestBase + byteAddress), address & 3u);
+}
+
+float fh1Unpack(uint v, uint shift, uint width, bool isSigned, bool normalized)
+{
+    uint bits = (v >> shift) & (width >= 32u ? 0xFFFFFFFFu : ((1u << width) - 1u));
+    if (isSigned)
+    {
+        int s = int(bits << (32u - width)) >> (32u - width);
+        return normalized ? max(float(s) / float((1u << (width - 1u)) - 1u), -1.0) : float(s);
+    }
+    return normalized ? float(bits) / float((1u << width) - 1u) : float(bits);
+}
+
+float4 fh1Fetch(uint c, float indexValue, bool rounded, uint stride, int offset, uint format, bool isSigned,
+                bool normalized)
+{
+    uint index = uint(rounded ? round(indexValue) : floor(indexValue));
+    uint w0 = fh1FetchWord(c, index, stride, offset, 0);
+    switch (format)
+    {
+    case 6:   // 8_8_8_8
+        return float4(fh1Unpack(w0, 0, 8, isSigned, normalized), fh1Unpack(w0, 8, 8, isSigned, normalized),
+                      fh1Unpack(w0, 16, 8, isSigned, normalized), fh1Unpack(w0, 24, 8, isSigned, normalized));
+    case 7:   // 2_10_10_10
+        return float4(fh1Unpack(w0, 0, 10, isSigned, normalized), fh1Unpack(w0, 10, 10, isSigned, normalized),
+                      fh1Unpack(w0, 20, 10, isSigned, normalized), fh1Unpack(w0, 30, 2, isSigned, normalized));
+    case 16:  // 10_11_11
+        return float4(fh1Unpack(w0, 0, 11, isSigned, normalized), fh1Unpack(w0, 11, 11, isSigned, normalized),
+                      fh1Unpack(w0, 22, 10, isSigned, normalized), 1.0);
+    case 17:  // 11_11_10
+        return float4(fh1Unpack(w0, 0, 10, isSigned, normalized), fh1Unpack(w0, 10, 11, isSigned, normalized),
+                      fh1Unpack(w0, 21, 11, isSigned, normalized), 1.0);
+    case 25:  // 16_16
+        return float4(fh1Unpack(w0, 0, 16, isSigned, normalized), fh1Unpack(w0, 16, 16, isSigned, normalized), 0.0, 1.0);
+    case 26:  // 16_16_16_16
+    {
+        uint w1 = fh1FetchWord(c, index, stride, offset, 1);
+        return float4(fh1Unpack(w0, 0, 16, isSigned, normalized), fh1Unpack(w0, 16, 16, isSigned, normalized),
+                      fh1Unpack(w1, 0, 16, isSigned, normalized), fh1Unpack(w1, 16, 16, isSigned, normalized));
+    }
+    case 31:  // 16_16_FLOAT
+        return float4(f16tof32(w0 & 0xFFFFu), f16tof32(w0 >> 16), 0.0, 1.0);
+    case 32:  // 16_16_16_16_FLOAT
+    {
+        uint w1 = fh1FetchWord(c, index, stride, offset, 1);
+        return float4(f16tof32(w0 & 0xFFFFu), f16tof32(w0 >> 16), f16tof32(w1 & 0xFFFFu), f16tof32(w1 >> 16));
+    }
+    case 36:  // 32_FLOAT
+        return float4(asfloat(w0), 0.0, 0.0, 1.0);
+    case 37:  // 32_32_FLOAT
+        return float4(asfloat(w0), asfloat(fh1FetchWord(c, index, stride, offset, 1)), 0.0, 1.0);
+    case 57:  // 32_32_32_FLOAT
+        return float4(asfloat(w0), asfloat(fh1FetchWord(c, index, stride, offset, 1)),
+                      asfloat(fh1FetchWord(c, index, stride, offset, 2)), 1.0);
+    case 38:  // 32_32_32_32_FLOAT
+        return float4(asfloat(w0), asfloat(fh1FetchWord(c, index, stride, offset, 1)),
+                      asfloat(fh1FetchWord(c, index, stride, offset, 2)),
+                      asfloat(fh1FetchWord(c, index, stride, offset, 3)));
+    default:
+        return float4(0.0, 0.0, 0.0, 1.0);
+    }
+}
+#endif
+
+// FH1: implicit-level sampling is only allowed in pixel shaders; vertex shaders use level 0.
+#ifdef FH1_VERTEX_SHADER
+#define FH1_SAMPLE(TEXTURE, SAMPLER, COORD) (TEXTURE).SampleLevel(SAMPLER, COORD, 0)
+#else
+#define FH1_SAMPLE(TEXTURE, SAMPLER, COORD) (TEXTURE).Sample(SAMPLER, COORD)
+#endif
+
 Texture2D<float4> g_Texture2DDescriptorHeap[] : register(t0, space0);
 Texture3D<float4> g_Texture3DDescriptorHeap[] : register(t0, space1);
 TextureCube<float4> g_TextureCubeDescriptorHeap[] : register(t0, space2);
@@ -157,7 +252,7 @@ float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float
         desplazamiento = offset * invSize;
     else
         desplazamiento = offset / getTexture2DDimensions(texture);
-    return texture.Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + desplazamiento);
+    return FH1_SAMPLE(texture, g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + desplazamiento);
 }
 
 float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
@@ -257,17 +352,17 @@ float4 tfetch2DBicubic(uint resourceDescriptorIndex, uint samplerDescriptorIndex
     float h1y = h1(fy);
 
     float4 r =
-        g0(fy) * (g0x * texture.Sample(samplerState, float2(px + h0x, py + h0y) / float2(dimensions)) +
-            g1x * texture.Sample(samplerState, float2(px + h1x, py + h0y) / float2(dimensions))) +
-        g1(fy) * (g0x * texture.Sample(samplerState, float2(px + h0x, py + h1y) / float2(dimensions)) +
-            g1x * texture.Sample(samplerState, float2(px + h1x, py + h1y) / float2(dimensions)));
+        g0(fy) * (g0x * FH1_SAMPLE(texture, samplerState, float2(px + h0x, py + h0y) / float2(dimensions)) +
+            g1x * FH1_SAMPLE(texture, samplerState, float2(px + h1x, py + h0y) / float2(dimensions))) +
+        g1(fy) * (g0x * FH1_SAMPLE(texture, samplerState, float2(px + h0x, py + h1y) / float2(dimensions)) +
+            g1x * FH1_SAMPLE(texture, samplerState, float2(px + h1x, py + h1y) / float2(dimensions)));
 
     return r;
 }
 
 float4 tfetch3D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord)
 {
-    return g_Texture3DDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord);
+    return FH1_SAMPLE(g_Texture3DDescriptorHeap[resourceDescriptorIndex], g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord);
 }
 
 struct CubeMapData
@@ -278,7 +373,7 @@ struct CubeMapData
 
 float4 tfetchCube(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, inout CubeMapData cubeMapData)
 {
-    return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].Sample(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z]);
+    return FH1_SAMPLE(g_TextureCubeDescriptorHeap[resourceDescriptorIndex], g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z]);
 }
 
 float4 tfetchR11G11B10(uint4 value)

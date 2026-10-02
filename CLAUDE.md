@@ -200,11 +200,16 @@ lists the actions and saves the render targets as PNG.
 - tools/compile_only.ps1 compiles single object files (ninja targets) while the game is running
   (the full build cannot relink a running exe/DLL). tools/bisect_transfers.py finds which EDRAM
   transfer kinds a scene needs (see docs/native-render-targets.md).
+- Native renderer shaders (2026-10-02): `tools/build_shader_library.ps1` builds
+  build_logs/shaders/fh1_shaders.nfsp from the disc (XenosRecomp in shaders/, now used and changed
+  for FH1 under NFSMW_RECOMP; DXC with SPIR-V from FH1-recomp/tools_dxc - the Windows SDK's has none).
+  Bash heredocs mangle backslash escapes (backslash-n, backslash-t) in Python/C++ snippets: write
+  patch scripts with the Write tool or use chr(92).
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
 ## Next steps
 
-See ROADMAP.md (Stage 3, native renderer) and docs/native-render-targets.md: the festival needs
-only one EDRAM transfer kind; the single-strip tall pass prototype (--fh1_single_tile
---gpu_tall_main_pass --gpu_tall_single_strip) draws the scene once (GPU thread 15.0 -> 9.4 ms)
-but the festival's big structures are missing - next is a RenderDoc comparison.
+See ROADMAP.md and docs/native-renderer-fh1.md: a native renderer built the nfsmw-nx way (user's
+decision 2026-10-02; the emulated-GPU experiments in docs/native-render-targets.md are paused).
+N0 shader library done for the loose .fxobj files (2,918 shaders); next: the LZX track archives,
+then N1 (own graphics system, `fh1_renderer=native`).
