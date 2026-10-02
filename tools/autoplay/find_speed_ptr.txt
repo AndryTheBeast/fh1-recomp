@@ -1,0 +1,26 @@
+# Car-speed calibration experiment: accelerate (rises), coast and brake (falls), stop (~0).
+include common.txt
+
+do boot_to_festival
+wait 5
+set rt
+wait 2.5
+memscan_start 3 300
+wait 1
+memscan_filter inc
+wait 1
+memscan_filter inc
+wait 1
+memscan_filter inc
+clear
+wait 1
+memscan_filter dec
+hold lt=0.5 0.8
+memscan_filter dec
+memscan_list 40
+hold lt,a 2.5
+wait 2
+shot stopped
+memscan_filter abs_lt 0.3
+memscan_list 60
+quit

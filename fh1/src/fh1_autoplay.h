@@ -15,6 +15,14 @@
 //      clear                     release everything set
 //      shot NAME                 ask tools/auto_test.ps1 for a screenshot named NAME
 //      log TEXT                  write TEXT to the log ([autoplay])
+//      waitfile PATTERN [T]      wait until the game opens a file whose path contains PATTERN
+//                                (case-insensitive; T = timeout in seconds, default 120)
+//      waitdraws >N|<N [for S] [timeout T]   wait until frames have more/fewer than N draws
+//                                (for S seconds in a row): >1500 = 3D world, <300 = menus/loading
+//      memscan_start LO HI       record the game's floats in [LO, HI] (fh1_memscan.cpp)
+//      memscan_sample NAME       save their current values (tools/memscan_match.py)
+//      memscan_filter OP [V]     keep candidates: inc dec same changed gt lt abs_gt abs_lt
+//      memscan_list N            log N candidates;  memscan_ptrs MAXOFF DEPTH  pointer chains
 //      def NAME ... end          define a macro;  do NAME [xN]  runs it
 //      include FILE              run another script (path relative to this one)
 //      quit                      end the test now (auto_test stops the game)
@@ -24,6 +32,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -35,7 +44,11 @@ namespace fh1 {
 std::unique_ptr<rex::input::InputDriver> CreateAutoplayDriver(const std::string& script);
 
 // Loads a script file; returns nullptr (and logs why) if it cannot be read or parsed.
-std::unique_ptr<rex::input::InputDriver> CreateAutoplayScriptDriver(const std::string& path,
-                                                                    const std::string& dir);
+// draws: the last frame's draw count (for waitdraws).
+std::unique_ptr<rex::input::InputDriver> CreateAutoplayScriptDriver(
+    const std::string& path, const std::string& dir, std::function<uint32_t()> draws);
+
+// Logs every file the game opens as "[file] <path>" (--fh1_log_file_opens; for writing scripts).
+void InstallFileObserver(bool log_opens);
 
 }  // namespace fh1

@@ -1,10 +1,12 @@
 // fh1 - scripted controller for unattended test runs (see fh1_autoplay.h).
 
 #include "fh1_autoplay.h"
+#include "fh1_memscan.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -18,6 +20,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <rex/kernel/file_events.h>
 #include <rex/logging.h>
 
 namespace fh1 {
@@ -181,13 +184,35 @@ struct Instr {
   double seconds = 0;
   int repeat = 1;
   double gap = 0.25;
-  std::string text;  // shot name / log text
+  std::string text;  // shot name / log text / waitfile pattern
+  // waitdraws
+  bool greater = true;
+  uint32_t draws = 0;
+  double hold_for = 0;
+  double timeout = 120;
+  float lo = 0, hi = 0;  // memscan_start
 };
+
+// Files the game opened, for 'waitfile' (lower-case paths with a running number).
+struct FileLog {
+  std::mutex mutex;
+  std::vector<std::pair<uint64_t, std::string>> recent;  // last 256
+  uint64_t count = 0;
+};
+FileLog g_file_log;
+
+std::string Lower(std::string_view s) {
+  std::string out(s);
+  for (char& c : out) c = char(std::tolower(static_cast<unsigned char>(c)));
+  return out;
+}
 
 class ScriptRunner {
  public:
-  ScriptRunner(std::vector<Instr> program, std::string dir)
-      : program_(std::move(program)), dir_(std::move(dir)) {}
+  ScriptRunner(std::vector<Instr> program, std::string dir,
+               std::function<uint32_t()> draws_provider)
+      : program_(std::move(program)), dir_(std::move(dir)),
+        draws_provider_(std::move(draws_provider)) {}
   ~ScriptRunner() {
     stop_ = true;
     if (thread_.joinable()) thread_.join();
@@ -284,8 +309,23 @@ class ScriptRunner {
         Request("shot-" + in.text);
       } else if (in.op == "log") {
         REXLOG_INFO("[autoplay] {:.1f} s: {}", t, in.text);
+      } else if (in.op == "memscan_start") {
+        memscan::Start(in.lo, in.hi, dir_);
+      } else if (in.op == "memscan_sample") {
+        memscan::Sample(in.text, dir_);
+      } else if (in.op == "memscan_filter") {
+        memscan::Filter(in.text, in.lo);
+      } else if (in.op == "memscan_list") {
+        memscan::List(size_t(in.lo));
+      } else if (in.op == "memscan_ptrs") {
+        memscan::Pointers(uint32_t(in.lo), int(in.hi));
+      } else if (in.op == "waitfile") {
+        WaitFile(in, t);
+      } else if (in.op == "waitdraws") {
+        WaitDraws(in, t);
       } else if (in.op == "quit") {
         REXLOG_INFO("[autoplay] {:.1f} s: quit", t);
+        Sleep(2.0);  // let the log reach the file before auto_test kills the game
         Request("quit");
         return;
       }
@@ -293,8 +333,59 @@ class ScriptRunner {
     REXLOG_INFO("[autoplay] script finished");
   }
 
+  // Waits until a file whose path contains the pattern is opened after this point.
+  void WaitFile(const Instr& in, double t) {
+    uint64_t since;
+    {
+      std::lock_guard<std::mutex> lock(g_file_log.mutex);
+      since = g_file_log.count;
+    }
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(in.timeout);
+    while (!stop_ && std::chrono::steady_clock::now() < deadline) {
+      {
+        std::lock_guard<std::mutex> lock(g_file_log.mutex);
+        for (const auto& [n, path] : g_file_log.recent) {
+          if (n >= since && path.find(in.text) != std::string::npos) {
+            REXLOG_INFO("[autoplay] {:.1f} s: file '{}' opened", t, path);
+            return;
+          }
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    REXLOG_WARN("[autoplay] waitfile '{}' timed out after {:.0f} s", in.text, in.timeout);
+  }
+
+  // Waits until every frame for hold_for seconds has more (or fewer) draws than the threshold.
+  void WaitDraws(const Instr& in, double t) {
+    if (!draws_provider_) {
+      REXLOG_WARN("[autoplay] waitdraws: no draw counter available");
+      return;
+    }
+    auto start = std::chrono::steady_clock::now();
+    auto deadline = start + std::chrono::duration<double>(in.timeout);
+    auto ok_since = std::chrono::steady_clock::time_point();
+    bool ok_run = false;
+    while (!stop_ && std::chrono::steady_clock::now() < deadline) {
+      uint32_t d = draws_provider_();
+      bool ok = in.greater ? d > in.draws : d < in.draws;
+      auto now = std::chrono::steady_clock::now();
+      if (ok && !ok_run) ok_since = now;
+      ok_run = ok;
+      if (ok && std::chrono::duration<double>(now - ok_since).count() >= in.hold_for) {
+        REXLOG_INFO("[autoplay] {:.1f} s: draws {} {} {} (now {})", t, in.greater ? ">" : "<",
+                    in.draws, in.hold_for > 0 ? "held" : "reached", d);
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    REXLOG_WARN("[autoplay] waitdraws {}{} timed out after {:.0f} s", in.greater ? ">" : "<",
+                in.draws, in.timeout);
+  }
+
   std::vector<Instr> program_;
   std::string dir_;
+  std::function<uint32_t()> draws_provider_;
   std::mutex mutex_;
   PadState held_;
   Step set_;
@@ -399,6 +490,45 @@ bool ParseScript(const std::filesystem::path& path, MacroMap& macros, std::vecto
       in.seconds = std::strtod(w[2].c_str(), nullptr);
     } else if (in.op == "set") {
       if (w.size() != 2 || !ParseControls(w[1], in.controls)) return fail("set CONTROLS");
+    } else if (in.op == "memscan_start") {
+      if (w.size() != 3) return fail("memscan_start LO HI");
+      in.lo = std::strtof(w[1].c_str(), nullptr);
+      in.hi = std::strtof(w[2].c_str(), nullptr);
+    } else if (in.op == "memscan_sample") {
+      if (w.size() != 2) return fail("memscan_sample NAME");
+      in.text = w[1];
+    } else if (in.op == "memscan_filter") {
+      if (w.size() < 2 || w.size() > 3) return fail("memscan_filter OP [V]");
+      in.text = w[1];
+      if (w.size() == 3) in.lo = std::strtof(w[2].c_str(), nullptr);
+    } else if (in.op == "memscan_list") {
+      if (w.size() != 2) return fail("memscan_list N");
+      in.lo = std::strtof(w[1].c_str(), nullptr);
+    } else if (in.op == "memscan_ptrs") {
+      if (w.size() != 3) return fail("memscan_ptrs MAXOFF DEPTH");
+      in.lo = float(std::strtoul(w[1].c_str(), nullptr, 0));
+      in.hi = std::strtof(w[2].c_str(), nullptr);
+    } else if (in.op == "waitfile") {
+      // waitfile PATTERN [TIMEOUT]
+      if (w.size() < 2 || w.size() > 3) return fail("waitfile PATTERN [TIMEOUT]");
+      in.text = Lower(w[1]);
+      if (w.size() == 3) in.timeout = std::strtod(w[2].c_str(), nullptr);
+    } else if (in.op == "waitdraws") {
+      // waitdraws >N|<N [for S] [timeout S]
+      if (w.size() < 2 || (w[1][0] != '>' && w[1][0] != '<')) {
+        return fail("waitdraws >N|<N [for S] [timeout S]");
+      }
+      in.greater = w[1][0] == '>';
+      in.draws = uint32_t(std::strtoul(w[1].c_str() + 1, nullptr, 10));
+      for (size_t i = 2; i + 1 < w.size(); i += 2) {
+        if (w[i] == "for") {
+          in.hold_for = std::strtod(w[i + 1].c_str(), nullptr);
+        } else if (w[i] == "timeout") {
+          in.timeout = std::strtod(w[i + 1].c_str(), nullptr);
+        } else {
+          return fail("waitdraws >N|<N [for S] [timeout S]");
+        }
+      }
     } else if (in.op == "clear" || in.op == "quit") {
     } else if (in.op == "shot") {
       if (w.size() != 2) return fail("shot NAME");
@@ -419,14 +549,26 @@ bool ParseScript(const std::filesystem::path& path, MacroMap& macros, std::vecto
 
 }  // namespace
 
+void InstallFileObserver(bool log_opens) {
+  rex::kernel::SetFileOpenObserver([log_opens](std::string_view path) {
+    std::string lower = Lower(path);
+    if (log_opens) REXLOG_INFO("[file] {}", path);
+    std::lock_guard<std::mutex> lock(g_file_log.mutex);
+    g_file_log.recent.emplace_back(g_file_log.count++, std::move(lower));
+    if (g_file_log.recent.size() > 256) g_file_log.recent.erase(g_file_log.recent.begin());
+  });
+}
+
 std::unique_ptr<InputDriver> CreateAutoplayScriptDriver(const std::string& path,
-                                                        const std::string& dir) {
+                                                        const std::string& dir,
+                                                        std::function<uint32_t()> draws) {
   MacroMap macros;
   std::vector<Instr> program;
   if (!ParseScript(std::filesystem::path(path), macros, program, 0)) return nullptr;
   if (program.empty()) return nullptr;
   REXLOG_INFO("fh1_autoplay_file: {} ({} steps, {} macros)", path, program.size(), macros.size());
-  auto runner = std::make_shared<ScriptRunner>(std::move(program), dir);
+  InstallFileObserver(false);
+  auto runner = std::make_shared<ScriptRunner>(std::move(program), dir, std::move(draws));
   runner->Start();
   ScriptRunner* raw = runner.get();
   return std::make_unique<AutoplayDriver>([raw] { return raw->Current(); }, runner);

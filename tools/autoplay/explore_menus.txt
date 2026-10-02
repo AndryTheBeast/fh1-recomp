@@ -1,0 +1,20 @@
+# Exploration: boot, then open menus while logging every file the game opens, to find files to
+# 'waitfile' for. Run with -ExtraArgs "--fh1_log_file_opens=true" and read the [file] lines.
+include common.txt
+
+do boot_to_festival
+shot festival
+log open pause menu
+tap start
+wait 3
+shot pause
+tap b
+wait 2
+log open map (back)
+tap back
+wait 4
+shot map
+tap b
+wait 3
+shot back_in_world
+quit

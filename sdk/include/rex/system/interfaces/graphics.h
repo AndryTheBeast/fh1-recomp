@@ -39,6 +39,7 @@ struct FrameMonitorStats {
   double frame_time_ms = 0;    // last frame
   double average_ms = 0;       // over the last second
   double worst_ms = 0;         // over the last second
+  uint32_t last_frame_draws = 0;  // draw packets of the last complete frame
   float history_ms[kHistory] = {};  // oldest first
   char renderer[96] = {};
 };

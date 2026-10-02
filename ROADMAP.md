@@ -60,8 +60,14 @@ Tests today hold buttons on a fixed timetable (`--fh1_autoplay`, fh1/src/fh1_aut
 1. [x] Scripts (2026-10-02): `auto_test.ps1 -Script toolsutoplay\<file>.txt` - wait, tap, hold,
        set/clear, macros (def/do), include, `shot NAME` (screenshot at that moment), `quit`.
        Macros in tools/autoplay/common.txt; first test tools/autoplay/smoke_drive.txt.
-2. [ ] Game state from memory (menu open, loading, race running, car speed/position) so scripts
-       wait for conditions instead of fixed seconds.
+2. [~] Game state (2026-10-02): `waitdraws >N for S` (3D world vs menus/loading - the boot macro
+       now waits for the world instead of a fixed time) and `waitfile PATTERN` (the game opens
+       track/car/audio files; `--fh1_log_file_opens` lists them) work. Memory scanner for finding
+       variables (`memscan_*` script commands, fh1/src/fh1_memscan.cpp, tools/memscan_match.py):
+       the car speed (m/s, plus a signed forward speed and a history ring at stride 0x20) was found
+       per run, but it lives in heap memory that moves between runs, and in-game narrowing still
+       leaves ~400 look-alikes (wheel/part velocities). Next: find the game code that writes it
+       (hook -> stable reference), or skip it if step 3 hands the car to the game's AI.
 3. [ ] Driving and racing: first try handing the player's car to the game's own AI driver (used by
        opponents and the attract-mode demo); otherwise steer along the GPS route.
 

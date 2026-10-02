@@ -10,7 +10,8 @@ def boot_to_festival
   wait 1.5
   tap a x3 gap 2.6
   log boot: loading the festival
-  wait 20
+  waitdraws >1500 for 3 timeout 90   # the 3D world is on screen
+  wait 2
 end
 
 # Drive forward with the accelerator for a few seconds, then brake to a stop.
