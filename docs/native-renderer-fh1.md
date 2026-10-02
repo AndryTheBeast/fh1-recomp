@@ -60,5 +60,5 @@ pass) stay off by default and are paused.
   clang, no downloads) as `shaders/fh1_hlsl.exe`. Translation to HLSL: **2,463 of 2,918** - every
   pixel shader; 455 vertex shaders rejected with "FETCH de vertices sin elemento declarado" (a
   vertex fetch at an instruction the declaration table does not list - probably FH1's mini
-  fetches; next to fix). DXC is in the Windows SDK (`Windows Kitsin.0.26100.0d\dxc.exe`).
+  fetches; next to fix). DXC is in the Windows SDK (Windows Kits 10, bin/10.0.26100.0/x64/dxc.exe).
   Output in build_logs/shaders/ (game data: never in git).
