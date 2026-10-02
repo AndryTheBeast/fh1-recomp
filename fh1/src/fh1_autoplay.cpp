@@ -2,6 +2,7 @@
 
 #include "fh1_autoplay.h"
 #include "fh1_memscan.h"
+#include "fh1_recorder.h"
 
 #include <algorithm>
 #include <atomic>
@@ -309,6 +310,7 @@ class ScriptRunner {
         Request("shot-" + in.text);
       } else if (in.op == "log") {
         REXLOG_INFO("[autoplay] {:.1f} s: {}", t, in.text);
+        RecordMarker(in.text);
       } else if (in.op == "memscan_start") {
         memscan::Start(in.lo, in.hi, dir_);
       } else if (in.op == "memscan_sample") {
@@ -322,6 +324,8 @@ class ScriptRunner {
       } else if (in.op == "memscan_pick") {
         memscan::Pick(in.text, in.lo);
 
+      } else if (in.op == "defvar") {
+        memscan::Define(in.text, uint32_t(in.seconds));
       } else if (in.op == "logvar") {
         float v = 0;
         if (memscan::Variable(in.text, v)) {
@@ -552,6 +556,11 @@ bool ParseScript(const std::filesystem::path& path, MacroMap& macros, std::vecto
       if (w.size() < 2 || w.size() > 3) return fail("memscan_pick NAME [MIN]");
       in.text = w[1];
       in.lo = w.size() == 3 ? std::strtof(w[2].c_str(), nullptr) : 1.0f;
+    } else if (in.op == "defvar") {
+      // defvar NAME ADDRESS (hex with 0x)
+      if (w.size() != 3) return fail("defvar NAME ADDRESS");
+      in.text = w[1];
+      in.seconds = double(std::strtoul(w[2].c_str(), nullptr, 0));
     } else if (in.op == "logvar") {
       if (w.size() != 2) return fail("logvar NAME");
       in.text = w[1];

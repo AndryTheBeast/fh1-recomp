@@ -22,6 +22,8 @@ void Pointers(uint32_t max_offset, int depth);
 // the candidates (a game value is usually stored in several places) and remembers it as a named
 // variable. Returns false if none qualifies.
 bool Pick(const std::string& name, float min_value);
+// Names a known address as a variable.
+void Define(const std::string& name, uint32_t guest_address);
 // Current value of a picked variable; false if it was never picked.
 bool Variable(const std::string& name, float& out);
 // Read one big-endian float / word of guest memory.

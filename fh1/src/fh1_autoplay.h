@@ -21,9 +21,11 @@
 //                                (for S seconds in a row): >1500 = 3D world, <300 = menus/loading
 //      memscan_start LO HI       record the game's floats in [LO, HI] (fh1_memscan.cpp)
 //      memscan_sample NAME       save their current values (tools/memscan_match.py)
-//      memscan_filter OP [V]     keep candidates: inc dec same changed gt lt abs_gt abs_lt
+//      memscan_filter OP [V]     keep candidates: inc dec absinc absdec same changed gt lt
+//                                abs_gt abs_lt delta_lt delta_gt
 //      memscan_list N            log N candidates;  memscan_ptrs MAXOFF DEPTH  pointer chains
 //      memscan_pick NAME [MIN]   name the candidate with the most copies (value > MIN)
+//      defvar NAME ADDRESS       name a known float address (e.g. defvar posx 0x2ED1C5C8)
 //      logvar NAME               log a picked variable
 //      waitvar NAME >V|<V [for S] [timeout T]   wait until the variable passes V
 //      def NAME ... end          define a macro;  do NAME [xN]  runs it

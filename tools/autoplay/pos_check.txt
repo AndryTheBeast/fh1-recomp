@@ -1,0 +1,17 @@
+# Is the car position at the same address every session?
+include common.txt
+defvar posx 0x2ED1C5C8
+defvar posy 0x2ED1C5CC
+defvar posz 0x2ED1C5D0
+do boot_to_festival
+logvar posx
+logvar posy
+logvar posz
+set rt
+wait 2
+clear
+hold a 3
+logvar posx
+logvar posy
+logvar posz
+quit

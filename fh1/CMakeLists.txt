@@ -31,6 +31,7 @@ set(FH1_SOURCES
     src/fh1_d3d_census_report.cpp
     src/fh1_perf_hooks.cpp
     src/fh1_memscan.cpp
+    src/fh1_recorder.cpp
 )
 
 if(WIN32)

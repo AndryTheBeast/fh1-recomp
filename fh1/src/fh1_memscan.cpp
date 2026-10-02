@@ -5,7 +5,7 @@
 //   memscan_sample NAME       save the candidates' current values (memscan-NAME.bin)
 //   memscan_filter OP [V]     keep candidates by comparing with the previous filter/start:
 //                             inc, dec, absinc, absdec, same, changed, gt V, lt V, abs_gt V,
-//                             abs_lt V
+//                             abs_lt V, delta_lt V, delta_gt V (|change| below/above V)
 //   memscan_list N            log up to N candidates with their values
 //   memscan_ptrs MAXOFF DEPTH log pointer chains from the executable's data (static) to the
 //                             candidates: [static] -> +off -> ... -> candidate (each step reads a
@@ -153,6 +153,10 @@ size_t Filter(const std::string& op, float v) {
       keep = b > a;
     } else if (op == "dec") {
       keep = b < a;
+    } else if (op == "delta_lt") {
+      keep = std::fabs(b - a) < v;
+    } else if (op == "delta_gt") {
+      keep = std::fabs(b - a) > v;
     } else if (op == "absinc") {
       keep = std::fabs(b) > std::fabs(a);
     } else if (op == "absdec") {
@@ -279,6 +283,11 @@ bool Pick(const std::string& name, float min_value) {
   REXLOG_INFO("[memscan] picked {} = {:08X} (value {:.3f}, {} copies)", name, g_addresses[best],
               now[best], best_copies);
   return true;
+}
+
+void Define(const std::string& name, uint32_t guest_address) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  g_variables[name] = guest_address;
 }
 
 bool Variable(const std::string& name, float& out) {

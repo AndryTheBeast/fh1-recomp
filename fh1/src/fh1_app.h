@@ -13,6 +13,7 @@
 
 #include "fh1_autoplay.h"
 #include "fh1_crash_report.h"
+#include "fh1_recorder.h"
 
 void Fh1StartProfiler();  // fh1_profiler.cpp
 namespace fh1::census { void Start(); }  // fh1_d3d_census_report.cpp
@@ -31,6 +32,9 @@ REXCVAR_DEFINE_STRING(fh1_autoplay, "", "FH1",
 REXCVAR_DEFINE_STRING(fh1_autoplay_file, "", "FH1",
                       "Scripted input from a script file (tools/autoplay/*.txt, format in "
                       "fh1_autoplay.h)");
+REXCVAR_DEFINE_STRING(fh1_record, "", "FH1",
+                      "Record the controller (and the car position once known) to this file, for "
+                      "writing autoplay scripts and routes (fh1_recorder.cpp)");
 REXCVAR_DEFINE_BOOL(fh1_log_file_opens, false, "FH1",
                     "Log every file the game opens as [file] <path> (for writing autoplay "
                     "scripts that wait for a file)");
@@ -90,6 +94,7 @@ class Fh1App : public rex::ReXApp {
       }
     }
     if (REXCVAR_GET(fh1_log_file_opens)) fh1::InstallFileObserver(true);
+    if (!REXCVAR_GET(fh1_record).empty()) fh1::StartRecorder(REXCVAR_GET(fh1_record));
     if (!REXCVAR_GET(fh1_merge_controllers)) return;
     input->SetDeviceAssignment(std::make_unique<rex::input::SharedAssignment>());
   }
