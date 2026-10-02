@@ -1044,7 +1044,10 @@ class SistemaGraficoNativo final : public rex::system::IGraphicsSystem {
         std::memcpy(&v, base_virtual + d, sizeof(v));
         return __builtin_bswap32(v);
       };
-      const uint32_t renderizador = leer_be(0x82A2D1AC);
+      // FH1: 0x82A2D1AC / 0x82A2CEE4 are Most Wanted's AA settings; in FH1 they hold other data and following
+      // the pointer crashed on the festival load (read of 2B0B0000). Not read here.
+      (void)leer_be;
+      const uint32_t renderizador = 0;
       const uint32_t info = Registro(rex::graphics::XE_GPU_REG_RB_SURFACE_INFO);
       REXLOG_INFO("[nativo] C2 oclusion {}: ZPD en {:08X} ({}), marcas aqui {} y 32 antes {}; muestras del host {} ({}), "
                   "escala {}, escritas {}; bins {:016X}/{:016X}; RB_SURFACE_INFO {:08X} (pitch {}, MSAA {}), "
@@ -1052,7 +1055,7 @@ class SistemaGraficoNativo final : public rex::system::IGraphicsSystem {
                   avisos_oclusion_, direccion, que, marcas_aqui, marcas_antes, medidas, medida ? "medidas" : "sin medida",
                   escala, escrita == UINT32_MAX ? -1 : int64_t(escrita), bin_select_, bin_mask_, info, info & 0x3FFF,
                   (info >> 16) & 0x3, Registro(rex::graphics::XE_GPU_REG_RB_DEPTH_INFO),
-                  renderizador ? int64_t(leer_be(renderizador)) : -1, leer_be(0x82A2CEE4));
+                  renderizador ? int64_t(renderizador) : -1, 0u);
     }
   }
 
