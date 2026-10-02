@@ -117,6 +117,10 @@ before/after screenshots) -> the drive. With nobody touching the pad:
 Append ";180+60=rt" (and a longer -Seconds) to hold the accelerator in the drive. Nothing steers
 yet, so the car leaves the road; compare graphics on the cutscene frames, not the drive.
 
+Scripted tests (preferred, 2026-10-02): `-Script toolsutoplay\smoke_drive.txt` runs a script file
+(commands in fh1/src/fh1_autoplay.h, macros in tools/autoplay/common.txt); its `shot NAME` lines
+save test-<Name>-<date>-NAME.png and `quit` ends the run early.
+
 Use it for every graphics/performance change instead of asking the user to play.
 The screenshots copy the screen: if Windows has locked (user away) they show the lock screen,
 though the game and its `[fps]` lines still run. Look at one shot before trusting a batch. Load

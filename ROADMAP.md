@@ -57,8 +57,9 @@ faster); forcing 1x MSAA (garbage on the car).
 ## Next — better test autoplay (user's request, 2026-10-02)
 
 Tests today hold buttons on a fixed timetable (`--fh1_autoplay`, fh1/src/fh1_autoplay.h).
-1. [ ] Scripts: analog sticks/triggers, sequences, waits, named macros (open map, garage, start the
-       nearest event, skip cutscene).
+1. [x] Scripts (2026-10-02): `auto_test.ps1 -Script toolsutoplay\<file>.txt` - wait, tap, hold,
+       set/clear, macros (def/do), include, `shot NAME` (screenshot at that moment), `quit`.
+       Macros in tools/autoplay/common.txt; first test tools/autoplay/smoke_drive.txt.
 2. [ ] Game state from memory (menu open, loading, race running, car speed/position) so scripts
        wait for conditions instead of fixed seconds.
 3. [ ] Driving and racing: first try handing the player's car to the game's own AI driver (used by

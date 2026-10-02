@@ -27,6 +27,12 @@ REXCVAR_DEFINE_BOOL(fh1_merge_controllers, true, "FH1",
 // fh1_autoplay.h. Empty = off. Needs fh1_merge_controllers so it drives player 1.
 REXCVAR_DEFINE_STRING(fh1_autoplay, "", "FH1",
                       "Scripted input: START+DURATION=CONTROLS;... (seconds from launch)");
+REXCVAR_DEFINE_STRING(fh1_autoplay_file, "", "FH1",
+                      "Scripted input from a script file (tools/autoplay/*.txt, format in "
+                      "fh1_autoplay.h)");
+REXCVAR_DEFINE_STRING(fh1_autoplay_dir, "", "FH1",
+                      "Folder for the autoplay script's screenshot/quit requests (set by "
+                      "tools/auto_test.ps1)");
 
 class Fh1App : public rex::ReXApp {
  public:
@@ -67,6 +73,12 @@ class Fh1App : public rex::ReXApp {
     if (!input) return;
     if (auto autoplay = fh1::CreateAutoplayDriver(REXCVAR_GET(fh1_autoplay))) {
       input->AddDriver(std::move(autoplay));
+    }
+    if (!REXCVAR_GET(fh1_autoplay_file).empty()) {
+      if (auto script = fh1::CreateAutoplayScriptDriver(REXCVAR_GET(fh1_autoplay_file),
+                                                         REXCVAR_GET(fh1_autoplay_dir))) {
+        input->AddDriver(std::move(script));
+      }
     }
     if (!REXCVAR_GET(fh1_merge_controllers)) return;
     input->SetDeviceAssignment(std::make_unique<rex::input::SharedAssignment>());

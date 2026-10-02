@@ -3,12 +3,19 @@
 #include "fh1_autoplay.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <mutex>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include <rex/logging.h>
@@ -29,9 +36,16 @@ struct Step {
   bool has_lx = false, has_ly = false, has_rx = false, has_ry = false;
 };
 
+// The pad as a script leaves it at a moment.
+struct PadState {
+  uint16_t buttons = 0;
+  uint8_t lt = 0, rt = 0;
+  float lx = 0, ly = 0, rx = 0, ry = 0;
+};
+
 std::string_view Trim(std::string_view s) {
   while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
-  while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.remove_suffix(1);
+  while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r')) s.remove_suffix(1);
   return s;
 }
 
@@ -55,6 +69,8 @@ bool ParseControl(std::string_view c, Step& step) {
   if (eq == std::string_view::npos) return false;
   std::string_view axis = c.substr(0, eq);
   float v = std::clamp(std::strtof(std::string(c.substr(eq + 1)).c_str(), nullptr), -1.0f, 1.0f);
+  if (axis == "lt") return step.lt = uint8_t(std::lround(std::max(v, 0.0f) * 255.0f)), true;
+  if (axis == "rt") return step.rt = uint8_t(std::lround(std::max(v, 0.0f) * 255.0f)), true;
   if (axis == "lx") return step.lx = v, step.has_lx = true;
   if (axis == "ly") return step.ly = v, step.has_ly = true;
   if (axis == "rx") return step.rx = v, step.has_rx = true;
@@ -62,13 +78,28 @@ bool ParseControl(std::string_view c, Step& step) {
   return false;
 }
 
+bool ParseControls(std::string_view controls, Step& step) {
+  while (!controls.empty()) {
+    auto comma = controls.find(',');
+    std::string_view c = Trim(controls.substr(0, comma));
+    controls = comma == std::string_view::npos ? std::string_view() : controls.substr(comma + 1);
+    if (!c.empty() && !ParseControl(c, step)) return false;
+  }
+  return true;
+}
+
 int16_t Stick(float v) { return static_cast<int16_t>(std::lround(v * 32767.0f)); }
 
 class AutoplayDriver final : public InputDriver {
  public:
+  // Timetable mode (--fh1_autoplay).
   explicit AutoplayDriver(std::vector<Step> steps)
       : InputDriver(nullptr, 0), steps_(std::move(steps)),
         start_(std::chrono::steady_clock::now()) {}
+  // Script mode (--fh1_autoplay_file): the pad state comes from the script thread.
+  AutoplayDriver(std::function<PadState()> provider, std::shared_ptr<void> keep_alive)
+      : InputDriver(nullptr, 0), provider_(std::move(provider)),
+        keep_alive_(std::move(keep_alive)), start_(std::chrono::steady_clock::now()) {}
 
   X_STATUS Setup() override { return X_STATUS_SUCCESS; }
 
@@ -86,29 +117,28 @@ class AutoplayDriver final : public InputDriver {
     auto elapsed = std::chrono::steady_clock::now() - start_;
     double t = std::chrono::duration<double>(elapsed).count();
     std::memset(out_state, 0, sizeof(*out_state));
-    uint16_t buttons = 0;
-    uint8_t lt = 0, rt = 0;
-    float lx = 0, ly = 0, rx = 0, ry = 0;
+    PadState pad;
+    if (provider_) pad = provider_();
     for (const auto& s : steps_) {
       if (t < s.start || t >= s.end) continue;
-      buttons |= s.buttons;
-      lt = std::max(lt, s.lt);
-      rt = std::max(rt, s.rt);
-      if (s.has_lx) lx = s.lx;
-      if (s.has_ly) ly = s.ly;
-      if (s.has_rx) rx = s.rx;
-      if (s.has_ry) ry = s.ry;
+      pad.buttons |= s.buttons;
+      pad.lt = std::max(pad.lt, s.lt);
+      pad.rt = std::max(pad.rt, s.rt);
+      if (s.has_lx) pad.lx = s.lx;
+      if (s.has_ly) pad.ly = s.ly;
+      if (s.has_rx) pad.rx = s.rx;
+      if (s.has_ry) pad.ry = s.ry;
     }
     // Always-rising packet number (milliseconds), so the merged state counts as new input.
     out_state->packet_number =
         static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
-    out_state->gamepad.buttons = buttons;
-    out_state->gamepad.left_trigger = lt;
-    out_state->gamepad.right_trigger = rt;
-    out_state->gamepad.thumb_lx = Stick(lx);
-    out_state->gamepad.thumb_ly = Stick(ly);
-    out_state->gamepad.thumb_rx = Stick(rx);
-    out_state->gamepad.thumb_ry = Stick(ry);
+    out_state->gamepad.buttons = pad.buttons;
+    out_state->gamepad.left_trigger = pad.lt;
+    out_state->gamepad.right_trigger = pad.rt;
+    out_state->gamepad.thumb_lx = Stick(pad.lx);
+    out_state->gamepad.thumb_ly = Stick(pad.ly);
+    out_state->gamepad.thumb_rx = Stick(pad.rx);
+    out_state->gamepad.thumb_ry = Stick(pad.ry);
     return X_ERROR_SUCCESS;
   }
 
@@ -139,10 +169,268 @@ class AutoplayDriver final : public InputDriver {
 
  private:
   std::vector<Step> steps_;
+  std::function<PadState()> provider_;
+  std::shared_ptr<void> keep_alive_;
   std::chrono::steady_clock::time_point start_;
 };
 
+// --fh1_autoplay_file: a script run line by line on its own thread (format in fh1_autoplay.h).
+struct Instr {
+  std::string op;
+  Step controls;  // tap / hold / set
+  double seconds = 0;
+  int repeat = 1;
+  double gap = 0.25;
+  std::string text;  // shot name / log text
+};
+
+class ScriptRunner {
+ public:
+  ScriptRunner(std::vector<Instr> program, std::string dir)
+      : program_(std::move(program)), dir_(std::move(dir)) {}
+  ~ScriptRunner() {
+    stop_ = true;
+    if (thread_.joinable()) thread_.join();
+  }
+
+  void Start() { thread_ = std::thread([this] { Run(); }); }
+
+  PadState Current() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    PadState pad = held_;
+    pad.buttons |= set_.buttons;
+    pad.lt = std::max(pad.lt, set_.lt);
+    pad.rt = std::max(pad.rt, set_.rt);
+    if (set_.has_lx) pad.lx = set_.lx;
+    if (set_.has_ly) pad.ly = set_.ly;
+    if (set_.has_rx) pad.rx = set_.rx;
+    if (set_.has_ry) pad.ry = set_.ry;
+    return pad;
+  }
+
+ private:
+  static PadState FromStep(const Step& s) {
+    PadState p;
+    p.buttons = s.buttons;
+    p.lt = s.lt;
+    p.rt = s.rt;
+    p.lx = s.lx;
+    p.ly = s.ly;
+    p.rx = s.rx;
+    p.ry = s.ry;
+    return p;
+  }
+
+  void Sleep(double seconds) {
+    auto until = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
+    while (!stop_ && std::chrono::steady_clock::now() < until) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  }
+
+  void Hold(const Step& s, double seconds) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      held_ = FromStep(s);
+    }
+    Sleep(seconds);
+    std::lock_guard<std::mutex> lock(mutex_);
+    held_ = PadState();
+  }
+
+  // Writes <dir>/<name>.req and waits (up to 5 s) for tools/auto_test.ps1 to delete it.
+  void Request(const std::string& name) {
+    if (dir_.empty()) {
+      REXLOG_WARN("[autoplay] '{}' needs --fh1_autoplay_dir (run through tools/auto_test.ps1)",
+                  name);
+      return;
+    }
+    std::filesystem::path req = std::filesystem::path(dir_) / (name + ".req");
+    { std::ofstream(req) << name; }
+    for (int i = 0; i < 500 && !stop_ && std::filesystem::exists(req); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+
+  void Run() {
+    auto start = std::chrono::steady_clock::now();
+    for (const Instr& in : program_) {
+      if (stop_) return;
+      double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+      if (in.op == "wait") {
+        Sleep(in.seconds);
+      } else if (in.op == "tap") {
+        for (int i = 0; i < in.repeat && !stop_; ++i) {
+          Hold(in.controls, 0.12);
+          Sleep(in.gap);
+        }
+      } else if (in.op == "hold") {
+        Hold(in.controls, in.seconds);
+      } else if (in.op == "set") {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const Step& c = in.controls;
+        set_.buttons |= c.buttons;
+        set_.lt = std::max(set_.lt, c.lt);
+        set_.rt = std::max(set_.rt, c.rt);
+        if (c.has_lx) set_.lx = c.lx, set_.has_lx = true;
+        if (c.has_ly) set_.ly = c.ly, set_.has_ly = true;
+        if (c.has_rx) set_.rx = c.rx, set_.has_rx = true;
+        if (c.has_ry) set_.ry = c.ry, set_.has_ry = true;
+      } else if (in.op == "clear") {
+        std::lock_guard<std::mutex> lock(mutex_);
+        set_ = Step();
+      } else if (in.op == "shot") {
+        REXLOG_INFO("[autoplay] {:.1f} s: screenshot '{}'", t, in.text);
+        Request("shot-" + in.text);
+      } else if (in.op == "log") {
+        REXLOG_INFO("[autoplay] {:.1f} s: {}", t, in.text);
+      } else if (in.op == "quit") {
+        REXLOG_INFO("[autoplay] {:.1f} s: quit", t);
+        Request("quit");
+        return;
+      }
+    }
+    REXLOG_INFO("[autoplay] script finished");
+  }
+
+  std::vector<Instr> program_;
+  std::string dir_;
+  std::mutex mutex_;
+  PadState held_;
+  Step set_;
+  std::atomic<bool> stop_{false};
+  std::thread thread_;
+};
+
+std::vector<std::string> Words(std::string_view line) {
+  std::vector<std::string> out;
+  size_t i = 0;
+  while (i < line.size()) {
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) ++i;
+    size_t j = i;
+    while (j < line.size() && line[j] != ' ' && line[j] != '\t') ++j;
+    if (j > i) out.emplace_back(line.substr(i, j - i));
+    i = j;
+  }
+  return out;
+}
+
+// "xN" repeat count, or 0 if the word is not one.
+int RepeatCount(const std::string& w) {
+  if (w.size() < 2 || w[0] != 'x') return 0;
+  return std::max(1, std::atoi(w.c_str() + 1));
+}
+
+using MacroMap = std::unordered_map<std::string, std::vector<Instr>>;
+
+bool ParseScript(const std::filesystem::path& path, MacroMap& macros, std::vector<Instr>& out,
+                 int depth) {
+  if (depth > 8) {
+    REXLOG_ERROR("fh1_autoplay_file: includes nested too deep at {}", path.string());
+    return false;
+  }
+  std::ifstream file(path);
+  if (!file) {
+    REXLOG_ERROR("fh1_autoplay_file: cannot read {}", path.string());
+    return false;
+  }
+  std::string raw;
+  int line_no = 0;
+  std::string defining;
+  while (std::getline(file, raw)) {
+    ++line_no;
+    std::string_view line = raw;
+    if (auto hash = line.find('#'); hash != std::string_view::npos) line = line.substr(0, hash);
+    line = Trim(line);
+    auto w = Words(line);
+    if (w.empty()) continue;
+    auto fail = [&](const char* why) {
+      REXLOG_ERROR("fh1_autoplay_file: {}:{}: {} ('{}')", path.filename().string(), line_no, why,
+                   std::string(line));
+      return false;
+    };
+    std::vector<Instr>& target = defining.empty() ? out : macros[defining];
+    Instr in;
+    in.op = w[0];
+    if (in.op == "def") {
+      if (w.size() != 2 || !defining.empty()) return fail("def NAME (no nesting)");
+      defining = w[1];
+      macros[defining].clear();
+      continue;
+    }
+    if (in.op == "end") {
+      if (defining.empty()) return fail("end without def");
+      defining.clear();
+      continue;
+    }
+    if (in.op == "do") {
+      if (w.size() < 2 || w.size() > 3) return fail("do NAME [xN]");
+      auto it = macros.find(w[1]);
+      if (it == macros.end()) return fail("unknown macro");
+      int n = w.size() == 3 ? RepeatCount(w[2]) : 1;
+      if (n == 0) return fail("do NAME [xN]");
+      std::vector<Instr> body = it->second;
+      for (int i = 0; i < n; ++i) target.insert(target.end(), body.begin(), body.end());
+      continue;
+    }
+    if (in.op == "include") {
+      if (w.size() != 2) return fail("include FILE");
+      if (!ParseScript(path.parent_path() / w[1], macros, target, depth + 1)) return false;
+      continue;
+    }
+    if (in.op == "wait") {
+      if (w.size() != 2) return fail("wait SECONDS");
+      in.seconds = std::strtod(w[1].c_str(), nullptr);
+    } else if (in.op == "tap") {
+      if (w.size() < 2 || !ParseControls(w[1], in.controls)) {
+        return fail("tap CONTROLS [xN] [gap S]");
+      }
+      for (size_t i = 2; i < w.size(); ++i) {
+        if (int n = RepeatCount(w[i])) {
+          in.repeat = n;
+        } else if (w[i] == "gap" && i + 1 < w.size()) {
+          in.gap = std::strtod(w[++i].c_str(), nullptr);
+        } else {
+          return fail("tap CONTROLS [xN] [gap S]");
+        }
+      }
+    } else if (in.op == "hold") {
+      if (w.size() != 3 || !ParseControls(w[1], in.controls)) return fail("hold CONTROLS SECONDS");
+      in.seconds = std::strtod(w[2].c_str(), nullptr);
+    } else if (in.op == "set") {
+      if (w.size() != 2 || !ParseControls(w[1], in.controls)) return fail("set CONTROLS");
+    } else if (in.op == "clear" || in.op == "quit") {
+    } else if (in.op == "shot") {
+      if (w.size() != 2) return fail("shot NAME");
+      in.text = w[1];
+    } else if (in.op == "log") {
+      in.text = std::string(Trim(line.substr(3)));
+    } else {
+      return fail("unknown command");
+    }
+    target.push_back(std::move(in));
+  }
+  if (!defining.empty()) {
+    REXLOG_ERROR("fh1_autoplay_file: {}: def {} without end", path.filename().string(), defining);
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
+
+std::unique_ptr<InputDriver> CreateAutoplayScriptDriver(const std::string& path,
+                                                        const std::string& dir) {
+  MacroMap macros;
+  std::vector<Instr> program;
+  if (!ParseScript(std::filesystem::path(path), macros, program, 0)) return nullptr;
+  if (program.empty()) return nullptr;
+  REXLOG_INFO("fh1_autoplay_file: {} ({} steps, {} macros)", path, program.size(), macros.size());
+  auto runner = std::make_shared<ScriptRunner>(std::move(program), dir);
+  runner->Start();
+  ScriptRunner* raw = runner.get();
+  return std::make_unique<AutoplayDriver>([raw] { return raw->Current(); }, runner);
+}
 
 std::unique_ptr<InputDriver> CreateAutoplayDriver(const std::string& script) {
   std::vector<Step> steps;
@@ -162,15 +450,9 @@ std::unique_ptr<InputDriver> CreateAutoplayDriver(const std::string& script) {
     step.start = std::strtod(std::string(entry.substr(0, plus)).c_str(), nullptr);
     step.end = step.start +
                std::strtod(std::string(entry.substr(plus + 1, eq - plus - 1)).c_str(), nullptr);
-    std::string_view controls = entry.substr(eq + 1);
-    while (!controls.empty()) {
-      auto comma = controls.find(',');
-      std::string_view c = Trim(controls.substr(0, comma));
-      controls = comma == std::string_view::npos ? std::string_view() : controls.substr(comma + 1);
-      if (!c.empty() && !ParseControl(c, step)) {
-        REXLOG_ERROR("fh1_autoplay: unknown control '{}' in '{}'", c, entry);
-        return nullptr;
-      }
+    if (!ParseControls(entry.substr(eq + 1), step)) {
+      REXLOG_ERROR("fh1_autoplay: unknown control in '{}'", entry);
+      return nullptr;
     }
     steps.push_back(step);
   }

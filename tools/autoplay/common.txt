@@ -1,0 +1,37 @@
+# Reusable autoplay macros (include common.txt). Format: fh1/src/fh1_autoplay.h.
+# Timings measured on the Legion Go with the user's save (boots into the festival).
+
+# From launch to driving in the festival with a save present: the title screen takes Start,
+# then A confirms the profile/continue prompts. The festival is drivable ~50-60 s after launch.
+def boot_to_festival
+  log boot: waiting for the title screen
+  wait 34
+  tap start x3 gap 1.7
+  wait 1.5
+  tap a x3 gap 2.6
+  log boot: loading the festival
+  wait 20
+end
+
+# Drive forward with the accelerator for a few seconds, then brake to a stop.
+def drive_forward_5s
+  hold rt 5
+  hold lt 1
+end
+
+# Gentle left and right turns while accelerating (shows the world moving, shadows, reflections).
+def drive_weave
+  hold rt,lx=-0.5 2
+  hold rt,lx=0.5 2
+  hold rt,lx=-0.5 2
+  hold rt,lx=0.5 2
+  hold lt 1
+end
+
+# Open and close the pause menu.
+def pause_menu
+  tap start
+  wait 2
+  tap b
+  wait 1.5
+end
