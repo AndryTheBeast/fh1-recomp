@@ -48,11 +48,16 @@ The emulated GPU spends most of its time on emulation itself: EDRAM, drawing the
 times for the console's tiling, transfers, readbacks. The native renderer keeps the parts proven on
 FH1 (command processing, SPIR-V shader translation, textures) and replaces the rest:
 
-1. [ ] **Native render targets in the Vulkan backend**: one image per render target, no EDRAM
+1. [~] **Native render targets in the Vulkan backend**: one image per render target, no EDRAM
        aliasing or ownership transfers (keep the one aliasing FH1 needs: 4x at pitch P = 1x at 2P),
-       resolves as direct copies into textures.
-2. [ ] **Draw the main scene once** instead of 3 strips (~2,000 fewer draws per frame, ~-40% CPU on
+       resolves as direct copies into textures. 2026-10-02: of 104 kinds of EDRAM copies the
+       festival needs exactly one (`c0.720.16.4>c0.720.16.1`, the 4x/1x colour alias); the depth
+       alias trick now works on Vulkan too. Details: `docs/native-render-targets.md`.
+2. [~] **Draw the main scene once** instead of 3 strips (~2,000 fewer draws per frame, ~-40% CPU on
        the GPU thread) - possible once render targets are not limited to the 10 MB EDRAM.
+       Prototype `--gpu_tall_main_pass` (off by default): one seamless full-height pass, GPU
+       thread draw time 15.0 -> 9.4 ms, but objects the game culls per strip are missing. Next:
+       the game's own single-strip setting (old `--fh1_single_tile` hook) + per-row copy-outs.
 3. [ ] Readbacks only where the CPU needs them; compare every change against D3D12 screenshots.
 4. [ ] Per-draw cost of the GPU command thread (driver ~30%, emulation bookkeeping the rest).
 

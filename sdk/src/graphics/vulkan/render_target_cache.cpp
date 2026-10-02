@@ -70,6 +70,12 @@ extern "C" void RexSwitchPerfAdd(unsigned id, uint64_t value);
 extern "C" bool RexSwitchPerfSkip(unsigned bit);
 #endif
 
+namespace rex::graphics {
+extern uint32_t g_tall_resolve_row_offset;  // graphics/command_processor.cpp
+uint32_t GetTallRenderTargetHeight(uint32_t pitch_tiles_at_32bpp,
+                                   xenos::MsaaSamples msaa_samples);  // render_target/cache.cpp
+}  // namespace rex::graphics
+
 namespace rex::graphics::vulkan {
 
 // Generated with `xb buildshaders`.
@@ -1892,7 +1898,9 @@ RenderTargetCache::RenderTarget* VulkanRenderTargetCache::CreateRenderTarget(Ren
   image_create_info.imageType = VK_IMAGE_TYPE_2D;
   image_create_info.extent.width = key.GetWidth() * draw_resolution_scale_x();
   image_create_info.extent.height =
-      GetRenderTargetHeight(key.pitch_tiles_at_32bpp, key.msaa_samples) * draw_resolution_scale_y();
+      std::max(GetRenderTargetHeight(key.pitch_tiles_at_32bpp, key.msaa_samples),
+               GetTallRenderTargetHeight(key.pitch_tiles_at_32bpp, key.msaa_samples)) *
+      draw_resolution_scale_y();
   image_create_info.extent.depth = 1;
   image_create_info.mipLevels = 1;
   image_create_info.arrayLayers = 1;
@@ -2290,7 +2298,9 @@ VulkanRenderTargetCache::GetHostRenderTargetsFramebuffer(
   if (pitch_tiles_at_32bpp) {
     host_extent.width =
         RenderTargetKey::GetWidth(pitch_tiles_at_32bpp, render_pass_key.msaa_samples);
-    host_extent.height = GetRenderTargetHeight(pitch_tiles_at_32bpp, render_pass_key.msaa_samples);
+    host_extent.height =
+        std::max(GetRenderTargetHeight(pitch_tiles_at_32bpp, render_pass_key.msaa_samples),
+                 GetTallRenderTargetHeight(pitch_tiles_at_32bpp, render_pass_key.msaa_samples));
   } else {
     assert_zero(render_pass_key.depth_and_color_used);
     // Still needed for occlusion queries.
@@ -6161,11 +6171,28 @@ bool VulkanRenderTargetCache::DumpRenderTargets(uint32_t dump_base, uint32_t dum
 
     DumpOffsets offsets;
     offsets.source_base_tiles = rt_key.base_tiles;
+    // --gpu_tall_main_pass: read this strip's rows further down the tall render target. The
+    // shader reads source tile (first tile, not wrapped, 12 bits) - (source base, 11 bits) and
+    // writes EDRAM tile (first tile & 2047): lowering the base by the strip's tiles, with 2048
+    // added to the first tile when needed to keep the base in range, shifts only the source.
+    uint32_t first_tile_add = 0;
+    if (g_tall_resolve_row_offset &&
+        GetTallRenderTargetHeight(rt_key.pitch_tiles_at_32bpp, rt_key.msaa_samples)) {
+      // 4x MSAA: 2 sample rows per pixel row, 16 sample rows per EDRAM tile row.
+      uint32_t offset_tiles =
+          (g_tall_resolve_row_offset * 2 / xenos::kEdramTileHeightSamples) * rt_key.GetPitchTiles();
+      if (offset_tiles <= rt_key.base_tiles) {
+        offsets.source_base_tiles = rt_key.base_tiles - offset_tiles;
+      } else if (offset_tiles <= rt_key.base_tiles + xenos::kEdramTileCount) {
+        offsets.source_base_tiles = rt_key.base_tiles + xenos::kEdramTileCount - offset_tiles;
+        first_tile_add = xenos::kEdramTileCount;
+      }
+    }
     ResolveCopyDumpRectangle::Dispatch dispatches[ResolveCopyDumpRectangle::kMaxDispatches];
     uint32_t dispatch_count = rectangle.GetDispatches(dump_pitch, dump_row_length_used, dispatches);
     for (uint32_t i = 0; i < dispatch_count; ++i) {
       const ResolveCopyDumpRectangle::Dispatch& dispatch = dispatches[i];
-      offsets.dispatch_first_tile = dump_base + dispatch.offset;
+      offsets.dispatch_first_tile = dump_base + dispatch.offset + first_tile_add;
       if (last_offsets != offsets) {
         last_offsets = offsets;
         offsets_bound = false;

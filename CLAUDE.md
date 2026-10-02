@@ -194,10 +194,17 @@ lists the actions and saves the render targets as PNG.
   rex::cvar::SetFlagAppDefault (deferred until the flag registers; command line still wins). Until
   2026-10-01 22:15 the readback_resolve=fast default never applied (log line "Settings:" at GPU
   setup shows the effective values) - car photos and garage bloom depended on it.
+- auto_test.ps1 screenshots use PrintWindow (PW_RENDERFULLCONTENT), so another window covering the
+  game (e.g. the Claude app popping up) no longer spoils the shot. tools/img_diff.py measures the
+  festival-start shot (dome warmth: ~80 correct, below 0 = far scenery fogged).
+- tools/compile_only.ps1 compiles single object files (ninja targets) while the game is running
+  (the full build cannot relink a running exe/DLL). tools/bisect_transfers.py finds which EDRAM
+  transfer kinds a scene needs (see docs/native-render-targets.md).
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
 ## Next steps
 
-See ROADMAP.md: (1) read back only resolves the CPU reads, (2) check the visibility-query depth
-pass, (3) hook the game's ring busy-waits, then the native render-target cache in the Vulkan
-backend and drawing the main scene once instead of 3 strips.
+See ROADMAP.md (Stage 3, native renderer) and docs/native-render-targets.md: the festival needs
+only one EDRAM transfer kind; the tall main pass prototype (--gpu_tall_main_pass) draws the
+scene once but misses objects the game culls per strip - next is the game's own single-strip
+setting (old --fh1_single_tile hook) with per-row copy-outs.

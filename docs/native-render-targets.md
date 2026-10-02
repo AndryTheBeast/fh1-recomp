@@ -60,7 +60,69 @@ rows of the full target.
 
 ## Needed transfers
 
-(Filled in from the bisection run below.)
+Bisection on the festival start view (2026-10-02, `tools/bisect_transfers.py`, 15 runs, log
+`build_logs/bisect-transfers.txt`): of 104 transfer kinds, **only one is needed**:
+
+    c0.720.16.4>c0.720.16.1
+
+An 8_8_8_8 colour target at EDRAM tile 720 drawn at 4x MSAA with a 640-pixel pitch, then read as a
+1x target with a 1280-pixel pitch: the "4x at pitch P = 1x at pitch 2P" alias, this time for
+colour (the depth version is what `gpu_msaa_depth_as_1x` handles). Without it, far scenery turns
+grey (it feeds the fog / atmosphere). Every other transfer can be skipped there:
+
+    --gpu_skip_all_transfers=true --gpu_keep_transfers=c0.720.16.4>c0.720.16.1
+
+gives the same picture as normal (dome warmth 81 vs 82). Only the festival start was checked:
+garage, car photos, races and menus still need checking before this can become a default.
+Native render targets therefore need just one alias rule (4x/P = 1x/2P, colour and depth) and no
+general EDRAM emulation.
+
+`gpu_msaa_depth_as_1x` (draw 4x depth-only passes straight into their 1x alias at double
+resolution) now also works on Vulkan (it was D3D12-only); on by default like on D3D12, festival
+picture correct.
+
+## Draw once ("tall main pass") - first prototype
+
+`--gpu_tall_main_pass=true` (Vulkan, off by default; use with the two transfer settings above):
+
+- render targets of the tiled pass (4x MSAA, pitch `gpu_tall_pass_width`=1280) are created
+  `gpu_tall_pass_height`=720 rows tall instead of the EDRAM's 512;
+- each main-pass draw runs once, at full height (window offset 0, scissor to row 720), in the
+  first strip its bin mask names (3 / C / 30); the copies in later strips are skipped;
+- each strip's resolve and clear read their own rows of the tall target
+  (`g_tall_resolve_row_offset` = minus the strip's window offset; the resolve dump shifts its
+  source with the base/first-tile trick described in vulkan/render_target_cache.cpp, the clear
+  moves its rectangle; EDRAM ownership stays in EDRAM terms).
+
+Results (festival start, Vulkan, Legion Go, `[fps]` lines):
+
+| mode | draws run per frame | GPU thread time in draws | picture |
+| --- | --- | --- | --- |
+| normal | ~3,700 | 15.0 ms | correct |
+| skip transfers (keep 1) | ~3,800 | 14.3 ms | correct |
+| + tall main pass | ~2,300 | 9.4 ms | **incomplete**: big structures missing (dome, stage towers, garage arch) |
+
+The 3 strips join into one correct, seamless picture (resolves and clears from the tall target
+work). What is missing: objects the game's CPU side culls per strip. FH1 replays its recorded
+command lists once per strip (walker sub_829F5FF0) and leaves out objects outside each strip's
+view, so an object visible only in strip 2 appears only in strip 2's commands, often with the
+all-strips mask FFFFFFFF - the GPU side cannot tell it from a duplicate.
+
+### Next step (planned)
+
+Let the game cull once for the whole frame: the old `--fh1_single_tile` hook (git c44b37b,
+fh1/src/fh1_trace_load.cpp: the 248-byte tiling block copied by sub_82A7D730 from 829F60DC,
++4 strip count, +8 strip rectangles) set to one strip of 1280x720. Then:
+
+1. the single pass draws at full height into the tall targets (as now);
+2. the game still issues the 3 copy-outs (rows 0-256, 256-512, 512-720, window offset 0, all to
+   the first strip's destination - the destination rows follow the source rows, so they land
+   correctly). Rows 256+ map to EDRAM tiles 1024+ that the depth target owns, so each copy-out
+   must be turned into "EDRAM rows 0..h with `g_tall_resolve_row_offset` = y0" before the
+   ownership lookup (in draw_util::GetResolveInfo, with the destination offset kept);
+3. the clears likewise.
+
+That gives the full saving (~40% of the GPU thread's draw time) with the game's own culling.
 
 ## Plan for the native render-target cache (Vulkan)
 

@@ -36,6 +36,9 @@ REXCVAR_DEFINE_INT32(gpu_log_rt_frame, 0, "GPU",
                      "frame N (counted by RenderTargetCache::BeginFrame); 0 = off");
 
 REXCVAR_DECLARE(bool, gpu_skip_all_transfers);
+REXCVAR_DECLARE(bool, gpu_tall_main_pass);
+REXCVAR_DECLARE(int32_t, gpu_tall_pass_width);
+REXCVAR_DECLARE(int32_t, gpu_tall_pass_height);
 REXCVAR_DECLARE(std::string, gpu_keep_transfers);
 
 namespace rex::graphics {
@@ -56,6 +59,18 @@ static bool TransferKept(Key source, Key dest) {
   std::string list = "," + REXCVAR_GET(gpu_keep_transfers) + ",";
   if (list == ",,") return false;
   return list.find("," + TransferSignature(source, dest) + ",") != std::string::npos;
+}
+extern uint32_t g_tall_resolve_row_offset;  // graphics/command_processor.cpp
+// --gpu_tall_main_pass: host height (pixels, unscaled) of render targets of the tiled pass (4x
+// MSAA, pitch gpu_tall_pass_width), taller than the EDRAM addressing allows; 0 for other targets.
+uint32_t GetTallRenderTargetHeight(uint32_t pitch_tiles_at_32bpp, xenos::MsaaSamples msaa_samples) {
+  if (!REXCVAR_GET(gpu_tall_main_pass) || msaa_samples != xenos::MsaaSamples::k4X ||
+      pitch_tiles_at_32bpp * (xenos::kEdramTileWidthSamples >> 1) !=
+          uint32_t(REXCVAR_GET(gpu_tall_pass_width))) {
+    return 0;
+  }
+  // Whole EDRAM tile rows (8 pixel rows at 4x).
+  return (uint32_t(REXCVAR_GET(gpu_tall_pass_height)) + 7) & ~uint32_t(7);
 }
 // Shared with util/draw.cpp (resolve logging).
 uint32_t g_rt_log_frame_counter = 0;
@@ -1239,6 +1254,10 @@ bool RenderTargetCache::PrepareHostRenderTargetsResolveClear(
   }
 
   clear_rectangle_out = clear_rectangle;
+  if (g_tall_resolve_row_offset && GetTallRenderTargetHeight(pitch_tiles_at_32bpp, msaa_samples)) {
+    // This strip's rows in the tall render targets (ownership above stays in EDRAM terms).
+    clear_rectangle_out.y_pixels += g_tall_resolve_row_offset;
+  }
   depth_render_target_out = depth_render_target;
   depth_transfers_out.clear();
   if (depth_render_target) {

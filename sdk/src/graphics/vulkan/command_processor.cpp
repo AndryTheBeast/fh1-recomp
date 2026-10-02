@@ -78,6 +78,11 @@ REXCVAR_DEFINE_BOOL(vulkan_dynamic_rendering, true, "GPU/Vulkan",
                     "device (falls back to render passes otherwise)")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 
+namespace rex::graphics {
+extern uint32_t g_draw_scale_multiplier;  // graphics/command_processor.cpp
+extern bool g_draw_scale_multiplier_supported;
+}  // namespace rex::graphics
+
 namespace rex::graphics::vulkan {
 
 namespace {
@@ -783,6 +788,7 @@ bool VulkanCommandProcessor::SetupContext() {
     REXGPU_ERROR("Failed to initialize base command processor context");
     return false;
   }
+  g_draw_scale_multiplier_supported = true;  // IssueDraw applies it
   InvalidateAllVertexBufferResidency();
 
   const ui::vulkan::VulkanDevice* const vulkan_device = GetVulkanDevice();
@@ -3950,8 +3956,12 @@ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type, uint32_t 
 
   bool host_render_targets_used =
       render_target_cache_->GetPath() == RenderTargetCache::Path::kHostRenderTargets;
-  uint32_t draw_resolution_scale_x = texture_cache_->draw_resolution_scale_x();
-  uint32_t draw_resolution_scale_y = texture_cache_->draw_resolution_scale_y();
+  // g_draw_scale_multiplier: 2 for 4x MSAA depth draws redirected to their 1x alias
+  // (--gpu_msaa_depth_as_1x, graphics/command_processor.cpp), whose pixels are twice as many.
+  uint32_t draw_resolution_scale_x =
+      texture_cache_->draw_resolution_scale_x() * g_draw_scale_multiplier;
+  uint32_t draw_resolution_scale_y =
+      texture_cache_->draw_resolution_scale_y() * g_draw_scale_multiplier;
 
   // Get dynamic rasterizer state.
   draw_util::ViewportInfo viewport_info;
@@ -5811,10 +5821,12 @@ void VulkanCommandProcessor::UpdateDynamicState(const draw_util::ViewportInfo& v
   // Scissor.
   draw_util::Scissor scissor;
   draw_util::GetScissor(regs, scissor);
-  scissor.offset[0] *= draw_resolution_scale_x;
-  scissor.offset[1] *= draw_resolution_scale_y;
-  scissor.extent[0] *= draw_resolution_scale_x;
-  scissor.extent[1] *= draw_resolution_scale_y;
+  // (--gpu_msaa_depth_as_1x: the scissor is doubled too; the depth bias slope is already doubled
+  // in the guest register.)
+  scissor.offset[0] *= draw_resolution_scale_x * g_draw_scale_multiplier;
+  scissor.offset[1] *= draw_resolution_scale_y * g_draw_scale_multiplier;
+  scissor.extent[0] *= draw_resolution_scale_x * g_draw_scale_multiplier;
+  scissor.extent[1] *= draw_resolution_scale_y * g_draw_scale_multiplier;
   VkRect2D scissor_rect;
   scissor_rect.offset.x = int32_t(scissor.offset[0]);
   scissor_rect.offset.y = int32_t(scissor.offset[1]);

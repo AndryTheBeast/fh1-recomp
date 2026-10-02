@@ -119,6 +119,17 @@ REXCVAR_DEFINE_STRING(gpu_bin_select_or, "", "GPU",
                       "Experiment (predicated tiling): hex bits OR'ed into every bin select the "
                       "game sets, except all-ones (e.g. 3C to also run strips 2-3 packets)");
 
+REXCVAR_DEFINE_BOOL(gpu_tall_main_pass, false, "GPU",
+                    "Experiment (native render targets, Vulkan): draw the predicated-tiled main "
+                    "pass once, at full height, into render targets taller than the EDRAM allows: "
+                    "the first strip's draws get the whole frame's scissor, the other strips' draws "
+                    "are skipped, and each strip's resolve and clear read its own rows of the tall "
+                    "target. Use with gpu_skip_all_transfers");
+REXCVAR_DEFINE_INT32(gpu_tall_pass_width, 1280, "GPU",
+                     "gpu_tall_main_pass: surface pitch (pixels) of the tiled pass at 4x MSAA");
+REXCVAR_DEFINE_INT32(gpu_tall_pass_height, 720, "GPU",
+                     "gpu_tall_main_pass: full height (pixels) of the tiled pass");
+
 REXCVAR_DEFINE_BOOL(gpu_msaa_depth_as_1x, true, "GPU",
                     "Draw depth-only passes at 4x MSAA and pitch P into the 1x depth target of "
                     "pitch 2P at the same EDRAM base (the same EDRAM bytes) at double resolution, "
@@ -189,6 +200,9 @@ bool RtLogActive();  // pipeline/render_target/cache.cpp
 uint32_t g_draw_scale_multiplier = 1;
 // Set by backends whose IssueDraw applies g_draw_scale_multiplier (D3D12 only for now).
 bool g_draw_scale_multiplier_supported = false;
+// --gpu_tall_main_pass: while a strip's resolve is issued, the first row of that strip in the tall
+// render targets (read by the render target cache's resolve dump and clear). 0 otherwise.
+uint32_t g_tall_resolve_row_offset = 0;
 namespace {
 struct MsaaDepthAsSingleSample {
   bool active = false;
@@ -244,6 +258,65 @@ void MaybeDrawMsaaDepthAsSingleSample(RegisterFile& regs, MsaaDepthAsSingleSampl
     regs.values[reg] = FloatReg(RegFloat(regs.values[reg]) * 2.0f);
   }
   g_draw_scale_multiplier = 2;
+}
+
+// --gpu_tall_main_pass. The tiled pass is a 4x MSAA surface of pitch gpu_tall_pass_width drawn
+// while the bin select is not all-ones. FH1 replays it 3 times (bin select 80000003 / C / 30,
+// window offset 0 / -256 / -512); each strip ends with an unpredicated resolve + clear.
+enum class TallPassAction { kNone, kDrawFull, kSkip, kResolve };
+// Set by the predication check for a main-pass draw to run at full height in a later strip.
+bool g_tall_draw_run_full = false;
+struct TallPassDraw {
+  TallPassAction action = TallPassAction::kNone;
+  uint32_t saved_offset, saved_tl, saved_br;
+};
+
+TallPassAction GetTallPassAction(const RegisterFile& regs, uint64_t bin_select) {
+  if (!REXCVAR_GET(gpu_tall_main_pass) || uint32_t(bin_select) == 0xFFFFFFFFu) {
+    return TallPassAction::kNone;
+  }
+  auto surface = regs.Get<reg::RB_SURFACE_INFO>();
+  if (surface.msaa_samples != xenos::MsaaSamples::k4X ||
+      surface.surface_pitch != uint32_t(REXCVAR_GET(gpu_tall_pass_width))) {
+    return TallPassAction::kNone;
+  }
+  if (regs.Get<reg::RB_MODECONTROL>().edram_mode == xenos::EdramMode::kCopy) {
+    return TallPassAction::kResolve;
+  }
+  // Strip 1: draw everything that reaches the draw at full height. Later strips: only the
+  // predicated draws first named there (see the predication check); the rest was drawn already.
+  return ((bin_select & 0x3) || g_tall_draw_run_full) ? TallPassAction::kDrawFull
+                                                      : TallPassAction::kSkip;
+}
+
+void BeginTallPassDraw(RegisterFile& regs, TallPassDraw& state) {
+  if (state.action == TallPassAction::kDrawFull) {
+    state.saved_offset = regs.values[XE_GPU_REG_PA_SC_WINDOW_OFFSET];
+    state.saved_tl = regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL];
+    state.saved_br = regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR];
+    regs.values[XE_GPU_REG_PA_SC_WINDOW_OFFSET] = 0;
+    auto tl = regs.Get<reg::PA_SC_WINDOW_SCISSOR_TL>();
+    tl.tl_y = 0;
+    regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL] = tl.value;
+    auto br = regs.Get<reg::PA_SC_WINDOW_SCISSOR_BR>();
+    br.br_y = uint32_t(REXCVAR_GET(gpu_tall_pass_height));
+    regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] = br.value;
+  } else if (state.action == TallPassAction::kResolve) {
+    // The strip's rows in the tall target: minus its window offset.
+    int32_t offset_y = regs.Get<reg::PA_SC_WINDOW_OFFSET>().window_y_offset;
+    g_tall_resolve_row_offset = offset_y < 0 ? uint32_t(-offset_y) : 0;
+  }
+}
+
+void EndTallPassDraw(RegisterFile& regs, const TallPassDraw& state) {
+  g_tall_draw_run_full = false;
+  if (state.action == TallPassAction::kDrawFull) {
+    regs.values[XE_GPU_REG_PA_SC_WINDOW_OFFSET] = state.saved_offset;
+    regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL] = state.saved_tl;
+    regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] = state.saved_br;
+  } else if (state.action == TallPassAction::kResolve) {
+    g_tall_resolve_row_offset = 0;
+  }
 }
 
 void RestoreMsaaDepthDraw(RegisterFile& regs, const MsaaDepthAsSingleSample& state) {
@@ -1203,8 +1276,24 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
     if (select_or && uint32_t(select) != 0xFFFFFFFFu) {
       select |= select_or;
     }
-    bool any_pass = (select & bin_mask_) != 0;
     bool is_draw = opcode == PM4_DRAW_INDX || opcode == PM4_DRAW_INDX_2;
+    bool any_pass = (select & bin_mask_) != 0;
+    // --gpu_tall_main_pass: every main-pass draw is drawn once, at full height, in the first
+    // strip its bin mask names (masks: 3 / C / 30 = strips 1 / 2 / 3; the game's CPU side may
+    // leave an object out of the replays of strips it does not touch, so later strips can hold
+    // draws the first one never saw). Drawn in an earlier strip -> skipped here.
+    g_tall_draw_run_full = false;
+    if (is_draw && any_pass && uint32_t(select) != 0xFFFFFFFFu &&
+        GetTallPassAction(*register_file_, select) != TallPassAction::kNone) {
+      auto first_strip = [](uint64_t bits) {
+        return (bits & 0x3) ? 0 : (bits & 0xC) ? 1 : (bits & 0x30) ? 2 : 0;
+      };
+      if (first_strip(bin_mask_) == first_strip(select)) {
+        g_tall_draw_run_full = true;
+      } else {
+        any_pass = false;
+      }
+    }
     ++tiling_stats_.predicated;
     tiling_stats_.predicated_draws += is_draw;
     if (!any_pass || opcode == PM4_XE_SWAP) {
@@ -1910,11 +1999,21 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
       bool major_mode_explicit =
           xenos::IsMajorModeExplicit(vgt_draw_initiator.major_mode, vgt_draw_initiator.prim_type);
       uint64_t draw_start = rex::chrono::Clock::QueryHostTickCount();
-      MsaaDepthAsSingleSample msaa_depth_alias;
-      MaybeDrawMsaaDepthAsSingleSample(*register_file_, msaa_depth_alias);
-      draw_succeeded = IssueDraw(vgt_draw_initiator.prim_type, vgt_draw_initiator.num_indices,
-                                 is_indexed ? &index_buffer_info : nullptr, major_mode_explicit);
-      RestoreMsaaDepthDraw(*register_file_, msaa_depth_alias);
+      TallPassDraw tall_pass;
+      tall_pass.action = GetTallPassAction(*register_file_, bin_select_);
+      if (tall_pass.action == TallPassAction::kSkip) {
+        // Already drawn at full height in an earlier strip.
+        draw_succeeded = true;
+        g_tall_draw_run_full = false;
+      } else {
+        BeginTallPassDraw(*register_file_, tall_pass);
+        MsaaDepthAsSingleSample msaa_depth_alias;
+        MaybeDrawMsaaDepthAsSingleSample(*register_file_, msaa_depth_alias);
+        draw_succeeded = IssueDraw(vgt_draw_initiator.prim_type, vgt_draw_initiator.num_indices,
+                                   is_indexed ? &index_buffer_info : nullptr, major_mode_explicit);
+        RestoreMsaaDepthDraw(*register_file_, msaa_depth_alias);
+        EndTallPassDraw(*register_file_, tall_pass);
+      }
       frame_stats_.draw_ticks += rex::chrono::Clock::QueryHostTickCount() - draw_start;
       ++frame_stats_.draws;
       frame_stats_.failed_draws += draw_succeeded ? 0 : 1;
