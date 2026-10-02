@@ -151,3 +151,12 @@ pass) stay off by default and are paused.
   Missing shaders: `--nfsc_dump_ring_shaders=DIR` writes unknown microcode, `tools/nfsc_synth_containers.py`
   rebuilds containers, our translator now names interpolants by position (as the hardware links
   them) so rebuilt and real shaders link.
+- 2026-10-03 00:00: all 33 title-screen shaders identified (4 rebuilt from ring dumps), 0 draws
+  rejected, wide copies (k_16_16*, k_32*) resolved into float textures, resolved textures replaced
+  at the same address are parked instead of destroyed with a GPU wait (FH1's bloom chain reuses
+  1CAD1000 for three sizes per frame). Title video: decoded and drawn correctly (Viper at sunset,
+  seen in `--nfsc_dump_resolved_at_s` dumps, render target format 1 at EDRAM base 0), but the
+  screen shows white behind the logo: the frame composite (VS n3042 / PS n767, format 2 at the
+  same base, samples 1C4E1000, depth 1DAC5000 and the exposure chain) outputs white. Merging
+  formats 1 and 2 into one image did not help (reverted). Next: find what makes PS n767 white
+  (exposure textures 1CA95000/1CB0D000 f26, depth f23), then menus and the festival (needs Start).

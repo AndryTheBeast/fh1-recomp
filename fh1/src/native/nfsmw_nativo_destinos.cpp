@@ -676,6 +676,23 @@ inline bool FormatoColorAdmitido(uint32_t f) {
 
 // FH1: host image format of the wide render-target formats (VK_FORMAT_UNDEFINED = the usual 8-bit or HDR choice).
 // The 16-bit fixed formats (range -32..32 on the Xbox 360) are kept as half floats for now.
+// FH1: host format of a resolved texture for the wide copy-destination formats (VK_FORMAT_UNDEFINED = 8-bit).
+inline VkFormat FormatoCopiaFh1(uint32_t formato_destino) {
+  using C = xenos::ColorFormat;
+  switch (C(formato_destino)) {
+    case C::k_16_16:
+    case C::k_16_16_FLOAT: return VK_FORMAT_R16G16_SFLOAT;
+    case C::k_16_16_16_16:
+    case C::k_16_16_16_16_FLOAT: return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case C::k_32_FLOAT: return VK_FORMAT_R32_SFLOAT;
+    case C::k_32_32_FLOAT: return VK_FORMAT_R32G32_SFLOAT;
+    default: return VK_FORMAT_UNDEFINED;
+  }
+}
+inline uint32_t BytesTexelLog2Fh1(VkFormat f) {
+  return f == VK_FORMAT_R16G16B16A16_SFLOAT || f == VK_FORMAT_R32G32_SFLOAT ? 3 : 2;
+}
+
 inline VkFormat FormatoHostFh1(uint32_t f) {
   using F = xenos::ColorRenderTargetFormat;
   switch (xenos::ColorRenderTargetFormat(f)) {
@@ -899,6 +916,9 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
       Destruir(imagen);
     }
     for (auto& [clave, resuelta] : resueltas_) {
+      Destruir(resuelta.imagen);
+    }
+    for (auto& [clave, resuelta] : aparcadas_) {  // FH1
       Destruir(resuelta.imagen);
     }
     Destruir(mosaico_);
@@ -1499,7 +1519,9 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
                  formato_destino != uint32_t(xenos::ColorFormat::k_8_8_8_8_AS_16_16_16_16) &&
                  // FH1: its final image is resolved from the 2_10_10_10 render target as k_2_10_10_10 (same 32 bits per
                  // texel); stored in the 8-bit resolved texture like the other 32-bit formats for now.
-                 formato_destino != uint32_t(xenos::ColorFormat::k_2_10_10_10)) {
+                 formato_destino != uint32_t(xenos::ColorFormat::k_2_10_10_10) &&
+                 // FH1: the post-processing chain (exposure, bloom) resolves 16- and 32-bit-per-channel targets.
+                 FormatoCopiaFh1(formato_destino) == VK_FORMAT_UNDEFINED) {
         Rechazar(200 + formato_destino, "formato de copia todavia no soportado");
       } else {
         const uint32_t pitch_destino = reg.rb_copy_dest_pitch & 0x3FFF;
@@ -1507,9 +1529,12 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
         // 4 bytes per texel: base in multiples of 32 texels (GetResolveInfo).
         const uint32_t base_x = uint32_t(x0) & ~uint32_t(31);
         const uint32_t base_y = uint32_t(y0) & ~uint32_t(31);
+        // FH1: 64-bit formats have 8 bytes per texel (log2 3) for the tiled offset.
+        const VkFormat formato_copia_fh1 = FormatoCopiaFh1(formato_destino);
+        const uint32_t log2_bytes = BytesTexelLog2Fh1(formato_copia_fh1);
         const uint32_t base =
             reg.rb_copy_dest_base +
-            uint32_t(DesplazamientoMosaico2D(int32_t(base_x), int32_t(base_y), pitch_destino, 2));
+            uint32_t(DesplazamientoMosaico2D(int32_t(base_x), int32_t(base_y), pitch_destino, log2_bytes));
         dx = uint32_t(x0) - base_x;
         dy = uint32_t(y0) - base_y;
         // NFSC: Carbon renders its 64-bit HDR scene in two tiles and resolves each one to its own address, which is
@@ -1528,7 +1553,8 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
           }
         } else {
           resuelta = ObtenerResuelta(base & 0x1FFFFFFF, pitch_destino, alto_destino, formato_destino,
-                                     (info_destino >> 24) & 0x1);
+                                     (info_destino >> 24) & 0x1,
+                                     formato_copia_fh1 != VK_FORMAT_UNDEFINED ? formato_copia_fh1 : kFormatoColor);
           base_resuelta = base & 0x1FFFFFFF;
         }
         if (resuelta) {
@@ -4082,6 +4108,11 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
   }
   // NFSC: float scene targets (nfsc_hdr_float); FH1: every render target that is not 8-bit, with its format.
   std::unordered_map<VkImage, VkFormat> imagenes_hdr_;
+  // FH1: resolved textures replaced at their address by another size or format (ObtenerResuelta).
+  std::unordered_map<uint64_t, Resuelta> aparcadas_;
+  static uint64_t ClaveAparcada(uint32_t base, uint32_t ancho, uint32_t alto, VkFormat formato) {
+    return (uint64_t(base) << 32) ^ (uint64_t(ancho) << 20) ^ (uint64_t(alto) << 6) ^ uint64_t(formato) * 0x9E3779B1u;
+  }
 
   // NFSC: every image-to-image copy goes through here. A plain copy cannot convert between the float scene target and
   // the 8-bit textures, so when exactly one side is float the regions are blitted (nearest, 1 to 1) instead.
@@ -4267,6 +4298,35 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
         it->second.imagen.intercambio_rb = intercambio_rb;
         return &it->second;
       }
+      // FH1: its bloom chain resolves three sizes to the same address every frame. Instead of destroying the image
+      // (which waited for the GPU each time: 3 stalls per frame), it is parked and taken back when that size and
+      // format come again. Parked images keep their content; the address now names the other one.
+      {
+        const uint64_t clave_vieja = ClaveAparcada(base, it->second.imagen.ancho, it->second.imagen.alto,
+                                                   it->second.imagen.formato);
+        const uint64_t clave_nueva = ClaveAparcada(base, ancho, alto, formato_host);
+        auto ap = aparcadas_.find(clave_nueva);
+        if (ap != aparcadas_.end() && aparcadas_.size() < 256) {
+          aparcadas_.emplace(clave_vieja, it->second);
+          it->second = ap->second;
+          aparcadas_.erase(ap);
+          it->second.formato_guest = formato;
+          it->second.intercambio_rb = intercambio_rb;
+          it->second.imagen.intercambio_rb = intercambio_rb;
+          if (dibujos_) dibujos_->InvalidarTexturas();
+          if (!prestadas_.empty()) prestadas_.erase(base);
+          return &it->second;
+        }
+        if (aparcadas_.size() < 256) {
+          aparcadas_.emplace(clave_vieja, it->second);
+          resueltas_.erase(it);
+          if (!prestadas_.empty()) prestadas_.erase(base);
+          if (dibujos_) dibujos_->InvalidarTexturas();
+          it = resueltas_.end();
+        }
+      }
+    }
+    if (it != resueltas_.end()) {
       // Another size or format at the same address: the old image may still be in use.
       EnviarTrabajo(true);
       EsperarGpu();
@@ -4297,6 +4357,9 @@ class DestinosVulkan final : public DestinosNativos, public ContextoDestinos {
     resuelta.formato_guest = formato;
     resuelta.intercambio_rb = intercambio_rb;
     resuelta.imagen.intercambio_rb = intercambio_rb;
+    if (formato_host != kFormatoColor && !EsProfundidadFormato(formato_host)) {
+      imagenes_hdr_[resuelta.imagen.imagen] = formato_host;  // FH1: copies to it convert by format
+    }
     REXLOG_INFO("[nativo] C2: textura resuelta en {:08X}, {}x{}, formato {}", base, ancho, alto,
                 formato);
     if (dibujos_) {
