@@ -55,9 +55,10 @@ FH1 (command processing, SPIR-V shader translation, textures) and replaces the r
        alias trick now works on Vulkan too. Details: `docs/native-render-targets.md`.
 2. [~] **Draw the main scene once** instead of 3 strips (~2,000 fewer draws per frame, ~-40% CPU on
        the GPU thread) - possible once render targets are not limited to the 10 MB EDRAM.
-       Prototype `--gpu_tall_main_pass` (off by default): one seamless full-height pass, GPU
-       thread draw time 15.0 -> 9.4 ms, but objects the game culls per strip are missing. Next:
-       the game's own single-strip setting (old `--fh1_single_tile` hook) + per-row copy-outs.
+       Prototype (off by default): `--fh1_single_tile --gpu_tall_main_pass --gpu_tall_single_strip`
+       + the transfer settings: the game draws one strip, one seamless full-height pass, draws
+       3,700 -> 2,230 per frame, GPU thread draw time 15.0 -> 9.4 ms. Open: the festival's big
+       structures (dome, stages) are missing - next is a RenderDoc comparison.
 3. [ ] Readbacks only where the CPU needs them; compare every change against D3D12 screenshots.
 4. [ ] Per-draw cost of the GPU command thread (driver ~30%, emulation bookkeeping the rest).
 

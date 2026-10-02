@@ -108,35 +108,35 @@ command lists once per strip (walker sub_829F5FF0) and leaves out objects outsid
 view, so an object visible only in strip 2 appears only in strip 2's commands, often with the
 all-strips mask FFFFFFFF - the GPU side cannot tell it from a duplicate.
 
-### Next step (planned)
+### Single strip from the game (done 2026-10-02 ~06:10)
 
-Let the game cull once for the whole frame: the old `--fh1_single_tile` hook (git c44b37b,
-fh1/src/fh1_trace_load.cpp: the 248-byte tiling block copied by sub_82A7D730 from 829F60DC,
-+4 strip count, +8 strip rectangles) set to one strip of 1280x720. Then:
+`--fh1_single_tile=true --gpu_tall_single_strip=true` (with `--gpu_tall_main_pass=true` and the
+two transfer settings; all off by default). The old hook (git c44b37b) is back in
+fh1/src/fh1_trace_load.cpp: the game is told there is one strip of 1280x720, so it emits the
+main pass once (bin select 80000003 only, 2,231 draws, all run). Then:
 
-1. the single pass draws at full height into the tall targets (as now);
-2. the game still issues the 3 copy-outs (rows 0-256, 256-512, 512-720, window offset 0, all to
-   the first strip's destination - the destination rows follow the source rows, so they land
-   correctly). Rows 256+ map to EDRAM tiles 1024+ that the depth target owns, so each copy-out
-   must be turned into "EDRAM rows 0..h with `g_tall_resolve_row_offset` = y0" before the
-   ownership lookup (in draw_util::GetResolveInfo, with the destination offset kept);
-3. the clears likewise.
+- every main-pass draw runs in that one pass (select |= 3C), at full height;
+- the copy-outs keep their rows: colour comes as 3 copy-outs (rows 0-256, 256-512, 512-720, all
+  to the first destination - the destination follows the rows), depth as ONE copy-out of rows
+  0-720, more than the EDRAM holds. Each copy-out is now issued in 256-row pieces (scissor), and
+  draw_util::GetResolveInfo turns rows below 0 into `g_tall_resolve_row_offset` (source rows of
+  the tall target) while the destination keeps its row. Without the split, depth below row 512
+  was garbage and the motion blur smeared the bottom of the picture.
 
-That gives the full saving (~40% of the GPU thread's draw time) with the game's own culling.
+| mode | draws per frame | GPU thread in draws | picture |
+| --- | --- | --- | --- |
+| normal Vulkan | ~3,700 | 15.0 ms | correct |
+| single strip + tall pass | ~2,230 | 9.4 ms | clean, seamless; festival structures missing |
 
-## Plan for the native render-target cache (Vulkan)
+**Open problem**: the dome, stage towers, speaker stacks, garage arch and far tents are missing
+in every tall variant (3 strips or 1), but present with the transfer settings alone. So it is
+not per-strip culling. Leaving the transfers on with the tall pass breaks the whole picture
+(transfers between the overlapping tall targets), so that does not help to find it.
+Next: RenderDoc captures of `--gpu_skip_all_transfers ... ` (correct) and of the single-strip
+tall pass at the same moment (tools/rdc_find.py / rdc_inputs.py), find the dome's draw in the
+correct one and see what happens to it in the tall one (not issued? depth/stencil test? drawn
+into another target?). Candidates: the 80000000-mask draws, a pass with all-ones bin select that
+uses the main targets, or depth/stencil state the strips' clears provided.
 
-1. **A cvar to pick it**: `render_target_path_vulkan=native` (default stays the current path until
-   the native one matches the D3D12 screenshots).
-2. **Images keyed by what the game draws, not by EDRAM**: one image per (base, pitch, MSAA,
-   format) as today, but sized by what is drawn (up to 8192), not by the EDRAM period. Keep the
-   one alias FH1 needs: 4x at pitch P and 1x at pitch 2P at the same base are the same image
-   (already done for depth-only passes by `gpu_msaa_depth_as_1x`).
-3. **No ownership transfers** except the kinds listed under "Needed transfers", done as direct
-   image-to-image draws (they already exist as transfer shaders; only the decision changes).
-4. **Resolves straight from the image**: today a resolve first dumps the render target into the
-   EDRAM buffer, then a compute shader writes the guest texture. The native path reads the image
-   in the resolve shader directly (saves the dump pass per resolve).
-5. **Draw once** (roadmap step 2): with images taller than 512 rows, run the strip replays as one
-   pass (see above). Resolves keep their per-strip destinations.
-6. Check every step against D3D12 screenshots (festival start, a race) and the `[fps]` lines.
+Test shots: build_logs/test-tC3-* (3 strips, tall), test-tS3-* (single strip, tall),
+test-tB-* (transfers only, correct).

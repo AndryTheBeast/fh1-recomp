@@ -125,6 +125,10 @@ REXCVAR_DEFINE_BOOL(gpu_tall_main_pass, false, "GPU",
                     "the first strip's draws get the whole frame's scissor, the other strips' draws "
                     "are skipped, and each strip's resolve and clear read its own rows of the tall "
                     "target. Use with gpu_skip_all_transfers");
+REXCVAR_DEFINE_BOOL(gpu_tall_single_strip, false, "GPU",
+                    "gpu_tall_main_pass with the game emitting one strip (FH1: fh1_single_tile): "
+                    "run every main-pass draw, and serve the copy-outs of the other strips' rows "
+                    "(they keep their row position) from the tall render targets");
 REXCVAR_DEFINE_INT32(gpu_tall_pass_width, 1280, "GPU",
                      "gpu_tall_main_pass: surface pitch (pixels) of the tiled pass at 4x MSAA");
 REXCVAR_DEFINE_INT32(gpu_tall_pass_height, 720, "GPU",
@@ -203,6 +207,9 @@ bool g_draw_scale_multiplier_supported = false;
 // --gpu_tall_main_pass: while a strip's resolve is issued, the first row of that strip in the tall
 // render targets (read by the render target cache's resolve dump and clear). 0 otherwise.
 uint32_t g_tall_resolve_row_offset = 0;
+// --gpu_tall_single_strip: while a copy-out is issued, its rows below 0 are tall-target rows
+// (GetResolveInfo turns them into g_tall_resolve_row_offset).
+bool g_tall_resolve_rows_in_rect = false;
 namespace {
 struct MsaaDepthAsSingleSample {
   bool active = false;
@@ -305,6 +312,20 @@ void BeginTallPassDraw(RegisterFile& regs, TallPassDraw& state) {
     // The strip's rows in the tall target: minus its window offset.
     int32_t offset_y = regs.Get<reg::PA_SC_WINDOW_OFFSET>().window_y_offset;
     g_tall_resolve_row_offset = offset_y < 0 ? uint32_t(-offset_y) : 0;
+    if (REXCVAR_GET(gpu_tall_single_strip)) {
+      // One strip: the copy-outs keep their rows (y0 = 0 / 256 / 512) but the recorded scissor
+      // covers the first strip only. draw_util::GetResolveInfo moves rows below 0 to the tall
+      // target's row offset (g_tall_resolve_rows_in_rect).
+      state.saved_tl = regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL];
+      state.saved_br = regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR];
+      auto tl = regs.Get<reg::PA_SC_WINDOW_SCISSOR_TL>();
+      tl.tl_y = 0;
+      regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL] = tl.value;
+      auto br = regs.Get<reg::PA_SC_WINDOW_SCISSOR_BR>();
+      br.br_y = std::max<uint32_t>(br.br_y, uint32_t(REXCVAR_GET(gpu_tall_pass_height)));
+      regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] = br.value;
+      g_tall_resolve_rows_in_rect = true;
+    }
   }
 }
 
@@ -316,6 +337,11 @@ void EndTallPassDraw(RegisterFile& regs, const TallPassDraw& state) {
     regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] = state.saved_br;
   } else if (state.action == TallPassAction::kResolve) {
     g_tall_resolve_row_offset = 0;
+    if (g_tall_resolve_rows_in_rect) {
+      g_tall_resolve_rows_in_rect = false;
+      regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL] = state.saved_tl;
+      regs.values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] = state.saved_br;
+    }
   }
 }
 
@@ -1277,6 +1303,11 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
       select |= select_or;
     }
     bool is_draw = opcode == PM4_DRAW_INDX || opcode == PM4_DRAW_INDX_2;
+    if (is_draw && REXCVAR_GET(gpu_tall_single_strip) && (select & 0x3) &&
+        uint32_t(select) != 0xFFFFFFFFu &&
+        GetTallPassAction(*register_file_, select) != TallPassAction::kNone) {
+      select |= 0x3C;  // one strip: objects of every strip are drawn in it
+    }
     bool any_pass = (select & bin_mask_) != 0;
     // --gpu_tall_main_pass: every main-pass draw is drawn once, at full height, in the first
     // strip its bin mask names (masks: 3 / C / 30 = strips 1 / 2 / 3; the game's CPU side may
@@ -1288,7 +1319,7 @@ bool CommandProcessor::ExecutePacketType3(memory::RingBuffer* reader, uint32_t p
       auto first_strip = [](uint64_t bits) {
         return (bits & 0x3) ? 0 : (bits & 0xC) ? 1 : (bits & 0x30) ? 2 : 0;
       };
-      if (first_strip(bin_mask_) == first_strip(select)) {
+      if (REXCVAR_GET(gpu_tall_single_strip) || first_strip(bin_mask_) == first_strip(select)) {
         g_tall_draw_run_full = true;
       } else {
         any_pass = false;
@@ -2007,11 +2038,33 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
         g_tall_draw_run_full = false;
       } else {
         BeginTallPassDraw(*register_file_, tall_pass);
-        MsaaDepthAsSingleSample msaa_depth_alias;
-        MaybeDrawMsaaDepthAsSingleSample(*register_file_, msaa_depth_alias);
-        draw_succeeded = IssueDraw(vgt_draw_initiator.prim_type, vgt_draw_initiator.num_indices,
-                                   is_indexed ? &index_buffer_info : nullptr, major_mode_explicit);
-        RestoreMsaaDepthDraw(*register_file_, msaa_depth_alias);
+        if (tall_pass.action == TallPassAction::kResolve && g_tall_resolve_rows_in_rect) {
+          // One strip: a copy-out may cover the whole height (FH1's depth: rows 0-720), more than
+          // the EDRAM holds. Issue it in pieces of 256 rows (clipped by the scissor), each read
+          // from its rows of the tall render targets; pieces outside the rectangle are empty.
+          auto br = register_file_->Get<reg::PA_SC_WINDOW_SCISSOR_BR>();
+          auto tl = register_file_->Get<reg::PA_SC_WINDOW_SCISSOR_TL>();
+          uint32_t height = br.br_y;
+          draw_succeeded = false;
+          for (uint32_t y = 0; y < height; y += 256) {
+            tl.tl_y = y;
+            br.br_y = std::min(y + 256, height);
+            register_file_->values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_TL] = tl.value;
+            register_file_->values[XE_GPU_REG_PA_SC_WINDOW_SCISSOR_BR] = br.value;
+            g_tall_resolve_row_offset = 0;
+            draw_succeeded |=
+                IssueDraw(vgt_draw_initiator.prim_type, vgt_draw_initiator.num_indices,
+                          is_indexed ? &index_buffer_info : nullptr, major_mode_explicit);
+          }
+          draw_succeeded = true;  // the empty pieces are expected
+        } else {
+          MsaaDepthAsSingleSample msaa_depth_alias;
+          MaybeDrawMsaaDepthAsSingleSample(*register_file_, msaa_depth_alias);
+          draw_succeeded = IssueDraw(vgt_draw_initiator.prim_type, vgt_draw_initiator.num_indices,
+                                     is_indexed ? &index_buffer_info : nullptr,
+                                     major_mode_explicit);
+          RestoreMsaaDepthDraw(*register_file_, msaa_depth_alias);
+        }
         EndTallPassDraw(*register_file_, tall_pass);
       }
       frame_stats_.draw_ticks += rex::chrono::Clock::QueryHostTickCount() - draw_start;

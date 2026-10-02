@@ -76,6 +76,43 @@ REX_HOOK_RAW(sub_829F55A8) {
   __imp__sub_829F55A8(ctx, base);
 }
 
+// Native renderer (Vulkan, --gpu_tall_main_pass): let the game draw each frame as one strip
+// instead of FH1's 3 (predicated tiling), so it also culls its objects once for the whole frame.
+// The game's D3D replays the frame's commands once per strip; the strip setup is a 248-byte block
+// the command-list walker sub_829F5FF0 copies into device+116 with memcpy (sub_82A7D730, called
+// from 829F60D8): +4 = strip count, +8.. = strip rectangles (x1, y1, x2, y2), 16 bytes each.
+// Needs render targets taller than the EDRAM: use with --gpu_tall_main_pass and
+// --gpu_tall_single_strip (the game still issues the 3 strips' copy-outs, at their own rows).
+REXCVAR_DEFINE_BOOL(fh1_single_tile, false, "FH1",
+                    "Experiment: draw the frame as one strip (with gpu_tall_main_pass, "
+                    "gpu_tall_single_strip and gpu_skip_all_transfers, Vulkan)");
+
+REX_EXTERN(__imp__sub_82A7D730);
+REX_HOOK_RAW(sub_82A7D730) {
+  bool tiling_block = uint32_t(ctx.lr) == 0x829F60DC && ctx.r5.u32 == 248;
+  uint32_t dest = ctx.r3.u32;
+  __imp__sub_82A7D730(ctx, base);
+  if (tiling_block && REXCVAR_GET(fh1_single_tile)) {
+    uint32_t count = Be32(base, dest + 4);
+    if (count > 1) {
+      // Last strip's bottom-right corner = the whole target.
+      uint32_t last = dest + 8 + (count - 1) * 16;
+      uint32_t x2 = Be32(base, last + 8), y2 = Be32(base, last + 12);
+      auto put = [&](uint32_t address, uint32_t value) {
+        uint32_t be = __builtin_bswap32(value);
+        std::memcpy(base + address, &be, 4);
+      };
+      put(dest + 4, 1);
+      put(dest + 16, x2);
+      put(dest + 20, y2);
+      static std::atomic<uint32_t> logged{0};
+      if (logged.fetch_add(1) < 5) {
+        REXLOG_INFO("[tiling] single tile: {} strips -> 1 of {}x{}", count, x2, y2);
+      }
+    }
+  }
+}
+
 REXCVAR_DEFINE_STRING(fh1_find_string, "", "FH1",
                       "Debug: log the guest addresses of this text in default.xex's image "
                       "(searched once, when the game first reaches sub_82D3DB00)");

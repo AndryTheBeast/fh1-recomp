@@ -43,6 +43,8 @@ REXCVAR_DEFINE_BOOL(resolve_resolution_scale_fill_half_pixel_offset, true, "GPU"
 
 namespace rex::graphics {
 bool RtLogActive();  // pipeline/render_target/cache.cpp (--gpu_log_rt_frame)
+extern uint32_t g_tall_resolve_row_offset;   // graphics/command_processor.cpp
+extern bool g_tall_resolve_rows_in_rect;     // graphics/command_processor.cpp
 }  // namespace rex::graphics
 
 namespace rex::graphics::draw_util {
@@ -1034,7 +1036,14 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
   uint32_t sample_count_log2_x = uint32_t(rb_surface_info.msaa_samples >= xenos::MsaaSamples::k4X);
   uint32_t sample_count_log2_y = uint32_t(rb_surface_info.msaa_samples >= xenos::MsaaSamples::k2X);
   uint32_t x0_samples = uint32_t(x0) << sample_count_log2_x;
-  uint32_t y0_samples = uint32_t(y0) << sample_count_log2_y;
+  // --gpu_tall_single_strip: a copy-out of rows y0.. of the single full-height strip reads EDRAM
+  // rows 0.. of the tall render target shifted by y0 (the destination above keeps row y0).
+  int32_t edram_y0 = y0;
+  if (g_tall_resolve_rows_in_rect && y0 > 0) {
+    g_tall_resolve_row_offset = uint32_t(y0);
+    edram_y0 = 0;
+  }
+  uint32_t y0_samples = uint32_t(edram_y0) << sample_count_log2_y;
   uint32_t base_offset_x_tiles = x0_samples / xenos::kEdramTileWidthSamples;
   uint32_t base_offset_y_tiles = y0_samples / xenos::kEdramTileHeightSamples;
   info_out.coordinate_info.edram_offset_x_div_8 =

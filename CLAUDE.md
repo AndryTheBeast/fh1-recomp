@@ -205,6 +205,6 @@ lists the actions and saves the render targets as PNG.
 ## Next steps
 
 See ROADMAP.md (Stage 3, native renderer) and docs/native-render-targets.md: the festival needs
-only one EDRAM transfer kind; the tall main pass prototype (--gpu_tall_main_pass) draws the
-scene once but misses objects the game culls per strip - next is the game's own single-strip
-setting (old --fh1_single_tile hook) with per-row copy-outs.
+only one EDRAM transfer kind; the single-strip tall pass prototype (--fh1_single_tile
+--gpu_tall_main_pass --gpu_tall_single_strip) draws the scene once (GPU thread 15.0 -> 9.4 ms)
+but the festival's big structures are missing - next is a RenderDoc comparison.
