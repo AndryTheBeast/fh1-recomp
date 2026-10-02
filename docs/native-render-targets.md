@@ -140,3 +140,20 @@ uses the main targets, or depth/stencil state the strips' clears provided.
 
 Test shots: build_logs/test-tC3-* (3 strips, tall), test-tS3-* (single strip, tall),
 test-tB-* (transfers only, correct).
+
+## User driving tests (2026-10-02 morning)
+
+The parked-festival bisection was not enough: while driving, 15 more transfer kinds appear
+(`--gpu_log_transfer_kinds`, run-20261002-084045-kinds-drive.log), and skipping them turns the
+picture teal/glowing (fog/light passes reading the wrong data). With these 16 kept the user's
+drive (festival -> road, ~100 mph) looked normal:
+
+    c0.720.16.4>c0.720.16.1,c0.0.1.1>d1.0.16.1,c0.0.16.1>c3.0.32.4,c0.0.16.1>c3.0.4.2,c0.0.16.1>d1.128.4.2,c2.0.16.1>d1.0.16.1,c3.0.16.1>d1.0.16.1,d0.720.13.1>d1.0.16.1,d0.720.16.4>c0.720.16.1,d0.720.16.4>d1.0.16.1,d0.720.16.4>d1.0.16.4,d1.0.16.1>c0.0.16.1,d1.0.16.1>c0.720.16.4,d1.0.16.1>d0.720.16.4,d1.4.1.1>d1.0.16.1,d1.720.16.1>d1.0.16.1
+
+(list also in build_logs/keep-driving.txt). Races, garage and menus not checked yet.
+
+Single-strip tall pass + these 16 (run-20261002-084534-tall-keep16.log): parked picture clean,
+but after ~10 s of driving the motion blur smears the screen (blocky trails, dark car), and the
+festival structures are still missing. Both are bugs of the tall pass itself, not of the skipped
+copies. Next: RenderDoc captures while driving, normal vs tall pass, and compare the motion blur
+inputs (depth / velocity / previous-frame textures) and the dome's draws.
