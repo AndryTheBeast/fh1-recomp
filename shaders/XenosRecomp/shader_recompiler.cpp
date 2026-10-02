@@ -132,6 +132,11 @@ static constexpr std::pair<DeclUsage, size_t> INTERPOLATORS[] =
     , { DeclUsage::Color, 3 }
     , { DeclUsage::Color, 4 }
     , { DeclUsage::Color, 5 }
+    // FH1: the track shaders also pass normals, tangents and binormals between the stages.
+    , { DeclUsage::Normal, 0 }
+    , { DeclUsage::Tangent, 0 }
+    , { DeclUsage::Binormal, 0 }
+    , { DeclUsage::Position, 1 }
 #endif
 };
 
@@ -406,7 +411,14 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
         out += "Bicubic";
 #endif
 
+#ifdef NFSMW_RECOMP
+    // FH1: 1D textures are sampled as one-row 2D textures (tfetch1D in shader_common.h): there is no
+    // 1D descriptor heap, so they use the slot's 2D descriptor.
+    print("({0}_Texture{1}DescriptorIndex, {0}_SamplerDescriptorIndex, ", constNamePtr,
+          instr.dimension == TextureDimension::Texture1D ? std::string_view("2D") : dimension);
+#else
     print("({0}_Texture{1}DescriptorIndex, {0}_SamplerDescriptorIndex, ", constNamePtr, dimension);
+#endif
     printSrcRegister(componentCount);
 
     switch (instr.dimension)
@@ -1260,7 +1272,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
             if (constantInfo->registerCount > 1)
             {
-                uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
+                uint32_t tailCount = (isPixelShader ? 256 : 256) - constantInfo->registerIndex;
 
                 // NFSMW: dynamic UBO or pointer, depending on SPEC_CONSTANT_CONSTANTES_UBO.
                 println("#define {}(INDEX) select((INDEX) < {}, (NFSMW_UBO ? g_Ubo{}.v[{} + min(INDEX, {})] : vk::RawBufferLoad<float4>(g_PushConstants.{}ShaderConstants + ({} + min(INDEX, {})) * 16, 0x10)), 0.0)",
@@ -1328,7 +1340,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
             if (constantInfo->registerCount > 1)
             {
-                uint32_t tailCount = (isPixelShader ? 224 : 256) - constantInfo->registerIndex;
+                uint32_t tailCount = (isPixelShader ? 256 : 256) - constantInfo->registerIndex;
                 println("#define {0}(INDEX) select((INDEX) < {1}, {0}[min(INDEX, {2})], 0.0)", constantName, tailCount, tailCount - 1);
             }
         }
@@ -1396,6 +1408,22 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
     out += "#endif\n";
 
+#ifdef NFSMW_RECOMP
+    // FH1: the engine's own shaders (inside default.xex) have constant tables without sampler names;
+    // their fetches use s<slot>. Same descriptor and 1/size locations as named samplers.
+    for (uint32_t slot = 0; slot < 16; ++slot)
+    {
+        if (samplers.count(slot))
+            continue;
+        for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+            println("#define s{}_Texture{}DescriptorIndex (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+                slot, TEXTURE_DIMENSIONS[j], j * 64 + slot * 4, j * 64 + slot * 4);
+        println("#define s{}_SamplerDescriptorIndex (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+            slot, std::size(TEXTURE_DIMENSIONS) * 64 + slot * 4, std::size(TEXTURE_DIMENSIONS) * 64 + slot * 4);
+        println("#define s{}_InvTamano (NFSMW_UBO ? float2(NFSMW_COMPARTIDA_FLOAT({}), NFSMW_COMPARTIDA_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
+            slot, 360 + slot * 8, 364 + slot * 8, 360 + slot * 8);
+    }
+#endif
     out += "void main(\n";
 
     if (isPixelShader)
@@ -1445,6 +1473,19 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 usageType = "uint4";
             }
         #endif
+
+#ifdef NFSMW_RECOMP
+            // FH1: a declaration can list the same usage for several fetch instructions (engine
+            // shaders): they all read one input, declared once.
+            {
+                uint32_t usageKey = uint32_t(vertexElement.usage) << 4 | uint32_t(vertexElement.usageIndex);
+                if (!declaredUsages.insert(usageKey).second)
+                {
+                    vertexElements.emplace(uint32_t(vertexElement.address), vertexElement);
+                    continue;
+                }
+            }
+#endif
 
             out += '\t';
 

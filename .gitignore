@@ -46,3 +46,5 @@ fh1/out/
 *.god
 shaders/fh1_hlsl.exe
 shaders/fh1_empaquetar.exe
+shaders/fh1_lzx_decode.exe
+shaders/lzxd.o

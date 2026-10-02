@@ -87,7 +87,8 @@ struct PushConstants
 // -fvk-use-dx-layout each float4 takes 16 contiguous bytes, so any 4-byte word of the shared block is
 // a component: v[B / 16][(B % 16) / 4], and asuint reads it without changing a bit.
 struct NfsmwBloqueVs { float4 v[256]; };
-struct NfsmwBloquePs { float4 v[224]; };
+// FH1: pixel shaders use all 256 constants (NFS: 224).
+struct NfsmwBloquePs { float4 v[256]; };
 struct NfsmwBloqueCompartidas { float4 v[33]; };
 [[vk::binding(0, 4)]] ConstantBuffer<NfsmwBloqueVs> g_UboVertex;
 [[vk::binding(1, 4)]] ConstantBuffer<NfsmwBloquePs> g_UboPixel;
@@ -261,6 +262,16 @@ float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, f
     return select(isnan(texCoord), 0.0, frac(texCoord * getTexture2DDimensions(texture) + offset - 0.5));
 }
 
+// FH1: the translator passes 1/size of the slot's image (<sampler>_InvTamano, filled by the renderer);
+// when it is not filled (0), the size is queried as above.
+float2 getWeights2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset,
+                    float2 invSize)
+{
+    if (invSize.x <= 0.0 || invSize.y <= 0.0)
+        return getWeights2D(resourceDescriptorIndex, samplerDescriptorIndex, texCoord, offset);
+    return select(isnan(texCoord), 0.0, frac(texCoord / invSize + offset - 0.5));
+}
+
 float w0(float a)
 {
     return (1.0f / 6.0f) * (a * (a * (-a + 3.0f) - 3.0f) + 1.0f);
@@ -358,6 +369,13 @@ float4 tfetch2DBicubic(uint resourceDescriptorIndex, uint samplerDescriptorIndex
             g1x * FH1_SAMPLE(texture, samplerState, float2(px + h1x, py + h1y) / float2(dimensions)));
 
     return r;
+}
+
+// FH1: 1D textures, stored by the renderer as one-row 2D images.
+float4 tfetch1D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float texCoord)
+{
+    return FH1_SAMPLE(g_Texture2DDescriptorHeap[resourceDescriptorIndex], g_SamplerDescriptorHeap[samplerDescriptorIndex],
+                      float2(texCoord, 0.5));
 }
 
 float4 tfetch3D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord)

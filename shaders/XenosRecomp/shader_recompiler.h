@@ -37,6 +37,8 @@ struct ShaderRecompiler : StringBuffer
     // Vertex inputs whose usage has no fixed location (USAGE_LOCATIONS): the next free one, from 16.
     uint32_t nextFreeLocation = 16;
     std::string freeLocationNotes;
+    // Vertex input usages already declared (usage << 4 | index).
+    std::set<uint32_t> declaredUsages;
     // The last full vertex fetch: mini fetches reuse its constant, index and stride.
     bool haveFullFetch = false;
     uint32_t fullFetchConst = 0, fullFetchSrc = 0, fullFetchSwizzle = 0, fullFetchStride = 0;

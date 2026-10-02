@@ -1,13 +1,12 @@
 """Cuts FH1's shader containers (2008 XDK layout: 102A1100 pixel, 102A1101 vertex) out of the
 game's .fxobj files, for the native renderer's shader library (docs/native-renderer-fh1.md, N0).
 
-    python tools/fh1_extract_shaders.py GAME_ROOT OUT_DIR [--merge DUMP_DIR ...]
+    python tools/fh1_extract_shaders.py GAME_ROOT OUT_DIR [--also DIR ...] [--merge DUMP_DIR ...]
 
 Writes OUT_DIR/p_<hash>.bin and v_<hash>.bin (one container each, duplicates dropped; the input
 format of shaders/nfsmw_hlsl.cpp) and OUT_DIR/index.txt (container -> source file and offset).
-Only loose files are read from the disc; the tracks' bin.zip archives use zip method 21 (not read
-offline yet). Their containers come from a running game: --fh1_dump_shaders=SECONDS writes what is
-in guest memory (fh1/src/fh1_shader_dump.cpp), and --merge DUMP_DIR adds those files here.
+--also DIR scans more .fxobj files (the tracks' archives unpacked by tools/fh1_unpack_archives.py).
+--merge DUMP_DIR adds containers dumped from guest memory (--fh1_dump_shaders; may be damaged).
 """
 import hashlib
 import os
@@ -16,6 +15,7 @@ import sys
 
 game_root, out_dir = sys.argv[1], sys.argv[2]
 merge_dirs = [sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == '--merge' and i + 1 < len(sys.argv)]
+also_dirs = [sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == '--also' and i + 1 < len(sys.argv)]
 os.makedirs(out_dir, exist_ok=True)
 SIGS = {b'\x10\x2a\x11\x00': 'p', b'\x10\x2a\x11\x01': 'v'}
 
@@ -49,11 +49,12 @@ def scan(name, data):
             o = data.find(sig, o + 1)
 
 
-for dp, _, files in os.walk(game_root):
-    for f in files:
-        if f.lower().endswith('.fxobj'):
-            path = os.path.join(dp, f)
-            scan(os.path.relpath(path, game_root), open(path, 'rb').read())
+for root in [game_root] + also_dirs:
+    for dp, _, files in os.walk(root):
+        for f in files:
+            if f.lower().endswith('.fxobj'):
+                path = os.path.join(dp, f)
+                scan(os.path.relpath(path, root), open(path, 'rb').read())
 
 for d in merge_dirs:
     for f in sorted(os.listdir(d)):

@@ -19,4 +19,11 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # Library packer: shaders/fh1_empaquetar.exe CONTAINERS SPIRV OUT.nfsp
 & clang++ -std=c++23 -O2 "-I$Repo\sdk\thirdparty\xxHash" -D_CRT_SECURE_NO_WARNINGS -DNOMINMAX `
   "$S\fh1_empaquetar.cpp" "$Repo\fh1\src\fh1_shader_library.cpp" -o "$S\fh1_empaquetar.exe"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# Zip method 21 decoder (XMemCompress LZX) for the tracks' archives: libmspack's lzxd.c.
+$M = "$Repo\sdk\thirdparty\libmspack\libmspack\mspack"
+& clang -c -O2 -D_CRT_SECURE_NO_WARNINGS "-I$M" "$M\lzxd.c" -o "$S\lzxd.o"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& clang++ -std=c++20 -O2 -D_CRT_SECURE_NO_WARNINGS "-I$M" "$Repo\tools\fh1_lzx_decode.cpp" "$S\lzxd.o" `
+  -o "$S\fh1_lzx_decode.exe"
 exit $LASTEXITCODE

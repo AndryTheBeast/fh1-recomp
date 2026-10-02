@@ -87,3 +87,20 @@ pass) stay off by default and are paused.
   is not usable yet. Next: find how the game decodes method 21 (its zip reader in the recompiled
   code) and decode the archives offline. Translation is now one process per container
   (`tools/fh1_translate_shaders.py`) and the packer leaves out containers without SPIR-V.
+- 2026-10-02 **N0 complete enough to move on: 3,816 of 3,849 shaders (99%)** in fh1_shaders.nfsp
+  (106 MB), from three sources:
+  1. loose `media/shaders/**/*.fxobj` (2,918);
+  2. the tracks' `bin.zip` archives (+453): FH1's zips have **no local file headers** (an entry's
+     data starts at its central-directory offset) and method 21 is **XMemCompress LZX, 128 KB
+     window**, framed as `FF <u16 BE uncompressed> <u16 BE block>` (or `<u16 BE block>` for full
+     32 KB frames). `tools/fh1_unpack_archives.py` + `shaders/fh1_lzx_decode.exe` (libmspack lzxd)
+     unpack them, CRC-checked (187/187 files). This also opens every other FH1 archive (textures,
+     models) for later tools;
+  3. default.xex (+478 engine shaders: post-processing, UI): it is encrypted and compressed on disc,
+     so the build scans the loaded image from a game run with `--fh1_dump_image=build_logs/fh1_image.bin`
+     (`build_shader_library.ps1 -Image`, that path by default).
+  More translator fixes: NORMAL/TANGENT/BINORMAL/POSITION1 interpolators, pixel shader constants up
+  to c255 (NFS: c223), `getWeights2D` with 1/size, 1D textures as one-row 2D (`tfetch1D`), generic
+  `s0`-`s15` sampler names for engine shaders without names, repeated vertex usages declared once.
+  Left: 13 shaders use integer loop constants missing from their tables (`i0`, `i16`), 20 crash the
+  translator (exit 0xC0000409) - all engine shaders from the image; to look at when one is needed.
