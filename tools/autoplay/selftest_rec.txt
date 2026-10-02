@@ -1,8 +1,0 @@
-include common.txt
-do boot_to_festival
-log GO
-do drive_weave
-hold rt,lx=0.3 3
-hold a 3
-shot after
-quit

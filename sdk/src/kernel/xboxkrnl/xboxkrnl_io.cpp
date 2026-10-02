@@ -19,7 +19,6 @@
 #include <rex/filesystem/device.h>
 #include <rex/filesystem/devices/host_path_device.h>
 #include <rex/filesystem/devices/host_path_file.h>
-#include <rex/kernel/file_events.h>
 #include <rex/kernel/xboxkrnl/private.h>
 #include <rex/logging.h>
 #include <rex/memory.h>
@@ -56,26 +55,6 @@ REXCVAR_DEFINE_INT32(nfsmw_io_aviso_ms, 8, "Filesystem",
                      "Avisa en el log de cada apertura o lectura que pase de estos ms (0 = nunca).");
 REXCVAR_DEFINE_INT32(nfsmw_io_resumen_s, 15, "Filesystem",
                      "Cada cuantos segundos se escribe el resumen [io] (0 = nunca).");
-
-namespace rex::kernel {
-namespace {
-std::mutex g_file_open_observer_mutex;
-FileOpenObserver g_file_open_observer;
-std::atomic<bool> g_file_open_observer_set{false};
-}  // namespace
-
-void SetFileOpenObserver(FileOpenObserver observer) {
-  std::lock_guard<std::mutex> lock(g_file_open_observer_mutex);
-  g_file_open_observer = std::move(observer);
-  g_file_open_observer_set = bool(g_file_open_observer);
-}
-
-void NotifyFileOpened(std::string_view guest_path) {
-  if (!g_file_open_observer_set.load(std::memory_order_relaxed)) return;
-  std::lock_guard<std::mutex> lock(g_file_open_observer_mutex);
-  if (g_file_open_observer) g_file_open_observer(guest_path);
-}
-}  // namespace rex::kernel
 
 namespace rex::kernel::xboxkrnl {
 using namespace rex::system;
@@ -571,7 +550,6 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
 
     // Handle ref is incremented, so return that.
     handle = file->handle();
-    rex::kernel::NotifyFileOpened(target_path);
 
     // NFSMW: records the .wmv movies (see NfsmwUltimoWmvAbierto).
     if (target_path.size() > 4) {

@@ -1,93 +1,52 @@
 # Roadmap
 
 Forza Horizon (Xbox 360) → PC by static recompilation (ReXGlue), then the Nintendo Switch in a
-separate repository. Details, addresses and dead ends of everything below: `docs/roadmap-history.md`.
+separate repository. Detailed history, addresses and dead ends: `docs/roadmap-history.md`.
 Where the frame time goes: `docs/performance-review.md`.
 
 ## Where we are (2026-10-02)
 
-**Playable on PC from start to finish of a session**: boot, festival, free roam, races, garage,
-buying cars, paint shop, saving. Tested on a Lenovo Legion Go (Ryzen Z1 Extreme): **30 fps** (the
-game's own cap) in normal play, 26-28 in the busiest spots. Two graphics paths, both correct:
+**Playable on PC**: boot, festival, free roam, races, garage, buying and repainting cars (photos
+correct), saving. Lenovo Legion Go (Ryzen Z1 Extreme): **30 fps** (the game's own cap) in normal
+play, 26-28 in the busiest spots.
 
-| path | how to run | state |
+| graphics path | how to run | state |
 | --- | --- | --- |
-| D3D12 (default) | `run_fh1.bat` | correct picture, 30 fps; F3 frame monitor |
-| Vulkan | `run_fh1.bat --gpu_backend=vulkan` | correct picture since 2026-10-01; 28-30 fps, short hitches while shaders are first prepared |
+| D3D12 (default) | `run_fh1.bat` | correct, 30 fps; F3 frame monitor |
+| Vulkan | `run_fh1.bat --gpu_backend=vulkan` | correct, 28-30 fps; short hitches while shaders are first prepared |
 
 Known small issues: a soft rectangle under the car (probably the motion-blur mask, same on both
-paths - compare with console footage); ~6 tessellated draws per frame fail harmlessly.
+paths); ~6 tessellated draws per frame fail harmlessly.
 
 ## Done
 
-**Stage 1 — Translate the game.** `default.xex` + XMediaFacade/SpeechFacade translated; code gaps,
-jump tables, tail calls and fibers declared (`fh1/overrides.toml`, gap tools in `tools/`).
+- **Translation (Stage 1)**: `default.xex` + XMediaFacade/SpeechFacade; code gaps, jump tables, tail
+  calls and fibers declared (`fh1/overrides.toml`, gap tools in `tools/`).
+- **Running on Windows with the emulated Xbox 360 GPU (Stage 2)**: crashes fixed (intro video,
+  save loading, events, paint shop); cars no longer pass through each other (vmsum3fp128); garage
+  bloom and car photos (CPU readback of resolves, with the readback default finally applied);
+  controller merging.
+- **Emulation speed**: bulk register writes; shadow buffers drawn into their 1x alias; clears instead
+  of EDRAM copies (EDRAM GPU time 6.5 → ~3.7 ms/frame); only CPU-read resolves copied back; game
+  render thread yields instead of spinning (99% → 56% busy); per-frame log spam removed.
+- **Vulkan**: built on Windows and correct (black world = wrong texture exponent word in the SPIR-V
+  translator).
+- **Tools**: F3 frame monitor, sampling profiler (`--fh1_profile`), render-target frame log
+  (`--gpu_log_rt_frame`), Direct3D census, call graph, RenderDoc scripts (`tools/rdc_*.py`),
+  unattended test runs with screenshots (`tools/auto_test.ps1 -Autoplay`, boot with the user's
+  save: `33+0.2=start;33.8+0.2=start;34.6+0.2=start;35.5+0.2=a;36.8+0.2=a;38.1+0.2=a`).
+  Driving and race tests: the user plays manually.
 
-**Stage 2 — Run it on Windows with the emulated Xbox 360 GPU.** Fixed along the way: thunk-pool
-crash at the intro video, uninitialized stacks (0xBE) crashing save loading, missing `cache:`
-device crashing events, cars passing through each other (vmsum3fp128 overflow semantics), paint
-shop crash (setjmp/longjmp), garage light bloom and garbage car photos (CPU readback of resolves),
-controller merging (DS4Windows). Speed work on the emulation: bulk register writes, shadow buffers
-drawn into their 1x alias, clears instead of EDRAM copies (EDRAM GPU time 6.5 → ~3.7 ms/frame).
-
-**Stage 3 groundwork.** Vulkan backend built on Windows and fixed (black world = wrong texture
-exponent word in the SPIR-V translator). Tools: frame census of the game's Direct3D, call graph,
-RenderDoc dumps (`tools/rdc_*.py`), sampling profiler (`--fh1_profile`), render-target frame log
-(`--gpu_log_rt_frame`), automatic test runs with screenshots (`tools/auto_test.ps1`).
-
-**Tried and dropped:** single-pass drawing inside the EDRAM emulation (picture broke - belongs in
-the native renderer); 60 fps unlock with vsync off (broke distant rendering; revisit when much
-faster); forcing 1x MSAA (garbage on the car).
-
-## Next — performance (from `docs/performance-review.md`)
-
-1. [x] **Read back only what the CPU reads** (2026-10-02, `readback_resolve_skip_steady`): big
-       destinations resolved every frame are no longer copied back; resolve GPU time 5.0 -> 4.2 ms.
-       To verify by the user: a car photo after a repaint still saves correctly.
-2. [x] **Visibility queries checked**: the emulator answers them without GPU work, so the slow
-       depth draws in the replay timings were a measurement artifact. Their log lines (8 per
-       frame) and other per-frame log spam are now logged a few times only.
-3. [x] **Game render thread no longer spins flat out** (2026-10-02, fh1/src/fh1_perf_hooks.cpp,
-       `--fh1_yield_ring_wait`): the ring poll `sub_829F04A8` yields the core while waiting.
-       Render thread 99% -> 56% busy, 30 fps unchanged. Short sleeps cut it to 34% but cost frame
-       pacing on Windows (sleep overshoot); the Switch port should block on an event signalled
-       when the ring read pointer moves.
-4. [ ] Vulkan: frame monitor (F3) for the Vulkan presenter; persistent pipeline cache to cut hitches.
-
-## Next — better test autoplay (user's request, 2026-10-02)
-
-Tests today hold buttons on a fixed timetable (`--fh1_autoplay`, fh1/src/fh1_autoplay.h).
-1. [x] Scripts (2026-10-02): `auto_test.ps1 -Script toolsutoplay\<file>.txt` - wait, tap, hold,
-       set/clear, macros (def/do), include, `shot NAME` (screenshot at that moment), `quit`.
-       Macros in tools/autoplay/common.txt; first test tools/autoplay/smoke_drive.txt.
-2. [x] Game state (2026-10-02): `waitdraws >N for S` (3D world vs menus/loading; the boot macro
-       waits for the world), `waitfile PATTERN` (files the game opens; `--fh1_log_file_opens`), and
-       the car speed: its heap address changes every session, so the `calibrate_speed` macro finds
-       it in ~30 s of driving (forward/backward cycles: accelerate, handbrake slide, handbrake
-       stop - A is the handbrake; the user's idea) and names it; then `waitvar speed >15`,
-       `waitvar speed <0.3 for 1`, `logvar speed`. Verified against the speedometer. Tools:
-       `memscan_*` commands (fh1/src/fh1_memscan.cpp), tools/memscan_match.py.
-3. [~] Driving and racing (2026-10-02, the user's plan): tests start from a fixed test save
-       (build_logs/testsaves/paintshop, car parked at the paint shop; `auto_test.ps1 -SaveFrom`
-       runs each test on a fresh copy via --user_data_root, the real save is never used) and
-       replay a drive the user recorded (`--fh1_record` + tools/autoplay/record_route.txt, then
-       `replay FILE GO` in tools/autoplay/replay_route.txt). Self-test: a 15 s scripted drive
-       replayed to within about a car width. If long routes drift, correct them with the car
-       position (found per run by calibrate_position / memscan; heap address changes per session).
-       First real route (build_logs/route.txt, user, 2026-10-02): open-loop replay diverged at
-       once - the route starts with a hard left turn next to the paint-shop tower and the replay
-       hit the tower. NEXT: replay with position correction (record positions with the inputs,
-       steer back towards the recorded line); make calibrate_position reliable at the paint shop
-       first (1 good run of 5: handbrake-held stop checks + copy-count pick still picked wrong
-       values there).
-       Dead ends: the dev launch settings (engageaionstart, bestplayerai, ...) drive a UI camera;
-       AutoSteer* are UI cursor settings.
+**Tried and dropped**: single-pass drawing inside the EDRAM emulation (picture broke - belongs in
+the native renderer); 60 fps unlock with vsync off (broke distant rendering); forcing 1x MSAA
+(garbage on the car); scripted autoplay with a memory scanner, input recorder and route replay
+(removed at the user's request; git history ffdb286..e8b043f).
 
 ## Next — native renderer (Stage 3, Vulkan)
 
-The emulated GPU spends most of its time on emulation itself (EDRAM, drawing the main scene 3
-times for the console's tiling, transfers, readbacks). The native renderer keeps the parts proven
-on FH1 (command processing, SPIR-V shader translation, textures) and replaces the rest:
+The emulated GPU spends most of its time on emulation itself: EDRAM, drawing the main scene 3
+times for the console's tiling, transfers, readbacks. The native renderer keeps the parts proven on
+FH1 (command processing, SPIR-V shader translation, textures) and replaces the rest:
 
 1. [ ] **Native render targets in the Vulkan backend**: one image per render target, no EDRAM
        aliasing or ownership transfers (keep the one aliasing FH1 needs: 4x at pitch P = 1x at 2P),
@@ -99,12 +58,15 @@ on FH1 (command processing, SPIR-V shader translation, textures) and replaces th
 
 Milestone: festival and a race correct on Vulkan, faster than D3D12 today.
 
+Small items alongside: F3 frame monitor for the Vulkan presenter; persistent Vulkan pipeline cache
+(fewer first-time hitches).
+
 ## Later — Nintendo Switch (separate repository)
 
 Started from this repo once PC is done. The Tegra X1 has ~20-50x less GPU and much slower CPU
-cores than the Legion Go, so it needs the native renderer, pre-translated shaders (XenosRecomp,
-as nfsmw-nx does), no CPU spinning, audio decoding on a worker, and probably lower handheld
-settings (shadow/reflection resolution, cheaper anti-aliasing).
+cores than the Legion Go, so it needs the native renderer, pre-translated shaders (XenosRecomp, as
+nfsmw-nx does), no CPU spinning (block on the ring instead of yielding), audio decoding on a
+worker, and probably lower handheld settings (shadow/reflection resolution, cheaper anti-aliasing).
 
 ## Maybe later
 

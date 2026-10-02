@@ -9,11 +9,9 @@
 #include <rex/input/input_system.h>
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
-#include <rex/system/interfaces/graphics.h>
 
 #include "fh1_autoplay.h"
 #include "fh1_crash_report.h"
-#include "fh1_recorder.h"
 
 void Fh1StartProfiler();  // fh1_profiler.cpp
 namespace fh1::census { void Start(); }  // fh1_d3d_census_report.cpp
@@ -29,18 +27,6 @@ REXCVAR_DEFINE_BOOL(fh1_merge_controllers, true, "FH1",
 // fh1_autoplay.h. Empty = off. Needs fh1_merge_controllers so it drives player 1.
 REXCVAR_DEFINE_STRING(fh1_autoplay, "", "FH1",
                       "Scripted input: START+DURATION=CONTROLS;... (seconds from launch)");
-REXCVAR_DEFINE_STRING(fh1_autoplay_file, "", "FH1",
-                      "Scripted input from a script file (tools/autoplay/*.txt, format in "
-                      "fh1_autoplay.h)");
-REXCVAR_DEFINE_STRING(fh1_record, "", "FH1",
-                      "Record the controller (and the car position once known) to this file, for "
-                      "writing autoplay scripts and routes (fh1_recorder.cpp)");
-REXCVAR_DEFINE_BOOL(fh1_log_file_opens, false, "FH1",
-                    "Log every file the game opens as [file] <path> (for writing autoplay "
-                    "scripts that wait for a file)");
-REXCVAR_DEFINE_STRING(fh1_autoplay_dir, "", "FH1",
-                      "Folder for the autoplay script's screenshot/quit requests (set by "
-                      "tools/auto_test.ps1)");
 
 class Fh1App : public rex::ReXApp {
  public:
@@ -82,19 +68,6 @@ class Fh1App : public rex::ReXApp {
     if (auto autoplay = fh1::CreateAutoplayDriver(REXCVAR_GET(fh1_autoplay))) {
       input->AddDriver(std::move(autoplay));
     }
-    if (!REXCVAR_GET(fh1_autoplay_file).empty()) {
-      auto draws = [this]() -> uint32_t {
-        auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
-        rex::system::FrameMonitorStats stats;
-        return graphics && graphics->GetFrameMonitorStats(stats) ? stats.last_frame_draws : 0;
-      };
-      if (auto script = fh1::CreateAutoplayScriptDriver(REXCVAR_GET(fh1_autoplay_file),
-                                                         REXCVAR_GET(fh1_autoplay_dir), draws)) {
-        input->AddDriver(std::move(script));
-      }
-    }
-    if (REXCVAR_GET(fh1_log_file_opens)) fh1::InstallFileObserver(true);
-    if (!REXCVAR_GET(fh1_record).empty()) fh1::StartRecorder(REXCVAR_GET(fh1_record));
     if (!REXCVAR_GET(fh1_merge_controllers)) return;
     input->SetDeviceAssignment(std::make_unique<rex::input::SharedAssignment>());
   }

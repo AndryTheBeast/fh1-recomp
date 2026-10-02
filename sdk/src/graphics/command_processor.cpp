@@ -261,8 +261,6 @@ struct FrameMonitor {
   std::mutex mutex;
   uint64_t total_frames = 0;
   uint64_t last_swap = 0;
-  uint32_t draws_this_frame = 0;  // counted on the GPU thread
-  uint32_t last_frame_draws = 0;
   // Ring of frame times in ticks with their end times, for the last-second figures and the graph.
   static constexpr uint32_t kRing = 256;
   uint64_t frame_ticks[kRing] = {};
@@ -276,8 +274,6 @@ void RecordFrameMonitorSwap() {
   std::lock_guard<std::mutex> lock(g_frame_monitor.mutex);
   FrameMonitor& m = g_frame_monitor;
   ++m.total_frames;
-  m.last_frame_draws = m.draws_this_frame;
-  m.draws_this_frame = 0;
   if (m.last_swap) {
     m.frame_ticks[m.next] = now - m.last_swap;
     m.frame_end[m.next] = now;
@@ -512,7 +508,6 @@ void CommandProcessor::GetFrameMonitorStats(system::FrameMonitorStats& out) cons
     std::lock_guard<std::mutex> lock(g_frame_monitor.mutex);
     const FrameMonitor& m = g_frame_monitor;
     out.total_frames = m.total_frames;
-    out.last_frame_draws = m.last_frame_draws;
     constexpr uint32_t kRing = FrameMonitor::kRing;
     uint32_t last = (m.next + kRing - 1) % kRing;
     out.frame_time_ms = 1000.0 * double(m.frame_ticks[last]) / double(freq);
@@ -1922,7 +1917,6 @@ bool CommandProcessor::ExecutePacketType3Draw(memory::RingBuffer* reader, uint32
       RestoreMsaaDepthDraw(*register_file_, msaa_depth_alias);
       frame_stats_.draw_ticks += rex::chrono::Clock::QueryHostTickCount() - draw_start;
       ++frame_stats_.draws;
-      ++g_frame_monitor.draws_this_frame;
       frame_stats_.failed_draws += draw_succeeded ? 0 : 1;
       static std::atomic<uint32_t> failed_logged{0};
       // Failed resolves (edram_mode copy) are mostly the empty copy-outs of predicated tiling,

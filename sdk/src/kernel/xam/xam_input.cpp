@@ -9,11 +9,7 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
-#include <atomic>
-#include <mutex>
-
 #include <rex/input/input.h>
-#include <rex/kernel/input_events.h>
 #include <rex/input/input_system.h>
 #include <rex/kernel/xam/private.h>
 #include <rex/logging.h>
@@ -95,12 +91,6 @@ u32 XamInputGetCapabilitiesEx_entry(u32 unk, u32 user_index, u32 flags,
   return is->GetCapabilities(actual_user_index, flags, caps);
 }
 
-namespace {
-std::mutex g_input_observer_mutex;
-rex::kernel::InputObserver g_input_observer;
-std::atomic<bool> g_input_observer_set{false};
-}  // namespace
-
 // https://msdn.microsoft.com/en-us/library/windows/desktop/microsoft.directx_sdk.reference.xinputgetstate(v=vs.85).aspx
 u32 XamInputGetState_entry(u32 user_index, u32 flags, ppc_ptr_t<X_INPUT_STATE> input_state) {
   // Games call this with a NULL state ptr, probably as a query.
@@ -122,22 +112,7 @@ u32 XamInputGetState_entry(u32 user_index, u32 flags, ppc_ptr_t<X_INPUT_STATE> i
   }
 
   auto* is = input_system();
-  u32 result = is->GetState(actual_user_index, input_state);
-  if (result == X_ERROR_SUCCESS && input_state &&
-      g_input_observer_set.load(std::memory_order_relaxed)) {
-    rex::kernel::InputSnapshot snap;
-    snap.user = actual_user_index;
-    snap.buttons = input_state->gamepad.buttons;
-    snap.left_trigger = input_state->gamepad.left_trigger;
-    snap.right_trigger = input_state->gamepad.right_trigger;
-    snap.thumb_lx = input_state->gamepad.thumb_lx;
-    snap.thumb_ly = input_state->gamepad.thumb_ly;
-    snap.thumb_rx = input_state->gamepad.thumb_rx;
-    snap.thumb_ry = input_state->gamepad.thumb_ry;
-    std::lock_guard<std::mutex> lock(g_input_observer_mutex);
-    if (g_input_observer) g_input_observer(snap);
-  }
-  return result;
+  return is->GetState(actual_user_index, input_state);
 }
 
 // https://msdn.microsoft.com/en-us/library/windows/desktop/microsoft.directx_sdk.reference.xinputsetstate(v=vs.85).aspx
@@ -257,11 +232,3 @@ REX_EXPORT_STUB(__imp__XamInputSetLayoutKeyboard);
 REX_EXPORT_STUB(__imp__XamInputSetMinMaxAuthDelay);
 REX_EXPORT_STUB(__imp__XamInputSetTextMessengerIndicator);
 REX_EXPORT_STUB(__imp__XamInputToggleKeyLocks);
-
-namespace rex::kernel {
-void SetInputObserver(InputObserver observer) {
-  std::lock_guard<std::mutex> lock(rex::kernel::xam::g_input_observer_mutex);
-  rex::kernel::xam::g_input_observer = std::move(observer);
-  rex::kernel::xam::g_input_observer_set = bool(rex::kernel::xam::g_input_observer);
-}
-}  // namespace rex::kernel

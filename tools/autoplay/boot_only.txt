@@ -1,4 +1,0 @@
-include common.txt
-do boot_to_festival
-shot festival
-quit

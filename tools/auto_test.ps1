@@ -15,12 +15,6 @@ param(
   [string]$ExtraArgs = "",
   # Scripted controller, passed as --fh1_autoplay (format in fh1/src/fh1_autoplay.h).
   [string]$Autoplay = "",
-  # Autoplay script file (tools/autoplay/*.txt, format in fh1/src/fh1_autoplay.h). Its "shot NAME"
-  # lines produce test-<Name>-<date>-NAME.png; "quit" ends the run early.
-  [string]$Script = "",
-  # Run on a fresh copy of this user data folder (saves, profile) instead of the real one, via
-  # --user_data_root: e.g. -SaveFrom ..\build_logs\testsaves\paintshop. The real save is never used.
-  [string]$SaveFrom = "",
   # Launch through RenderDoc (renderdoccmd capture). Combine with
   # -ExtraArgs "--renderdoc_capture_seconds=120,150" to record single frames unattended;
   # captures land in build_logs\rdc-<Name>-<date>_frame*.rdc.
@@ -70,20 +64,6 @@ $ShotList = @($Shots -split "[,\s]+" | Where-Object { $_ } | ForEach-Object { [i
 $argv = @("--game_data_root=$Top\game_root", "--log_file=$Log", "--log_level=debug") +
   @($ExtraArgs -split "\s+" | Where-Object { $_ })
 if ($Autoplay) { $argv += "--fh1_autoplay=`"$Autoplay`"" }
-if ($SaveFrom) {
-  $SaveCopy = Join-Path $Logs "testsave-$Name-$Stamp"
-  Copy-Item -Recurse -Force (Resolve-Path $SaveFrom).Path $SaveCopy
-  $argv += "--user_data_root=`"$SaveCopy`""
-  Write-Host "test save: $SaveCopy (copied from $SaveFrom)"
-}
-$ReqDir = $null
-if ($Script) {
-  $ScriptPath = (Resolve-Path $Script).Path
-  $ReqDir = Join-Path $Logs "autoplay-$Name-$Stamp"
-  New-Item -ItemType Directory -Force $ReqDir | Out-Null
-  $argv += "--fh1_autoplay_file=`"$ScriptPath`""
-  $argv += "--fh1_autoplay_dir=`"$ReqDir`""
-}
 if ($RenderDoc) {
   $RdCmd = "C:\Program Files\RenderDoc\renderdoccmd.exe"
   $rdArgv = @("capture", "-d", (Split-Path $Exe), "-c", (Join-Path $Logs "rdc-$Name-$Stamp"), $Exe) + $argv
@@ -101,33 +81,14 @@ if ($RenderDoc) {
   $p = Start-Process -FilePath $Exe -ArgumentList $argv -WorkingDirectory (Split-Path $Exe) -PassThru
 }
 $start = Get-Date
-# Script requests: shot-NAME.req -> screenshot, quit.req -> stop. Polled while waiting.
-$quit = $false
-function Serve-Requests {
-  if (-not $ReqDir) { return }
-  foreach ($req in (Get-ChildItem $ReqDir -Filter *.req -ErrorAction SilentlyContinue)) {
-    $n = $req.BaseName
-    if ($n -like "shot-*") {
-      Shot $p (Join-Path $Logs ("test-$Name-$Stamp-{0}.png" -f $n.Substring(5)))
-    } elseif ($n -eq "quit") {
-      $script:quit = $true
-    }
-    Remove-Item $req.FullName -Force -ErrorAction SilentlyContinue
-  }
-}
-function Wait-Until([double]$until) {
-  while (((Get-Date) - $start).TotalSeconds -lt $until -and -not $p.HasExited -and -not $script:quit) {
-    Serve-Requests
-    Start-Sleep -Milliseconds 100
-  }
-}
 foreach ($s in ($ShotList | Sort-Object)) {
-  Wait-Until $s
-  if ($p.HasExited -or $quit) { break }
+  $wait = $s - ((Get-Date) - $start).TotalSeconds
+  if ($wait -gt 0) { Start-Sleep -Milliseconds ([int]($wait * 1000)) }
+  if ($p.HasExited) { break }
   Shot $p (Join-Path $Logs ("test-$Name-$Stamp-{0}s.png" -f $s))
 }
-Wait-Until $Seconds
-Serve-Requests
+$wait = $Seconds - ((Get-Date) - $start).TotalSeconds
+if ($wait -gt 0 -and -not $p.HasExited) { Start-Sleep -Milliseconds ([int]($wait * 1000)) }
 if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
 Start-Sleep -Seconds 2
 
@@ -135,5 +96,5 @@ Write-Host "=== $Name  log: $Log"
 if (Test-Path "$Log.crash.txt") { Write-Host "CRASHED:"; Get-Content "$Log.crash.txt" | Select-Object -First 12 }
 # Logs rotate at 5 MB into test-...-<stamp>.1.log, .2.log: read every part, oldest first.
 Get-ChildItem (Join-Path $Logs "test-$Name-$Stamp*.log") | Sort-Object LastWriteTime | Get-Content |
-  Select-String "\[fps\]|DXGI adapter|\[video\] el juego abre|\[autoplay\]|fh1_autoplay" |
+  Select-String "\[fps\]|DXGI adapter|\[video\] el juego abre" |
   ForEach-Object { $_.Line -replace '^\[\d+-\d+-\d+ ([\d:.]+)\] \[\w+\] \[\w+\] \[t\d+\] ', '$1 ' }

@@ -1,4 +1,0 @@
-include common.txt
-do boot_to_festival
-wait 60
-quit

@@ -112,16 +112,16 @@ buttons on a timetable. Route: title (Start) -> A to confirm -> forza_tone intro
 before/after screenshots) -> the drive. With nobody touching the pad:
 
     powershell -ExecutionPolicy Bypass -File tools\auto_test.ps1 -Name cut -Seconds 182 `
-      -Shots "160,168,176" -Autoplay "34+0.3=start;36+0.3=start;38+0.3=start;41+0.3=a;43+0.3=a;46+0.3=a;124+0.3=a;127+0.3=a;131+0.3=a"
+      -Shots "160,168,176" -Autoplay "33+0.2=start;33.8+0.2=start;34.6+0.2=start;35.5+0.2=a;36.8+0.2=a;38.1+0.2=a;124+0.3=a;127+0.3=a;131+0.3=a"
 
 Append ";180+60=rt" (and a longer -Seconds) to hold the accelerator in the drive. Nothing steers
 yet, so the car leaves the road; compare graphics on the cutscene frames, not the drive.
 
-Scripted tests (preferred, 2026-10-02): `-Script toolsutoplay\smoke_drive.txt` runs a script file
-(commands in fh1/src/fh1_autoplay.h, macros in tools/autoplay/common.txt); its `shot NAME` lines
-save test-<Name>-<date>-NAME.png and `quit` ends the run early.
-
-Use it for every graphics/performance change instead of asking the user to play.
+Use it for every graphics/performance change instead of asking the user to play. Boot with
+the user's save (festival in ~40 s): -Autoplay "33+0.2=start;33.8+0.2=start;34.6+0.2=start;35.5+0.2=a;36.8+0.2=a;38.1+0.2=a"
+(the single-player A presses were moved 4 s earlier at the user's request). The user plays
+manually for driving/race tests; a script/record/replay autoplay was tried on 2026-10-02 and
+removed at the user's request (git history ffdb286..e8b043f).
 The screenshots copy the screen: if Windows has locked (user away) they show the lock screen,
 though the game and its `[fps]` lines still run. Look at one shot before trusting a batch. Load
 times shrink on repeated runs (files cached by Windows), so the cutscene can start ~15 s earlier:
