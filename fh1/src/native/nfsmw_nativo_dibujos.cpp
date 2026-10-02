@@ -1082,6 +1082,10 @@ REXCVAR_DEFINE_INT32(nfsc_debug_view_interp, -1, "NFSC",
 REXCVAR_DEFINE_BOOL(fh1_vertices_10_11_11, false, "FH1",
                     "Native renderer: draw k_10_11_11 vertex data (raw bits through a float input, unpacked in the shader). "
                     "Off: on AMD the festival went black with it (float denormal/NaN handling probably alters the bits)");
+REXCVAR_DEFINE_BOOL(fh1_msaa_4x_como_1x, false, "FH1",
+                    "Native renderer: 4x MSAA passes draw into the 1x render target of twice the pitch, as they share the "
+                    "EDRAM on the Xbox 360 (FH1 draws its scene depth that way). Off: the first try turned the festival pink/black "
+                    "(2026-10-03); false = separate one-sample image");
 REXCVAR_DEFINE_BOOL(nfsc_barreras, true, "NFSC",
                     "Full GPU memory barriers between copies, clears and render passes (needed on AMD). false = as the "
                     "Most Wanted port (no barriers: only for comparisons)")
@@ -2423,7 +2427,7 @@ class DibujosVulkanImpl final : public DibujosVulkan {
         }
       }
       claves[i] = (uint64_t(1) << 63) | (uint64_t(info & 0xFFF) << 24) | (uint64_t(formato) << 16) |
-                  pitch;
+                  (uint64_t((r[gr::XE_GPU_REG_RB_SURFACE_INFO] >> 16) & 0x3) << 14) | pitch;  // FH1: + MSAA
       mascaras |= mascara << (i * 4);
       hay_destino = true;
     }
@@ -2558,7 +2562,8 @@ class DibujosVulkanImpl final : public DibujosVulkan {
     if (control_profundidad & 0x3) {  // stencil o z
       const uint32_t info = r[gr::XE_GPU_REG_RB_DEPTH_INFO];
       claves[4] = (uint64_t(1) << 62) | (uint64_t(info & 0xFFF) << 24) |
-                  (uint64_t((info >> 16) & 0x1) << 16) | pitch;
+                  (uint64_t((info >> 16) & 0x1) << 16) |
+                  (uint64_t((r[gr::XE_GPU_REG_RB_SURFACE_INFO] >> 16) & 0x3) << 14) | pitch;  // FH1: + MSAA
       hay_destino = true;
     }
     if (!hay_destino || !pitch) {
@@ -4429,6 +4434,12 @@ class DibujosVulkanImpl final : public DibujosVulkan {
       escala_y *= pase_escala_;
       centro_y *= pase_escala_;
     }
+    if (pase_msaa_escala_ != 1.0f) {  // FH1: 4x MSAA pass drawn into the 1x image of twice the size
+      escala_x *= pase_msaa_escala_;
+      centro_x *= pase_msaa_escala_;
+      escala_y *= pase_msaa_escala_;
+      centro_y *= pase_msaa_escala_;
+    }
     viewport = VkViewport{};
     viewport.x = centro_x - std::abs(escala_x);
     viewport.width = 2.0f * std::abs(escala_x);
@@ -4478,6 +4489,13 @@ class DibujosVulkanImpl final : public DibujosVulkan {
       y0 += ventana_y;
       x1 += ventana_x;
       y1 += ventana_y;
+    }
+    if (pase_msaa_escala_ != 1.0f) {  // FH1
+      const int32_t m = int32_t(pase_msaa_escala_);
+      x0 *= m;
+      y0 *= m;
+      x1 *= m;
+      y1 *= m;
     }
     if (pase_escala_ != 1.0f) {  // also in guest pixels
       x0 = int32_t(std::floor(float(x0) * pase_escala_));
@@ -10188,6 +10206,15 @@ class DibujosVulkanImpl final : public DibujosVulkan {
     if (!PrepararVacias()) {
       return false;
     }
+    // FH1: a 4x MSAA render target occupies the EDRAM of the 1x one of twice the pitch and height (its 2x2
+    // samples are that target's pixels), and FH1 relies on it: it draws scene depth at 640 pitch 4x and then
+    // uses it as the 1280x720 depth. 4x passes draw into that 1x image at twice the scale (CalcularEncuadre).
+    // 2x MSAA stays at one sample (its resolves are not scaled yet). fh1_msaa_4x_como_1x = false: as before.
+    const uint32_t msaa = (r[gr::XE_GPU_REG_RB_SURFACE_INFO] >> 16) & 0x3;
+    const bool msaa_4x = msaa == uint32_t(xenos::MsaaSamples::k4X) && REXCVAR_GET(fh1_msaa_4x_como_1x);
+    pase_msaa_escala_ = msaa_4x ? 2.0f : 1.0f;
+    const uint32_t pitch_guest = pitch;
+    if (msaa_4x) pitch *= 2;
     std::array<ImagenNativa*, 5> imagenes{};
     for (uint32_t i = 0; i < 4; ++i) {
       if (claves[i]) {
@@ -10205,7 +10232,7 @@ class DibujosVulkanImpl final : public DibujosVulkan {
         return Rechazar(41, "no hay destino de profundidad");
       }
     }
-    (void)r;
+    (void)pitch_guest;
     // The render targets are already resolved above; that segment is closed.
     const auto tras_destinos = cronometrar_ ? std::chrono::steady_clock::now()
                                             : std::chrono::steady_clock::time_point{};
@@ -12935,6 +12962,7 @@ class DibujosVulkanImpl final : public DibujosVulkan {
   uint32_t pase_ancho_ = 0;
   uint32_t pase_alto_ = 0;
   float pase_escala_ = 1.0f;  // 1 except in the scaled shadow map
+  float pase_msaa_escala_ = 1.0f;  // FH1: 2 in 4x MSAA passes (EmpezarPase)
   uint64_t borrados_profundidad_en_pase_ = 0;  // ZCULL
   std::chrono::steady_clock::time_point inicio_pase_{};  // pass change breakdown
   uint32_t pase_formatos_[5] = {};
