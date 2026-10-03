@@ -1079,13 +1079,16 @@ REXCVAR_DEFINE_INT32(nfsc_debug_view_interp, -1, "NFSC",
                      "Debug: every pixel shader is replaced by one that shows interpolant TEXCOORD<N> (0-7) as colour")
     .range(-1, 7)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
-REXCVAR_DEFINE_BOOL(fh1_vertices_10_11_11, false, "FH1",
+REXCVAR_DEFINE_BOOL(fh1_vertices_10_11_11, true, "FH1",
                     "Native renderer: draw k_10_11_11 vertex data (raw bits through a float input, unpacked in the shader). "
                     "Off: on AMD the festival went black with it (float denormal/NaN handling probably alters the bits)");
 REXCVAR_DEFINE_BOOL(fh1_msaa_4x_como_1x, false, "FH1",
                     "Native renderer: 4x MSAA passes draw into the 1x render target of twice the pitch, as they share the "
                     "EDRAM on the Xbox 360 (FH1 draws its scene depth that way). Off: the first try turned the festival pink/black "
                     "(2026-10-03); false = separate one-sample image");
+REXCVAR_DEFINE_INT32(fh1_vertices_10_11_11_mascara, 0xFFFE, "FH1",
+                     "Vertex usages (bit = D3DDECLUSAGE: 0 position, 3 normal, 5 texcoord...) whose k_10_11_11 data is drawn. "
+                     "Positions off: with them the festival turns black (2026-10-03, not understood yet)");
 REXCVAR_DEFINE_BOOL(nfsc_barreras, true, "NFSC",
                     "Full GPU memory barriers between copies, clears and render passes (needed on AMD). false = as the "
                     "Most Wanted port (no barriers: only for comparisons)")
@@ -1708,9 +1711,10 @@ VkFormat FormatoAtributo(uint32_t formato, bool entrada_entera, bool con_signo, 
       if (rojo_azul) break;
       if (!entrada_entera && !REXCVAR_GET(fh1_vertices_10_11_11)) break;
       if (!entrada_entera) {
-        // FH1: positions and texcoords in this format: the raw bits go through a float input and remapInput unpacks
-        // them (remap code bit 12, set by the caller).
-        return VK_FORMAT_R32_SFLOAT;
+        // FH1: positions and texcoords in this format: the raw bytes go through as exact 0-255 floats and remapInput
+        // rebuilds and unpacks the word (remap code bit 12, set by the caller). An R32_SFLOAT input broke the picture
+        // on AMD (bit patterns that look like denormals / NaNs do not survive).
+        return VK_FORMAT_R8G8B8A8_USCALED;
       }
       r11g11b10 = true;
       return VK_FORMAT_R32_UINT;
@@ -2775,6 +2779,28 @@ class DibujosVulkanImpl final : public DibujosVulkan {
       bytes_vertices += (necesarios + 3) & ~VkDeviceSize(3);
     }
 
+    {  // FH1 diagnostic: the first packed k_10_11_11 inputs, their fetch fields and first three vertices
+      static uint32_t avisos_empaquetados = 0;
+      if (avisos_empaquetados < 12) {
+        for (const AtributoVertices& a : entrada->atributos) {
+          if (a.ubicacion != 0 || !(entrada->remapeos[a.ubicacion] & 0x1000u)) continue;  // positions only
+          const Origen& origen = origenes[a.enlace];
+          const uint32_t zancada = entrada->enlaces[a.enlace].zancada;
+          std::string v;
+          for (uint32_t k = 0; k < 3 && uint64_t(k) * zancada + a.offset + 4 <= origen.bytes; ++k) {
+            uint32_t palabra;
+            std::memcpy(&palabra, origen.datos + uint64_t(k) * zancada + a.offset, 4);
+            palabra = xenos::GpuSwap(palabra, origen.orden);
+            const int32_t x = int32_t(palabra << 21) >> 21, y = int32_t((palabra >> 11) << 21) >> 21,
+                          z = int32_t(palabra) >> 22;
+            v += fmt::format(" {:08X}=({},{},{})", palabra, x, y, z);
+          }
+          REXLOG_INFO("[fh1] packed input VS n{} loc {} code {:08X} stride {} offset {} endian {} vmin {}:{}", p.vs->numero,
+                      a.ubicacion, entrada->remapeos[a.ubicacion], zancada, a.offset, int(origen.orden), vmin, v);
+          if (++avisos_empaquetados >= 12) break;
+        }
+      }
+    }
     // Diagnostic: one line per combination of VS, PS and render target (at most 32).
     if (diagnosticos_ < 32) {
       const uint64_t clave_diagnostico = (uint64_t(p.vs->numero) << 44) ^
@@ -8544,13 +8570,27 @@ class DibujosVulkanImpl final : public DibujosVulkan {
         continue;
       }
       uint32_t codigo = CodigoRemapeo(original, d1 & 0xFFF);
+      if (formato == 16 && !EntradaEntera(elemento.uso) && (REXCVAR_GET(fh1_vertices_10_11_11_mascara) >> std::min<uint32_t>(elemento.uso, 15) & 1) == 0) {
+        Rechazar(316, "formato de vertice todavia no soportado (fh1_vertices_10_11_11_mascara)");
+        return nullptr;
+      }
       if (formato == 16 && !EntradaEntera(elemento.uso)) {
         // FH1: packed k_10_11_11 (see FormatoAtributo): unpacked in the shader, sign and integer modes from the fetch.
         if (ubicacion >= 16) {
           Rechazar(26, "vertice k_10_11_11 en una ubicacion sin remapeo");
           return nullptr;
         }
-        codigo |= 0x1000u | (((d1 >> 12) & 0x1) ? 0x2000u : 0u) | (((d1 >> 13) & 0x1) ? 0x4000u : 0u);
+        codigo |= 0x1000u | (((d1 >> 12) & 0x1) ? 0x2000u : 0u) | (((d1 >> 13) & 0x1) ? 0x4000u : 0u) |
+                  (((d1 >> 14) & 0x1) ? 0x8000u : 0u);
+      }
+      // FH1: the fetch's exp_adjust (word 1 bits 24-29, signed), a power-of-two scale on the format's components that
+      // the Vulkan formats do not apply; remapInput does (bits 16-21, component count - 1 in bits 22-23).
+      if (const uint32_t exp_adjust = (d1 >> 24) & 0x3F; exp_adjust && !EntradaEntera(elemento.uso)) {
+        if (ubicacion >= 16) {
+          Avisar(27, "vertice con exp_adjust en una ubicacion sin remapeo: sin escalar");
+        } else {
+          codigo |= (exp_adjust << 16) | ((ComponentesVertice(formato) - 1) << 22);
+        }
       }
       if (codigo != kRemapeoIdentidad && avisos_swizzle_ < 24) {
         ++avisos_swizzle_;

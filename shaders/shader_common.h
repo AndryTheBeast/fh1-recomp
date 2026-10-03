@@ -418,15 +418,20 @@ float4 tfetchTexcoord(uint swappedTexcoords, float4 value, uint semanticIndex)
 }
 
 // NFSMW: 3 bits per component: 0-3 = data component, 4 = 0, 5 = 1, 7 = unchanged.
-// FH1: k_10_11_11 vertex data (positions, texcoords) arrives as raw bits in .x (R32_SFLOAT) and is unpacked
-// here when the renderer sets bit 12 of the remap code (bit 13 signed, bit 14 integer, not normalized).
-float fh1UnpackPacked(uint bits, uint shift, uint width, bool isSigned, bool integer)
+// FH1: k_10_11_11 vertex data (positions, texcoords) arrives as four bytes (R8G8B8A8_USCALED) and is unpacked
+// here when the renderer sets bit 12 of the remap code (bit 13 signed, bit 14 integer, bit 15 signed "no zero"
+// fraction mode). Bits 16-21: the fetch's exp_adjust (signed), a power-of-two scale the Xbox 360 applies to every
+// vertex format (SDK spirv_translator_fetch.cpp), to the format's components only (bits 22-23: their count - 1).
+float fh1UnpackPacked(uint bits, uint shift, uint width, bool isSigned, bool integer, bool noZero)
 {
     uint v = (bits >> shift) & ((1u << width) - 1u);
     if (isSigned)
     {
         int s = int(v << (32u - width)) >> (32u - width);
-        return integer ? float(s) : max(float(s) / float((1u << (width - 1u)) - 1u), -1.0);
+        if (integer)
+            return float(s);
+        float scale = float((1u << (width - 1u)) - 1u) + (noZero ? 0.5 : 0.0);
+        return noZero ? (float(s) + 0.5) / scale : max(float(s) / scale, -1.0);
     }
     return integer ? float(v) : float(v) / float((1u << width) - 1u);
 }
@@ -435,13 +440,25 @@ float4 remapInput(float4 value, uint code)
 {
     if ((code & 0x1000u) != 0u)
     {
-        uint bits = asuint(value.x);
+        // Four bytes as exact 0-255 floats (R8G8B8A8_USCALED): a float input would let the GPU flush or
+        // canonicalize bit patterns that look like denormals or NaNs.
+        uint bits = uint(value.x) | (uint(value.y) << 8) | (uint(value.z) << 16) | (uint(value.w) << 24);
         bool isSigned = (code & 0x2000u) != 0u;
         bool integer = (code & 0x4000u) != 0u;
-        value = float4(fh1UnpackPacked(bits, 0u, 11u, isSigned, integer), fh1UnpackPacked(bits, 11u, 11u, isSigned, integer),
-                       fh1UnpackPacked(bits, 22u, 10u, isSigned, integer), 1.0);
-        code &= 0xFFFu;
+        bool noZero = (code & 0x8000u) != 0u;
+        value = float4(fh1UnpackPacked(bits, 0u, 11u, isSigned, integer, noZero),
+                       fh1UnpackPacked(bits, 11u, 11u, isSigned, integer, noZero),
+                       fh1UnpackPacked(bits, 22u, 10u, isSigned, integer, noZero), 1.0);
     }
+    int expAdjust = int(code << 10) >> 26;  // bits 16-21, signed
+    if (expAdjust != 0)
+    {
+        uint components = ((code >> 22) & 3u) + 1u;
+        float scale = exp2(float(expAdjust));
+        for (uint i = 0; i < components; i++)
+            value[i] *= scale;
+    }
+    code &= 0xFFFu;
     if (code == 0xFFF)
         return value;
 
