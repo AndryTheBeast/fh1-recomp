@@ -3470,7 +3470,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         REXCVAR_GET(fh1_native_test_occlusion_always)) {
       key.depth |= 0x7 << 4;  // test: Z function always
     }
-    key.rasterization = (mode_sc & 0x7) | (reset ? 0x8 : 0) | (with_bias ? 0x10 : 0);
+    // FH1: a rectangle list has no front or back on the console: it is never culled. With the game's culling
+    // applied, the rectangles of the motion-blur velocity pass were dropped and the empty velocity texture smeared
+    // the whole scene.
+    key.rasterization = (mode_sc & (rectangles ? 0x4 : 0x7)) | (reset ? 0x8 : 0) | (with_bias ? 0x10 : 0);
     VkPipeline pipeline = VK_NULL_HANDLE;
     // Looked up with KeyOfLookup (phase 0a: canonical form; phases 1 and 2: without the state set through
     // vkCmdSet*). key stays raw: the deferred sky (opaque_in_all), the counter and the dynamic state read
@@ -5619,6 +5622,19 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   // fh1_native_clear_useful_area. Clears only the `area` rectangle of a color image with a
   // loadOp = CLEAR pass: what NVK does internally for vkCmdClearColorImage (nvk_cmd_clear.c), over that
   // rectangle. What lies outside is not touched (Vulkan only loads and stores the renderArea).
+  void ForgetStateBound() override {
+    // The same as on a new command buffer (see the draw), plus what the deferred sky forgets.
+    pipeline_bound_ = VK_NULL_HANDLE;
+    eds_valid_ = false;
+    key_bound_valid_ = false;
+    sets_bound_ = false;
+    ubo_bound_ = false;
+    state_recorded_ = false;
+    bindings_recorded_ = 0;
+    stencil_recorded_valid_ = false;
+    type_indices_recorded_ = VK_INDEX_TYPE_MAX_ENUM;
+  }
+
   bool ClearColorInPass(VkCommandBuffer commands, const ImageNative& image, const VkClearColorValue& color,
                          const VkRect2D& area) override {
     if (commands == VK_NULL_HANDLE || image.view == VK_NULL_HANDLE || !area.extent.width || !area.extent.height ||
@@ -8741,6 +8757,16 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                       1.0f / float(resolved->height));
         }
         if (IsDepth(resolved->format)) {
+          // FH1: fetched as a color format (k_8_8_8_8 by the motion-blur velocity and depth-of-field shaders), the
+          // shader wants the bytes of the console's depth word, not the depth value.
+          if (const uint32_t format_fetch = f[1] & 0x3F; format_fetch != 22 && format_fetch != 23) {
+            if (const ImageNative* bytes = context_->TextureResolvedBytes(base & 0x1FFFFFFF)) {
+              slot = SlotView(bytes->image, bytes->format, swizzle, kSwizzleRGBA);
+              sampling_point = true;
+              valid_until = frame_;
+              return;
+            }
+          }
           // Depth copy (k_24_8): depth comes out in R and the fetch constant's swizzle distributes it. No
           // filtering: it is read as is.
           slot = SlotView(resolved->image, resolved->format, swizzle, kSwizzleRRRR);

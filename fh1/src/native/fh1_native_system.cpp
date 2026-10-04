@@ -2291,7 +2291,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     }
     last = now;
     std::string values;
-    for (uint32_t k = 0; k < 12; ++k) {
+    // FH1: plus c32-c43 and c132-c135 (the matrices and parameters of the motion-blur velocity shader).
+    for (uint32_t k = 0; k < 136; k = k == 11 ? 32 : k == 43 ? 132 : k + 1) {
       values += fmt::format(" c{}=(", k);
       for (uint32_t c = 0; c < 4; ++c) {
         float f;

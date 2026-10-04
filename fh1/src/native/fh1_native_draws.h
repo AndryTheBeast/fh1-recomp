@@ -102,6 +102,13 @@ class ContextTargets {
   virtual ImageNative* TargetDepth(uint32_t base, uint32_t format, uint32_t pitch) = 0;
   // Texture resolved by C2 at that physical address, or nullptr.
   virtual const ImageNative* TextureResolved(uint32_t address) = 0;
+  // FH1: the resolved depth at that address as the bytes the console's resolve writes (red = stencil, then the
+  // 24-bit depth from its lowest byte), for draws that fetch it as a color texture. Call it after TextureResolved.
+  // nullptr if there is no such image.
+  virtual const ImageNative* TextureResolvedBytes(uint32_t address) {
+    (void)address;
+    return nullptr;
+  }
   // fh1_native_lazy_depth. While set, the depth textures requested belong to a sample the
   // shader does not take (the final composite without blur) and do not force a copy.
   virtual void ReadsOfDepthDead(bool dead) { (void)dead; }
@@ -279,6 +286,9 @@ class DrawsVulkan {
   virtual bool Draw(const RequestDraw& request) = 0;
   // Before copies, clears and any command outside a pass.
   virtual void FinishPass() = 0;
+  // FH1: C2 recorded a pass of its own with another pipeline, descriptor set and viewport in the work command
+  // buffer (the depth-as-bytes pass): nothing the draws had bound or set there is valid any more.
+  virtual void ForgetStateBound() {}
   // ZCULL: clears a depth image by opening a pass with loadOp = CLEAR, instead of with
   // vkCmdClearDepthStencilImage. Needed for images created without TRANSFER_DST, the only ones the driver
   // can give a ZCULL plane. Returns false if it could not.

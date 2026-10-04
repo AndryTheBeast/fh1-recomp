@@ -501,6 +501,10 @@ REXCVAR_DEFINE_BOOL(fh1_hdr_float, true, "FH1",
 REXCVAR_DEFINE_INT32(fh1_hitch_ms, 60, "FH1",
                      "Frames slower than this many ms get the three [hitch] lines in the log (who waited for whom, "
                      "GPU time, new textures). 25 catches the small dips while driving");
+REXCVAR_DEFINE_BOOL(fh1_native_depth_bytes, true, "FH1",
+                    "Native renderer: a resolved depth fetched as a color texture gives the console's bytes (24-bit "
+                    "depth and stencil), as FH1's motion blur and depth of field expect. false = the depth value "
+                    "in every channel, as before (smeared scene)");
 REXCVAR_DEFINE_INT32(fh1_dump_resolved_at_s, 0, "FH1",
                      "Debug: after this many seconds, once, save every resolved colour image of the next frame as PNG "
                      "files in dump_resolved/ next to the executable (0 = never)")
@@ -643,6 +647,8 @@ namespace fh1::guard30 {
 void Beat(double ms);
 void Report();
 }  // namespace fh1::guard30
+
+#include "fh1_depth_pack_spirv.h"  // FH1: resolved depth fetched as bytes (TextureResolvedBytes)
 
 namespace fh1::native {
 namespace shaders {
@@ -916,6 +922,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   ~TargetsVulkan() override {
     WaitGpu();
     draws_.reset();  // their framebuffers and views point to these images
+    DestroyDepthBytes();
     for (auto& [key, image] : depths_) {
       Destroy(image);
     }
@@ -1699,6 +1706,18 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                     reg.rb_copy_dest_base);
       DumpImage(resolved->image, name);
     }
+    // FH1: and, for the whole frame after the dump, every 8-bit color image of 300 pixels or wider right after its
+    // copy (frame_<order>_dest<address>_<size>.png): the post-processing chain step by step.
+    if (dump_frame_pending_ && resolved && resolved->image.format == kFormatColor && resolved->image.width >= 300 &&
+        dump_frame_done_ < 80) {
+      if (draws_) {
+        draws_->FinishPass();
+      }
+      char name[96];
+      std::snprintf(name, sizeof(name), "frame_%02u_dest%08X_%ux%u.png", dump_frame_done_++, reg.rb_copy_dest_base,
+                    resolved->image.width, resolved->image.height);
+      DumpImage(resolved->image, name);
+    }
     if (dump_rt_pending_ && clear_color && dump_rt_done_ < 4 && target_render && target_render->width >= 1280) {
       if (draws_) {
         draws_->FinishPass();
@@ -1982,10 +2001,12 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         }
       }
     }
+    // FH1: the stencil goes with the depth, as in the console's resolve (its motion blur reads it from the texture:
+    // TextureResolvedBytes).
     VkImageCopy copy{};
-    copy.srcSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+    copy.srcSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 1};
     copy.srcOffset = {x0, y0, 0};
-    copy.dstSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+    copy.dstSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 1};
     copy.dstOffset = {int32_t(dx), int32_t(dy), 0};
     copy.extent = {width, height, 1};
     // If this address is only requested by the composition without blur, the copy is deferred
@@ -3130,6 +3151,359 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     }
     return it->second.image.prepared ? &it->second.image : nullptr;
   }
+
+  // --- FH1: a resolved depth fetched as k_8_8_8_8 ---------------------------------------------------------------
+  // FH1's motion-blur velocity and depth-of-field shaders fetch the resolved scene depth as a color texture and
+  // rebuild the 24-bit depth from three of its bytes; the fourth is the stencil, which picks the previous-frame
+  // matrix of the object under the pixel. On the console the resolve writes those bytes to memory. Here a resolved
+  // depth is a host depth image, and sampled as color it gave the depth value in every channel: the velocity came
+  // out wrong everywhere (the whole scene smeared with the car standing still, speckles on every edge).
+  // The bytes are written into an 8-bit color image by a small pass (shaders/fh1_depth_pack.hlsl), once per
+  // resolve and only when a draw asks for them. nullptr if it cannot be done: the caller samples the depth as before.
+  const ImageNative* TextureResolvedBytes(uint32_t address) override {
+    const auto it = resolved_.find(address);
+    if (it == resolved_.end() || !it->second.image.prepared || it->second.image.format != format_depth_ ||
+        !DepthBytesReady()) {
+      return nullptr;
+    }
+    const Image& depth = it->second.image;
+    DepthBytes& bytes = depth_bytes_[address];
+    if (bytes.image.image != VK_NULL_HANDLE &&
+        (bytes.image.width != depth.width || bytes.image.height != depth.height)) {
+      SendWork(true);  // another size at that address: the old image may still be in use
+      WaitGpu();
+      DestroyDepthBytes(bytes);
+    }
+    if (bytes.image.image == VK_NULL_HANDLE) {
+      if (!Create(bytes.image, depth.width, depth.height,
+                  VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
+        return nullptr;
+      }
+      VkFramebufferCreateInfo info{};
+      info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+      info.renderPass = depth_bytes_pass_;
+      info.attachmentCount = 1;
+      info.pAttachments = &bytes.image.view;
+      info.width = depth.width;
+      info.height = depth.height;
+      info.layers = 1;
+      if (dfn_.vkCreateFramebuffer(device_, &info, nullptr, &bytes.framebuffer) != VK_SUCCESS) {
+        bytes.framebuffer = VK_NULL_HANDLE;
+        DestroyDepthBytes(bytes);
+        return nullptr;
+      }
+      bytes.dirty = true;
+      REXLOG_INFO("[fh1] resolved depth at {:08X} ({}x{}) is fetched as a color texture: its bytes are written "
+                  "after each resolve",
+                  address, depth.width, depth.height);
+    }
+    if (!bytes.dirty) {
+      return &bytes.image;
+    }
+    const DepthBytesSource* source = DepthBytesSourceOf(depth.image);
+    if (!source || !Record()) {
+      return nullptr;
+    }
+    if (draws_) {
+      draws_->FinishPass();  // it arrives from a draw: the pass goes outside the draw's own
+    }
+    MarkGpu(kGpuCopies);
+    BarrierGlobal(commands_work_);
+    if (!bytes.image.prepared) {
+      VkImageMemoryBarrier barrier{};
+      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+      barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+      barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+      barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.image = bytes.image.image;
+      barrier.subresourceRange = kRangeColor;
+      barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+      dfn_.vkCmdPipelineBarrier(commands_work_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+      bytes.image.prepared = true;
+    }
+    VkRenderPassBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    begin.renderPass = depth_bytes_pass_;
+    begin.framebuffer = bytes.framebuffer;
+    begin.renderArea = {{0, 0}, {depth.width, depth.height}};
+    dfn_.vkCmdBeginRenderPass(commands_work_, &begin, VK_SUBPASS_CONTENTS_INLINE);
+    const VkViewport viewport{0.0f, 0.0f, float(depth.width), float(depth.height), 0.0f, 1.0f};
+    dfn_.vkCmdSetViewport(commands_work_, 0, 1, &viewport);
+    dfn_.vkCmdSetScissor(commands_work_, 0, 1, &begin.renderArea);
+    dfn_.vkCmdBindPipeline(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_bytes_pipeline_);
+    dfn_.vkCmdBindDescriptorSets(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_bytes_layout_, 0, 1,
+                                 &source->set, 0, nullptr);
+    const uint32_t float24 = it->second.format_guest == 23 ? 1 : 0;  // k_24_8_FLOAT
+    dfn_.vkCmdPushConstants(commands_work_, depth_bytes_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float24),
+                            &float24);
+    dfn_.vkCmdDraw(commands_work_, 3, 1, 0, 0);
+    dfn_.vkCmdEndRenderPass(commands_work_);
+    BarrierGlobal(commands_work_);
+    if (draws_) {
+      draws_->ForgetStateBound();
+    }
+    bytes.dirty = false;
+    ++depth_bytes_passes_;
+    return &bytes.image;
+  }
+
+  struct DepthBytes {
+    Image image;  // 8-bit color, the size of the resolved depth
+    VkFramebuffer framebuffer = VK_NULL_HANDLE;
+    bool dirty = true;  // the depth was resolved again since the bytes were written
+  };
+  // The depth and the stencil of one host depth image as sampled images. Kept per image: a resolve that swaps
+  // images (fh1_native_resolve_without_copy) alternates between two of them.
+  struct DepthBytesSource {
+    VkImageView depth = VK_NULL_HANDLE;
+    VkImageView stencil = VK_NULL_HANDLE;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+  };
+
+  // The pass, the pipeline and the descriptor pool, created at the first request. false if they cannot be.
+  bool DepthBytesReady() {
+    if (depth_bytes_pipeline_ != VK_NULL_HANDLE) {
+      return true;
+    }
+    if (depth_bytes_failed_ || !REXCVAR_GET(fh1_native_depth_bytes)) {
+      return false;
+    }
+    depth_bytes_failed_ = true;  // until everything below is created
+    VkDescriptorSetLayoutBinding bindings[2]{};
+    for (uint32_t i = 0; i < 2; ++i) {
+      bindings[i].binding = i;
+      bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      bindings[i].descriptorCount = 1;
+      bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
+    VkDescriptorSetLayoutCreateInfo info_set{};
+    info_set.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    info_set.bindingCount = 2;
+    info_set.pBindings = bindings;
+    const VkPushConstantRange range{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(uint32_t)};
+    VkPipelineLayoutCreateInfo info_layout{};
+    info_layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    info_layout.setLayoutCount = 1;
+    info_layout.pSetLayouts = &depth_bytes_set_layout_;
+    info_layout.pushConstantRangeCount = 1;
+    info_layout.pPushConstantRanges = &range;
+    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 2 * kDepthBytesSources};
+    VkDescriptorPoolCreateInfo info_pool{};
+    info_pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    info_pool.maxSets = kDepthBytesSources;
+    info_pool.poolSizeCount = 1;
+    info_pool.pPoolSizes = &size;
+    VkAttachmentDescription attachment{};
+    attachment.format = kFormatColor;
+    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // the pass writes every texel
+    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachment.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+    attachment.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+    const VkAttachmentReference reference{0, VK_IMAGE_LAYOUT_GENERAL};
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &reference;
+    VkRenderPassCreateInfo info_pass{};
+    info_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    info_pass.attachmentCount = 1;
+    info_pass.pAttachments = &attachment;
+    info_pass.subpassCount = 1;
+    info_pass.pSubpasses = &subpass;
+    VkShaderModuleCreateInfo info_vs{};
+    info_vs.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    info_vs.codeSize = sizeof(fh1::kDepthPackVsSpirv);
+    info_vs.pCode = fh1::kDepthPackVsSpirv;
+    VkShaderModuleCreateInfo info_ps = info_vs;
+    info_ps.codeSize = sizeof(fh1::kDepthPackPsSpirv);
+    info_ps.pCode = fh1::kDepthPackPsSpirv;
+    if (dfn_.vkCreateDescriptorSetLayout(device_, &info_set, nullptr, &depth_bytes_set_layout_) != VK_SUCCESS ||
+        dfn_.vkCreatePipelineLayout(device_, &info_layout, nullptr, &depth_bytes_layout_) != VK_SUCCESS ||
+        dfn_.vkCreateDescriptorPool(device_, &info_pool, nullptr, &depth_bytes_pool_) != VK_SUCCESS ||
+        dfn_.vkCreateRenderPass(device_, &info_pass, nullptr, &depth_bytes_pass_) != VK_SUCCESS ||
+        dfn_.vkCreateShaderModule(device_, &info_vs, nullptr, &depth_bytes_vs_) != VK_SUCCESS ||
+        dfn_.vkCreateShaderModule(device_, &info_ps, nullptr, &depth_bytes_ps_) != VK_SUCCESS) {
+      REXLOG_ERROR("[fh1] could not create the objects of the depth-as-bytes pass: depth fetched as color stays wrong");
+      return false;
+    }
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = depth_bytes_vs_;
+    stages[0].pName = "VsMain";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = depth_bytes_ps_;
+    stages[1].pName = "PsMain";
+    VkPipelineVertexInputStateCreateInfo entry{};
+    entry.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    VkPipelineInputAssemblyStateCreateInfo assembly{};
+    assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo viewport_state{};
+    viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport_state.viewportCount = 1;
+    viewport_state.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo rasterization{};
+    rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterization.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterization.cullMode = VK_CULL_MODE_NONE;
+    rasterization.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterization.lineWidth = 1.0f;
+    VkPipelineMultisampleStateCreateInfo sampling{};
+    sampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    sampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineColorBlendAttachmentState blend_attachment{};
+    blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    VkPipelineColorBlendStateCreateInfo blend{};
+    blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend.attachmentCount = 1;
+    blend.pAttachments = &blend_attachment;
+    const VkDynamicState dynamic_2[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamic{};
+    dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic.dynamicStateCount = 2;
+    dynamic.pDynamicStates = dynamic_2;
+    VkGraphicsPipelineCreateInfo info_pipeline{};
+    info_pipeline.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info_pipeline.stageCount = 2;
+    info_pipeline.pStages = stages;
+    info_pipeline.pVertexInputState = &entry;
+    info_pipeline.pInputAssemblyState = &assembly;
+    info_pipeline.pViewportState = &viewport_state;
+    info_pipeline.pRasterizationState = &rasterization;
+    info_pipeline.pMultisampleState = &sampling;
+    info_pipeline.pColorBlendState = &blend;
+    info_pipeline.pDynamicState = &dynamic;
+    info_pipeline.layout = depth_bytes_layout_;
+    info_pipeline.renderPass = depth_bytes_pass_;
+    info_pipeline.basePipelineIndex = -1;
+    if (dfn_.vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &info_pipeline, nullptr,
+                                       &depth_bytes_pipeline_) != VK_SUCCESS) {
+      depth_bytes_pipeline_ = VK_NULL_HANDLE;
+      REXLOG_ERROR("[fh1] could not create the pipeline of the depth-as-bytes pass: depth fetched as color stays wrong");
+      return false;
+    }
+    depth_bytes_failed_ = false;
+    return true;
+  }
+
+  const DepthBytesSource* DepthBytesSourceOf(VkImage image) {
+    if (const auto it = depth_bytes_sources_.find(image); it != depth_bytes_sources_.end()) {
+      return &it->second;
+    }
+    if (depth_bytes_sources_.size() >= kDepthBytesSources) {
+      return nullptr;
+    }
+    DepthBytesSource source;
+    VkImageViewCreateInfo info_view{};
+    info_view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    info_view.image = image;
+    info_view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    info_view.format = format_depth_;
+    info_view.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    VkDescriptorSetAllocateInfo reserve{};
+    reserve.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    reserve.descriptorPool = depth_bytes_pool_;
+    reserve.descriptorSetCount = 1;
+    reserve.pSetLayouts = &depth_bytes_set_layout_;
+    bool created = dfn_.vkCreateImageView(device_, &info_view, nullptr, &source.depth) == VK_SUCCESS;
+    info_view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
+    created = created && dfn_.vkCreateImageView(device_, &info_view, nullptr, &source.stencil) == VK_SUCCESS;
+    if (created && !depth_bytes_sets_free_.empty()) {  // the set of a destroyed image
+      source.set = depth_bytes_sets_free_.back();
+      depth_bytes_sets_free_.pop_back();
+    } else {
+      created = created && dfn_.vkAllocateDescriptorSets(device_, &reserve, &source.set) == VK_SUCCESS;
+    }
+    if (!created) {
+      if (source.depth != VK_NULL_HANDLE) dfn_.vkDestroyImageView(device_, source.depth, nullptr);
+      if (source.stencil != VK_NULL_HANDLE) dfn_.vkDestroyImageView(device_, source.stencil, nullptr);
+      return nullptr;
+    }
+    const VkDescriptorImageInfo images[2] = {{VK_NULL_HANDLE, source.depth, VK_IMAGE_LAYOUT_GENERAL},
+                                             {VK_NULL_HANDLE, source.stencil, VK_IMAGE_LAYOUT_GENERAL}};
+    VkWriteDescriptorSet writes[2]{};
+    for (uint32_t i = 0; i < 2; ++i) {
+      writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[i].dstSet = source.set;
+      writes[i].dstBinding = i;
+      writes[i].descriptorCount = 1;
+      writes[i].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      writes[i].pImageInfo = &images[i];
+    }
+    dfn_.vkUpdateDescriptorSets(device_, 2, writes, 0, nullptr);
+    return &depth_bytes_sources_.emplace(image, source).first->second;
+  }
+
+  // The image is about to be destroyed (Destroy, with the GPU idle for it): its views go first.
+  void ForgetDepthBytesSource(VkImage image) {
+    if (depth_bytes_sources_.empty() || image == VK_NULL_HANDLE) {
+      return;
+    }
+    const auto it = depth_bytes_sources_.find(image);
+    if (it == depth_bytes_sources_.end()) {
+      return;
+    }
+    depth_bytes_sets_free_.push_back(it->second.set);
+    dfn_.vkDestroyImageView(device_, it->second.depth, nullptr);
+    dfn_.vkDestroyImageView(device_, it->second.stencil, nullptr);
+    depth_bytes_sources_.erase(it);
+  }
+
+  void DestroyDepthBytes(DepthBytes& bytes) {
+    if (bytes.framebuffer != VK_NULL_HANDLE) dfn_.vkDestroyFramebuffer(device_, bytes.framebuffer, nullptr);
+    bytes.framebuffer = VK_NULL_HANDLE;
+    if (bytes.image.image != VK_NULL_HANDLE) {
+      if (draws_) {
+        draws_->ForgetImage(bytes.image.image);
+      }
+      Destroy(bytes.image);
+    }
+    bytes.dirty = true;
+  }
+
+  // Shutdown, with the GPU idle.
+  void DestroyDepthBytes() {
+    for (auto& [address, bytes] : depth_bytes_) {
+      DestroyDepthBytes(bytes);
+    }
+    depth_bytes_.clear();
+    for (auto& [image, source] : depth_bytes_sources_) {
+      dfn_.vkDestroyImageView(device_, source.depth, nullptr);
+      dfn_.vkDestroyImageView(device_, source.stencil, nullptr);
+    }
+    depth_bytes_sources_.clear();
+    if (depth_bytes_pipeline_ != VK_NULL_HANDLE) dfn_.vkDestroyPipeline(device_, depth_bytes_pipeline_, nullptr);
+    if (depth_bytes_vs_ != VK_NULL_HANDLE) dfn_.vkDestroyShaderModule(device_, depth_bytes_vs_, nullptr);
+    if (depth_bytes_ps_ != VK_NULL_HANDLE) dfn_.vkDestroyShaderModule(device_, depth_bytes_ps_, nullptr);
+    if (depth_bytes_pass_ != VK_NULL_HANDLE) dfn_.vkDestroyRenderPass(device_, depth_bytes_pass_, nullptr);
+    if (depth_bytes_pool_ != VK_NULL_HANDLE) dfn_.vkDestroyDescriptorPool(device_, depth_bytes_pool_, nullptr);
+    if (depth_bytes_layout_ != VK_NULL_HANDLE) dfn_.vkDestroyPipelineLayout(device_, depth_bytes_layout_, nullptr);
+    if (depth_bytes_set_layout_ != VK_NULL_HANDLE)
+      dfn_.vkDestroyDescriptorSetLayout(device_, depth_bytes_set_layout_, nullptr);
+    depth_bytes_pipeline_ = VK_NULL_HANDLE;
+  }
+
+  static constexpr uint32_t kDepthBytesSources = 64;
+  std::unordered_map<uint32_t, DepthBytes> depth_bytes_;  // by the address of the resolved depth
+  std::unordered_map<VkImage, DepthBytesSource> depth_bytes_sources_;
+  std::vector<VkDescriptorSet> depth_bytes_sets_free_;
+  VkDescriptorSetLayout depth_bytes_set_layout_ = VK_NULL_HANDLE;
+  VkPipelineLayout depth_bytes_layout_ = VK_NULL_HANDLE;
+  VkDescriptorPool depth_bytes_pool_ = VK_NULL_HANDLE;
+  VkRenderPass depth_bytes_pass_ = VK_NULL_HANDLE;
+  VkShaderModule depth_bytes_vs_ = VK_NULL_HANDLE;
+  VkShaderModule depth_bytes_ps_ = VK_NULL_HANDLE;
+  VkPipeline depth_bytes_pipeline_ = VK_NULL_HANDLE;
+  bool depth_bytes_failed_ = false;
+  uint64_t depth_bytes_passes_ = 0;
 
   // fh1_native_lazy_depth. DrawsVulkan sets it around the textures of the final composition
   // when its depth sampling is dead (no blur).
@@ -4967,6 +5341,12 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   // images), so that the per-target inventory shows where the traffic goes.
   void ResolvedWritten(uint32_t base, uint64_t pixels = 0) {
     ShadowMinimumResolvedWritten(base);  // fh1_native_shadow_minimum
+    if (!depth_bytes_.empty()) {  // FH1: its bytes image is redone at the next fetch
+      const auto bytes = depth_bytes_.find(base);
+      if (bytes != depth_bytes_.end()) {
+        bytes->second.dirty = true;
+      }
+    }
     if (!lent_.empty()) {
       lent_.erase(base);
     }
@@ -5082,6 +5462,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
 
   void Destroy(Image& image) {
     images_hdr_.erase(image.image);  // NFSC
+    ForgetDepthBytesSource(image.image);  // FH1
     CompositeToDestroy(image);  // fh1_native_lazy_composite
     // fh1_native_lazy_front. A deferred copy cannot keep a destroyed image. If the texture is
     // what gets destroyed (GetResolved recreates it with another size or format), its content is lost
@@ -5663,6 +6044,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   uint32_t dump_res_done_ = 0;
   bool dump_rt_pending_ = false;
   uint32_t dump_rt_done_ = 0;
+  bool dump_frame_pending_ = false;
+  uint32_t dump_frame_done_ = 0;
 
   // NFSC debug (fh1_dump_resolved_at_s): once, every resolved colour image goes to a PNG file, read straight from
   // the GPU. The names say address, size and the order the frame resolved them.
@@ -5670,6 +6053,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     static bool done = false;
     static const auto start = std::chrono::steady_clock::now();
     const int32_t seconds = REXCVAR_GET(fh1_dump_resolved_at_s);
+    dump_frame_pending_ = false;  // the frame after the dump has ended
     if (seconds == -1) {
       // NFSC: -1 = when a file named dump_now appears in the working folder (a script creates it at the right moment);
       // checked twice a second, the file is removed.
@@ -5684,6 +6068,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     }
     done = true;
     dump_rt_pending_ = true;  // the next colour resolves also dump their render target before it is cleared
+    dump_frame_pending_ = true;
     if (draws_) {
       draws_->FinishPass();
     }
@@ -5700,6 +6085,9 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     std::vector<std::pair<uint32_t, const Image*>> sources;
     for (auto& [base, t] : resolved_) {
       sources.push_back({base, &t.image});
+    }
+    for (auto& [base, bytes] : depth_bytes_) {  // FH1: resolved depths as bytes, shown as 0xDB000000 | address bits
+      sources.push_back({0xDB000000u | (base >> 8), &bytes.image});
     }
     {  // the render targets themselves: "base" is shown as 0xDD000000 | key bits, to tell them apart
       uint32_t i = 0;
