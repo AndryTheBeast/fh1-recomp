@@ -231,6 +231,5 @@ user. Next (user, 2026-10-04): the rendering glitches of the 3D scene, in the or
 speckled edges first, then packed positions). ROADMAP.md and docs/native-renderer-fh1.md have the phases (N0-N5).
 
 Local folder layout (2026-10-04): `build_logs\reference\` = the screenshots, traces and logs the documents
-refer to; `build_logs\archive-2026-10-04\` = every earlier test, run, build log and RenderDoc capture (nothing
-there is needed to work; the 2.7 GB of RenderDoc captures can be deleted if the user agrees);
-`build_logs\shaders\old\` = shader sets from before translator changes. New test output lands in `build_logs\`.
+refer to; `build_logs\archive-2026-10-04\` = every earlier test, run and build log (nothing there is needed
+to work; its RenderDoc captures and the old shader sets were removed on 2026-10-04 with the user's yes). New test output lands in `build_logs\`.
