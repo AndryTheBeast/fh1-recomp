@@ -210,6 +210,9 @@ lists the actions and saves the render targets as PNG.
   Bash heredocs mangle backslash escapes (backslash-n, backslash-t) in Python/C++ snippets: write
   patch scripts with the Write tool or use chr(92).
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
+- Never run `sed -i` (or any rewrite) over every tracked file: on 2026-10-04 it turned CRLF into LF in ~1,000
+  files and changed their dates, which forces a full rebuild. Rewrite only the files that contain the text
+  (`grep -l` first).
 
 - English names (2026-10-04): all code is in English (docs/history/handoff-english-rename.md has the list of renamed
   files and options).
