@@ -2797,6 +2797,16 @@ class DibujosVulkanImpl final : public DibujosVulkan {
           }
           REXLOG_INFO("[fh1] packed input VS n{} loc {} code {:08X} stride {} offset {} endian {} vmin {}:{}", p.vs->numero,
                       a.ubicacion, entrada->remapeos[a.ubicacion], zancada, a.offset, int(origen.orden), vmin, v);
+          std::string f;
+          for (const ElementoVertice& e : p.vs->elementos) {
+            const size_t i = size_t(e.instruccion) * 3;
+            if (i + 2 >= p.vs_microcodigo.size()) continue;
+            f += fmt::format(" | uso{}.{}@{} orig {:08X} {:08X} {:08X} parch {:08X} {:08X} {:08X}", e.uso, e.indice_uso,
+                             e.instruccion, p.vs->microcodigo_shader[i], p.vs->microcodigo_shader[i + 1],
+                             p.vs->microcodigo_shader[i + 2], p.vs_microcodigo[i], p.vs_microcodigo[i + 1],
+                             p.vs_microcodigo[i + 2]);
+          }
+          REXLOG_INFO("[fh1] packed VS n{} fetches:{}", p.vs->numero, f);
           if (++avisos_empaquetados >= 12) break;
         }
       }
