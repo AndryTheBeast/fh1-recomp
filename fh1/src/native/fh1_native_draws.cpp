@@ -1081,6 +1081,10 @@ REXCVAR_DEFINE_BOOL(fh1_msaa_4x_as_1x, false, "FH1",
                     "Native renderer: 4x MSAA passes draw into the 1x render target of twice the pitch, as they share the "
                     "EDRAM on the Xbox 360 (FH1 draws its scene depth that way). Off: the first try turned the festival pink/black "
                     "(2026-10-03); false = separate one-sample image");
+REXCVAR_DEFINE_BOOL(fh1_msaa_4x_clears_as_1x, true, "FH1",
+                    "Native renderer: 4x MSAA passes of 640 pitch or less (Direct3D's clears of depth and stencil) draw into "
+                    "the 1x render target of twice the pitch, which is the one the game uses. false = an image of their "
+                    "own (no shadows in the scene)");
 REXCVAR_DEFINE_INT32(fh1_vertices_10_11_11_mask, 0xFFFE, "FH1",
                      "Vertex usages (bit = D3DDECLUSAGE: 0 position, 3 normal, 5 texcoord...) whose k_10_11_11 data is drawn. "
                      "Positions off: with them the festival turns black (2026-10-03, not understood yet)");
@@ -3325,7 +3329,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
     }
     if (!(r[gr::XE_GPU_REG_PA_SU_VTX_CNTL] & 0x1)) {  // PixelCenter::kD3DZero
-      const float middle[2] = {1.0f / viewport.width, -1.0f / std::abs(viewport.height)};
+      // FH1: half a guest pixel is a whole host pixel in a 4x pass drawn at twice the scale (pass_msaa_scale_).
+      const float middle[2] = {pass_msaa_scale_ / viewport.width, -pass_msaa_scale_ / std::abs(viewport.height)};
       std::memcpy(&shared[66], middle, sizeof(middle));
     }
     std::memcpy(&shared[68], &threshold_alpha, sizeof(threshold_alpha));
@@ -10351,7 +10356,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // uses it as the 1280x720 depth. 4x passes draw into that 1x image at twice the scale (ComputeFraming).
     // 2x MSAA stays at one sample (its resolves are not scaled yet). fh1_msaa_4x_as_1x = false: as before.
     const uint32_t msaa = (r[gr::XE_GPU_REG_RB_SURFACE_INFO] >> 16) & 0x3;
-    const bool msaa_4x = msaa == uint32_t(xenos::MsaaSamples::k4X) && REXCVAR_GET(fh1_msaa_4x_as_1x);
+    // FH1 (fh1_msaa_4x_clears_as_1x): only the 4x passes of 640 pitch or less. Those are Direct3D's clears: a
+    // rectangle on a 4x surface of half the pitch covers the same EDRAM as the 1x (or 2x) target the game really
+    // uses, four samples per pixel drawn. Kept in an image of their own they cleared nothing: the stencil the shadow
+    // passes test was never reset and the scene had no shadows. The scene itself (4x at 1280 pitch) stays as it was.
+    const bool msaa_4x = msaa == uint32_t(xenos::MsaaSamples::k4X) &&
+                         (REXCVAR_GET(fh1_msaa_4x_as_1x) || (pitch <= 640 && REXCVAR_GET(fh1_msaa_4x_clears_as_1x)));
     pass_msaa_scale_ = msaa_4x ? 2.0f : 1.0f;
     const uint32_t pitch_guest = pitch;
     if (msaa_4x) pitch *= 2;
