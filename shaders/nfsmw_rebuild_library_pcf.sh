@@ -1,10 +1,10 @@
 #!/bin/bash
 # nfsmw_rebuild_library_pcf.sh OUTPUT ENTRY
-# Regenerates the NFSSPV library from bash with the same options as nfsc_validate.ps1
+# Regenerates the NFSSPV library from bash with the same options as fh1_validate.ps1
 # (which on Windows PowerShell 5.1 stops at the first DXC warning):
 #   1. builds the translator with -DNFSMW_RECOMP and the format regression test;
 #   2. translates nfsmw_shaders_combinados into OUTPUT/hlsl;
-#   3. DXC, spirv-val, packaging and library regression (nfsc_complete_spirv.sh).
+#   3. DXC, spirv-val, packaging and library regression (fh1_complete_spirv.sh).
 # OUTPUT must be a new folder. ENTRY is the folder with the game's shader containers.
 set -u
 # Tools: g++ (MinGW on Windows), DXC and spirv-val from the Vulkan SDK, and Python ("py" on Windows).
@@ -44,7 +44,7 @@ sed -i 's/tfetch2D(SHADOWMAP_SAMPLER_/tfetch2DShadow(SHADOWMAP_SAMPLER_/g' "$OUT
 echo "cheap PCF: $calls calls to the shadow map in $changes shaders"
 [ "$calls" -gt 0 ] || { echo "No call was rewritten: something is wrong"; exit 1; }
 
-# Shadow by minimum (nfsc_native_shadow_minimum; SPEC_CONSTANT_SHADOW_MINIMUM in shader_common.h).
+# Shadow by minimum (fh1_native_shadow_minimum; SPEC_CONSTANT_SHADOW_MINIMUM in shader_common.h).
 # Shadow map calls become tfetch2DShadowMin with the 3D index of the same register, which is where the
 # app puts the second texture. Without the bit the code is that of tfetch2DShadow. All of them must be
 # converted, or no library is produced.
@@ -111,7 +111,7 @@ done
 expected=$(ls "$ENTRY"/*.bin | wc -l)
 echo "spirv=$n expected=$expected"
 [ "$n" -eq "$expected" ] || { echo "The number of outputs does not match the input"; exit 1; }
-# The tfetch2DShadowMin marker (NFSC_MARK_SHADOW_MINIMUM, an OpConstant) must be in the SPIR-V of
+# The tfetch2DShadowMin marker (FH1_MARK_SHADOW_MINIMUM, an OpConstant) must be in the SPIR-V of
 # every pixel shader that uses it: it is what the app checks to know it can ask for the minimum.
 cat > "$OUTPUT/mark_shadow_minimum.py" <<'END_MARK_SHADOW'
 import glob, io, os, struct, sys

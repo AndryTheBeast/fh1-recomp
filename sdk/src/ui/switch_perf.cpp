@@ -974,7 +974,7 @@ void __wrap_armDCacheClean(void* addr, size_t size) {
 }
 
 /*
- * The presentation interval (nfsc_swap_interval).
+ * The presentation interval (fh1_swap_interval).
  *
  * It is reapplied on every present, not when the chain is created, on purpose: the WSI sets it to 1
  * when creating the swapchain, and the chain is recreated when switching from docked to handheld.

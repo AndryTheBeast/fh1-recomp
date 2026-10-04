@@ -41,7 +41,7 @@ struct StatisticsWindow {
 StatisticsWindow ReadStatisticsWindow();
 
 /*
- * Exact-range read cache. See nfsc_io_ranges_mb in the .cpp.
+ * Exact-range read cache. See fh1_io_ranges_mb in the .cpp.
  *
  * Everything is cumulative since startup, not per interval: there are few events and the total is
  * what matters.
@@ -127,7 +127,7 @@ class HostPathFile : public File {
   bool FillWindow(size_t byte_offset, size_t requested, std::span<uint8_t> buffer,
                        size_t* out_bytes_read, X_STATUS* out_status);
 
-  // Direct read split into chunks. See the comment on nfsc_io_chunk_mb in the .cpp.
+  // Direct read split into chunks. See the comment on fh1_io_chunk_mb in the .cpp.
   X_STATUS ReadDirect(std::span<uint8_t> buffer, size_t byte_offset, size_t* out_bytes_read);
 
   std::unique_ptr<rex::filesystem::FileHandle> file_handle_;
@@ -143,7 +143,7 @@ class HostPathFile : public File {
   bool window_active_ = false;
   bool window_counted_ = false;
   // File id inside the RAM cache (0 = this file is not cached). See
-  // nfsc_io_cache_mb.
+  // fh1_io_cache_mb.
   uint32_t cache_id_ = 0;
 };
 

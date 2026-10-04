@@ -55,11 +55,13 @@ polishing the emulated GPU (plan and reuse table: `docs/native-renderer-fh1.md`)
 - [~] **N2 shader identity**: 92% of the shaders the game uploads are identified from the command
       stream alone (pixel 99%, vertex 84%); the rest needs hooks on FH1's D3D shader constructors.
 - [~] **N3 draws and textures**: logos, title, menus. N3a done; then (2026-10-02) the base changed to
-      nfsc-recomp's full renderer (fh1/src/native, `--nfsc_renderer=native`): FORZA HORIZON logo
+      nfsc-recomp's full renderer (fh1/src/native, then run with `--nfsc_renderer=native`): FORZA HORIZON logo
       and PRESS START drawn natively with textures. Next: title video, missing shaders (ring dumps),
       then menus and the festival.
       2026-10-04: festival drawn at 30 fps (open problems in docs/handoff-native-renderer.md); all code
       in English; user decision: make the renderer FH1's own (`--fh1_renderer=native`), porting his fixes.
+      Same day: done - the working renderer is now `fh1/src/native/fh1_*` (`--fh1_renderer=native`,
+      library `fh1_shaders.nfsp`); the old black-screen attempt and `reference/nfsmw-app` were removed.
 - [ ] **N4 render targets and resolves**: main scene drawn once, MSAA, aliases, readbacks -
       festival like D3D12.
 - [ ] **N5 races, garage, photos; performance.**

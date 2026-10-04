@@ -35,12 +35,12 @@
  * exactly on those 64 KB. The RAM ceiling goes down, not up: 16 windows x 256 KB = 4 MB, against
  * 128 x 64 KB = 8 MB.
  */
-REXCVAR_DEFINE_INT32(nfsc_io_window_kb, 256, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_window_kb, 256, "Filesystem",
                      "Read-ahead per file, in KB (0 = off). Read-only data only.");
 
 // How many windows can exist at once. A hard cap so that opening many files does not eat the RAM.
 // 128 was an arbitrary number; in a whole measured session there were never more than 10 live windows.
-REXCVAR_DEFINE_INT32(nfsc_io_windows_max, 16, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_windows_max, 16, "Filesystem",
                      "Maximum files with read-ahead at the same time.");
 
 /*
@@ -65,11 +65,11 @@ REXCVAR_DEFINE_INT32(nfsc_io_windows_max, 16, "Filesystem",
  * loading screens there is no correlation between slow reads and stutters. It is on because it
  * bounds the worst case and fixes short reads, not because a gain is expected.
  */
-REXCVAR_DEFINE_INT32(nfsc_io_chunk_mb, 4, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_chunk_mb, 4, "Filesystem",
                      "Splits large direct reads into chunks of this many MB (0 = all at once).");
 
 /*
- * RAM read cache by blocks (nfsc_io_cache_mb, off). The game rereads the same data from the SD
+ * RAM read cache by blocks (fh1_io_cache_mb, off). The game rereads the same data from the SD
  * every lap.
  *
  * Measured over 5 minutes of racing (line `[io] ranges:`):
@@ -109,7 +109,7 @@ REXCVAR_DEFINE_INT32(nfsc_io_chunk_mb, 4, "Filesystem",
  *  game crawled.)
  * ================================================================================================
  */
-REXCVAR_DEFINE_INT32(nfsc_io_cache_mb, 0, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_cache_mb, 0, "Filesystem",
                      "RAM cache of what was already read from disk, in MB (0 = off). Read-only data only. The game "
                      "rereads the same data every lap.");
 
@@ -124,7 +124,7 @@ REXCVAR_DEFINE_INT32(nfsc_io_cache_mb, 0, "Filesystem",
  * blocks for 132 to 140 ms. They are rereads of the zone pack: the game releases the pack on
  * leaving and asks for it again on entering, with the same offset and the same size.
  *
- * Why by range and not by blocks. The block cache above (nfsc_io_cache_mb) failed on the console
+ * Why by range and not by blocks. The block cache above (fh1_io_cache_mb) failed on the console
  * because of the blocks: only 1 % of the offsets the game asks for are aligned to 256 KB, so it
  * brought 365 KB from the SD for every 110 KB requested (x3.3 amplification) and ended up reading
  * more disk than it saved. Storing the exact range (file, offset, bytes) makes the amplification
@@ -168,21 +168,21 @@ REXCVAR_DEFINE_INT32(nfsc_io_cache_mb, 0, "Filesystem",
  * Memory: it comes from the host heap (1,024 MB), not from the GPU heap. With ~506 MB for the guest
  * and the thread stacks, 64 MB leaves margin; 128 would not in the pessimistic case.
  */
-REXCVAR_DEFINE_INT32(nfsc_io_ranges_mb, 64, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_ranges_mb, 64, "Filesystem",
                      "Cache of reads by exact range, total cap in MB (0 = off). 64 = the measured footprint of a "
                      "race (56.6 MB) without evictions; more buys nothing.");
 
 // Floor, in KB. At 4 MB it left out everything that is reread during a race (0.14-2.0 MB).
-REXCVAR_DEFINE_INT32(nfsc_io_ranges_min_kb, 256, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_ranges_min_kb, 256, "Filesystem",
                      "Only reads of this many KB or more are cached. 256 = the point where the simulation stops "
                      "gaining (with 128 evictions go up and hits go down).");
 
 // Compatibility: the old cvar in MB. If a toml sets it to a value > 0, it overrides the KB one.
-REXCVAR_DEFINE_INT32(nfsc_io_ranges_min_mb, 0, "Filesystem",
-                     "OBSOLETE (build 131): use nfsc_io_ranges_min_kb. If > 0 it overrides the KB one.");
+REXCVAR_DEFINE_INT32(fh1_io_ranges_min_mb, 0, "Filesystem",
+                     "OBSOLETE (build 131): use fh1_io_ranges_min_kb. If > 0 it overrides the KB one.");
 
 // Per-entry ceiling: a single read cannot take more than this out of the total cap.
-REXCVAR_DEFINE_INT32(nfsc_io_ranges_max_mb, 12, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_ranges_max_mb, 12, "Filesystem",
                      "No entry of the range cache is larger than this many MB.");
 
 namespace rex::filesystem {
@@ -197,7 +197,7 @@ std::atomic<int64_t> g_windows_live{0};
 // Above this it does not pay off: the request is already large and the window would only add an extra copy.
 constexpr size_t kRequestMaxFraction = 4;  // requested <= window/4
 
-/* The read cache (see nfsc_io_cache_mb). */
+/* The read cache (see fh1_io_cache_mb). */
 constexpr size_t kBlockCache = 256 * 1024;
 
 struct BlockCache {
@@ -257,7 +257,7 @@ void PruneCache(size_t limit) {
  */
 bool ReadWithCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_t byte_offset,
                   size_t* out_bytes_read) {
-  const size_t limit = static_cast<size_t>(REXCVAR_GET(nfsc_io_cache_mb)) * 1024u * 1024u;
+  const size_t limit = static_cast<size_t>(REXCVAR_GET(fh1_io_cache_mb)) * 1024u * 1024u;
   const size_t requested = buffer.size();
   if (!limit || !requested || !id || g_cache_without_memory) {
     return false;
@@ -293,7 +293,7 @@ bool ReadWithCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_
          * truncates large ones). The loop only stops when a piece returns 0 bytes. Without this,
          * half-filled blocks would be cached and the game would get incomplete data.
          */
-        const int32_t chunk_mb = REXCVAR_GET(nfsc_io_chunk_mb);
+        const int32_t chunk_mb = REXCVAR_GET(fh1_io_chunk_mb);
         const size_t chunk = chunk_mb > 0 ? static_cast<size_t>(chunk_mb) * 1024u * 1024u : range;
         while (read < range) {
           size_t n = 0;
@@ -362,7 +362,7 @@ bool ReadWithCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_
     g_cache_report = laps;
     REXLOG_INFO("[io] RAM cache: {} blocks ({} MB of {}), {} served from RAM and {} from disk ({:.1f} % hits); "
                 "{:.1f} MB delivered, {:.1f} read from the SD, {} blocks evicted",
-                g_cache.size(), g_cache_bytes >> 20, REXCVAR_GET(nfsc_io_cache_mb), g_cache_hits,
+                g_cache.size(), g_cache_bytes >> 20, REXCVAR_GET(fh1_io_cache_mb), g_cache_hits,
                 g_cache_misses, laps ? 100.0 * double(g_cache_hits) / double(laps) : 0.0,
                 double(g_cache_bytes_served) / 1048576.0, double(g_cache_bytes_disco) / 1048576.0,
                 g_cache_evicted);
@@ -372,7 +372,7 @@ bool ReadWithCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_
 
 /*
  * ================================================================================================
- * The exact-range cache. See nfsc_io_ranges_mb above.
+ * The exact-range cache. See fh1_io_ranges_mb above.
  *
  * The table is a vector and is scanned in full. This is deliberate: it was sized for a 32 MB cap
  * and a 4 MB floor per entry, where at most eight entries fit and the linear search is eight
@@ -416,21 +416,21 @@ std::atomic<uint64_t> g_ranges_sequential_mb{0};
 std::unordered_map<uint32_t, uint64_t> g_ranges_last_end;
 
 int64_t FloorBytes() {
-  const int64_t old_mb = REXCVAR_GET(nfsc_io_ranges_min_mb);
+  const int64_t old_mb = REXCVAR_GET(fh1_io_ranges_min_mb);
   if (old_mb > 0) {
     return old_mb * 1024 * 1024;  // an old toml sets it: honor it
   }
-  return int64_t(REXCVAR_GET(nfsc_io_ranges_min_kb)) * 1024;
+  return int64_t(REXCVAR_GET(fh1_io_ranges_min_kb)) * 1024;
 }
 
 // Does this read go into the cache? Only the size decides; the constructor already took care of
 // the file being read-only when it gave (or did not give) it an id.
 bool RangeEligible(size_t requested) {
-  const int64_t cap = int64_t(REXCVAR_GET(nfsc_io_ranges_mb)) * 1024 * 1024;
+  const int64_t cap = int64_t(REXCVAR_GET(fh1_io_ranges_mb)) * 1024 * 1024;
   if (cap <= 0) {
     return false;
   }
-  const int64_t ceiling = int64_t(REXCVAR_GET(nfsc_io_ranges_max_mb)) * 1024 * 1024;
+  const int64_t ceiling = int64_t(REXCVAR_GET(fh1_io_ranges_max_mb)) * 1024 * 1024;
   if (int64_t(requested) < FloorBytes()) {
     g_ranges_low_floor.fetch_add(1, std::memory_order_relaxed);
     return false;
@@ -528,7 +528,7 @@ void SaveRange(uint32_t id, uint64_t displacement, uint32_t requested, const uin
     return;
   }
 
-  const size_t cap = size_t(REXCVAR_GET(nfsc_io_ranges_mb)) * 1024u * 1024u;
+  const size_t cap = size_t(REXCVAR_GET(fh1_io_ranges_mb)) * 1024u * 1024u;
   std::lock_guard lock(g_ranges_mutex);
   for (const auto& e : g_ranges) {
     if (e.id == id && e.displacement == displacement && e.requested == requested) {
@@ -575,7 +575,7 @@ StatisticsRanges ReadStatisticsRanges() {
   e.sequential = g_ranges_sequential.load(std::memory_order_relaxed);
   e.sequential_bytes = g_ranges_sequential_mb.load(std::memory_order_relaxed);
   e.floor_kb = uint64_t(FloorBytes() / 1024);
-  const int32_t cap = REXCVAR_GET(nfsc_io_ranges_mb);
+  const int32_t cap = REXCVAR_GET(fh1_io_ranges_mb);
   e.cap_mb = cap > 0 ? uint64_t(cap) : 0;
   {
     std::lock_guard lock(g_ranges_mutex);
@@ -600,7 +600,7 @@ HostPathFile::HostPathFile(uint32_t file_access, HostPathEntry* entry,
     : File(file_access, entry), file_handle_(std::move(file_handle)) {
   // The window is decided once, at open time. Conditions: there is a handle (it is not a directory),
   // the device is read-only, the file was not opened for writing and the cvar allows it.
-  const int32_t kb = REXCVAR_GET(nfsc_io_window_kb);
+  const int32_t kb = REXCVAR_GET(fh1_io_window_kb);
   const bool quiere_write =
       (file_access & (FileAccess::kGenericWrite | FileAccess::kFileWriteData |
                       FileAccess::kFileAppendData | FileAccess::kGenericAll)) != 0;
@@ -614,11 +614,11 @@ HostPathFile::HostPathFile(uint32_t file_access, HostPathEntry* entry,
    * serving a stale copy would mean a corrupt save.
    */
   if (file_handle_ && entry && entry->is_read_only() && !quiere_write &&
-      (REXCVAR_GET(nfsc_io_cache_mb) > 0 || REXCVAR_GET(nfsc_io_ranges_mb) > 0)) {
+      (REXCVAR_GET(fh1_io_cache_mb) > 0 || REXCVAR_GET(fh1_io_ranges_mb) > 0)) {
     cache_id_ = IdOfPath(entry->path());
   }
   if (file_handle_ && kb > 0 && entry && entry->is_read_only() && !quiere_write) {
-    const int64_t max = REXCVAR_GET(nfsc_io_windows_max);
+    const int64_t max = REXCVAR_GET(fh1_io_windows_max);
     if (g_windows_live.fetch_add(1, std::memory_order_relaxed) < max) {
       window_size_ = static_cast<size_t>(kb) * 1024u;
       window_active_ = true;
@@ -699,7 +699,7 @@ bool HostPathFile::FillWindow(size_t byte_offset, size_t requested, std::span<ui
 }
 
 /*
- * The direct read, split into pieces. See nfsc_io_chunk_mb above.
+ * The direct read, split into pieces. See fh1_io_chunk_mb above.
  *
  * It must return exactly the same as a single pread in every case the game can see: success with
  * whatever count results, and X_STATUS_END_OF_FILE only if the first call really fails.
@@ -707,7 +707,7 @@ bool HostPathFile::FillWindow(size_t byte_offset, size_t requested, std::span<ui
 X_STATUS HostPathFile::ReadDirect(std::span<uint8_t> buffer, size_t byte_offset,
                                    size_t* out_bytes_read) {
   const size_t requested = buffer.size();
-  const int32_t chunk_mb = REXCVAR_GET(nfsc_io_chunk_mb);
+  const int32_t chunk_mb = REXCVAR_GET(fh1_io_chunk_mb);
   const size_t chunk = chunk_mb > 0 ? static_cast<size_t>(chunk_mb) * 1024u * 1024u : 0;
 
   if (!chunk || requested <= chunk) {
@@ -788,7 +788,7 @@ X_STATUS HostPathFile::ReadSync(std::span<uint8_t> buffer, size_t byte_offset,
   }
 
   /*
-   * The exact-range cache, before going to disk. See nfsc_io_ranges_mb.
+   * The exact-range cache, before going to disk. See fh1_io_ranges_mb.
    *
    * It is the only thing between the game and the SD for large reads: the zone pack that the game
    * releases on leaving and asks for again on entering, byte for byte, at the same place and with
@@ -808,7 +808,7 @@ X_STATUS HostPathFile::ReadSync(std::span<uint8_t> buffer, size_t byte_offset,
     }
   }
 
-  // The RAM cache, before going to disk. See nfsc_io_cache_mb: the game rereads the same data every
+  // The RAM cache, before going to disk. See fh1_io_cache_mb: the game rereads the same data every
   // lap, and those reads are what make a facade take a while to get its proper texture.
   if (cache_id_ && requested) {
     size_t read = 0;

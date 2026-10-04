@@ -8,7 +8,7 @@ After a codegen with gaps.toml, reads codegen.log for
 When S and T fall in two different functions and every function in the span
 between them (other than the first) was declared by gaps.toml, the gap is
 the tail of the first function, cut off too early (kind 2 in
-reference/nfsmw-app/gaps.toml). This removes those gap entries and writes
+nfsmw-nx's app/gaps.toml). This removes those gap entries and writes
 "0xFIRST" = { end = 0xNEXT } into gaps.toml's continuation block, so the
 first function covers the whole span.
 

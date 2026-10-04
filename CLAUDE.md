@@ -9,8 +9,9 @@ first, then the Nintendo Switch, by static recompilation with ReXGlue. **This re
 only**; the Switch port will be a separate repo started from this one once PC is fully playable.
 Keep the inherited Switch pieces (sdk Horizon layer, shaders/, mesa/, tools/switch, reference/)
 untouched until then. The base is the nfsmw-nx
-project (NFS Most Wanted for Switch); its game-specific app lives in `reference/nfsmw-app/` as a
-worked example.
+project (NFS Most Wanted for Switch). Its game-specific app was kept in `reference/nfsmw-app/` as a
+worked example until 2026-10-04 (deleted at the user's request, still in git history); the better
+worked example now is nfsc-recomp (`..\repos\nfsc-recomp-main`).
 
 Status (2026-10-02): **playable on PC** - boot, festival, free roam, races, garage, buying and
 repainting cars (photos correct), saving. Legion Go (Ryzen Z1 Extreme): 30 fps (game cap) in
@@ -207,15 +208,18 @@ lists the actions and saves the render targets as PNG.
   patch scripts with the Write tool or use chr(92).
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
-- English names (2026-10-04): all code is in English. The native renderer is `fh1/src/native/nfsc_*` (same file and
-  symbol names as nfsc-recomp, so `diff` against `../repos/nfsc-recomp-main/carbon/src/native` shows only the FH1
-  changes); run it with `--nfsc_renderer=native`, shader library `nfsc_shaders.nfsp` next to fh1.exe
-  (docs/handoff-english-rename.md has the list of renamed files and options).
+- English names (2026-10-04): all code is in English (docs/handoff-english-rename.md has the list of renamed
+  files and options).
+- FH1's own native renderer (2026-10-04): `fh1/src/native/fh1_*`, namespace `fh1::native`, every setting `fh1_*`;
+  run it with `--fh1_renderer=native`, shader library `fh1_shaders.nfsp` next to fh1.exe. It started as
+  nfsc-recomp's renderer (his files are `nfsc_*`): to compare with his repo, replace `nfsc_`/`NFSC_` by
+  `fh1_`/`FH1_` in his file first. `fh1/src/native/README.md` lists which of his fixes were taken and when. The
+  earlier black-screen attempt (`fh1/src/fh1_native_*.cpp`) and its copy of the library reader were removed.
 
 ## Next steps
 
 **Read docs/handoff-native-renderer.md first.** User decision 2026-10-04: the native renderer must be FH1's own
 (`--fh1_renderer=native`), taking from nfsc-recomp the fixes that work for FH1 instead of running his renderer
-as is. Today the working picture comes from `fh1/src/native/nfsc_*` (`--nfsc_renderer=native`: title, menus,
-festival at 30 fps, with the open problems listed in that handoff); ask the user how to make it ours before
-coding. ROADMAP.md and docs/native-renderer-fh1.md have the phases (N0-N5).
+as is. Done 2026-10-04 (user chose "adopt the working code"): the renderer is `fh1/src/native/fh1_*`
+(`--fh1_renderer=native`: title, menus, festival at 30 fps). Next: the open picture problems listed in that
+handoff, in its order. ROADMAP.md and docs/native-renderer-fh1.md have the phases (N0-N5).

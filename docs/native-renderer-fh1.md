@@ -1,7 +1,7 @@
 # FH1 native renderer - plan (started 2026-10-02)
 
 Decision (user, 2026-10-02): stop polishing the emulated Xbox 360 GPU and build a native renderer
-the way nfsmw-nx did for Need for Speed Most Wanted (its app is in `reference/nfsmw-app/`, its
+the way nfsmw-nx did for Need for Speed Most Wanted (its app was in `reference/nfsmw-app/` until 2026-10-04, see git history; its
 design in `docs/native-renderer.md` and `docs/shaders.md`). Fix bugs once it draws.
 
 ## What nfsmw-nx built (and what FH1 can reuse)
@@ -142,13 +142,13 @@ pass) stay off by default and are paused.
   The user's friend (GoatHonks) ported the whole nfsmw-nx native renderer to Need for Speed: Carbon
   (nfsc-recomp, same 2008 shader containers as FH1, hookless vertex-shader identification, AMD
   barrier fix, positional interpolants, shaders rebuilt from microcode). With his permission it is
-  copied in and built next to our own N1-N3a code; run with `--nfsc_renderer=native` and the
+  copied in and built next to our own N1-N3a code; run with `--nfsc_renderer=native` (now `--fh1_renderer=native`) and the
   library next to fh1.exe as `nfsc_shaders.nfsp`. FH1 fixes on top: microcode located through the
   2008 shader header (FH1 puts data first in the physical part; without it only 3 of 9 shaders
   matched), our tolerant vertex-shader pass, k_2_10_10_10 resolves, 16/32-bit render-target
   formats, shared constants widened for fh1Fetch. **First native picture**: the FORZA HORIZON logo
   and PRESS START drawn with textures (title video background still white), 30 fps, no crash.
-  Missing shaders: `--nfsc_dump_ring_shaders=DIR` writes unknown microcode, `tools/nfsc_synth_containers.py`
+  Missing shaders: `--nfsc_dump_ring_shaders=DIR` writes unknown microcode, `tools/fh1_synth_containers.py`
   rebuilds containers, our translator now names interpolants by position (as the hardware links
   them) so rebuilt and real shaders link.
 - 2026-10-03 00:00: all 33 title-screen shaders identified (4 rebuilt from ring dumps), 0 draws
@@ -169,4 +169,9 @@ pass) stay off by default and are paused.
   one image with viewport x2 (`fh1_msaa_4x_as_1x`, off) turned the festival pink/black - needs a
   closer look at which passes write what; (3) white title/menus (composite PS n767); (4) 2x MSAA
   reflection resolves. Collect unknown shaders with `--nfsc_dump_ring_shaders`, rebuild with
-  tools/nfsc_synth_containers.py (library 3,849).
+  tools/fh1_synth_containers.py (library 3,849).
+- 2026-10-04 **the renderer is FH1's own** (user decision): `fh1/src/native/nfsc_*` renamed to `fh1_*`
+  (namespace `fh1::native`, settings `fh1_*`, `--fh1_renderer=native`, library `fh1_shaders.nfsp`, pipeline
+  cache `fh1_native_pipelines.bin`); the N1-N3a attempt in `fh1/src/fh1_native_*.cpp` was removed. Wherever this
+  log says `nfsc_...` above, read `fh1_...`. nfsc-recomp's later fixes are ported by hand (list in
+  `fh1/src/native/README.md`).

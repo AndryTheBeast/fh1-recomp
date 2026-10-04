@@ -41,7 +41,7 @@
  */
 #define SPEC_CONSTANT_WITHOUT_BLUR    (1 << 19)
 /*
- * The world shadow map as the minimum of two textures (nfsc_native_shadow_minimum).
+ * The world shadow map as the minimum of two textures (fh1_native_shadow_minimum).
  *
  * The game resolves the same 1600x1600 map twice: without cars (sampled by the car body) and with the
  * cars drawn on top (sampled by the world). With this option the renderer draws the cars onto a
@@ -57,7 +57,7 @@
  * shaders that use it (OpConstant) and nowhere else. The specialization constant never reaches this
  * value (bits 24-30).
  */
-#define NFSC_MARK_SHADOW_MINIMUM       0x5E3B1A84u
+#define FH1_MARK_SHADOW_MINIMUM       0x5E3B1A84u
 #define SPEC_CONSTANT_ALPHA_FUNC_SHIFT  16
 #define SPEC_CONSTANT_ALPHA_FUNC_MASK   (7 << 16)
 
@@ -86,32 +86,32 @@ struct PushConstants
 // NFSMW: the same blocks of the upload buffer, also as dynamic UBOs in set 4. With
 // -fvk-use-dx-layout each float4 takes 16 contiguous bytes, so any 4-byte word of the shared block is
 // a component: v[B / 16][(B % 16) / 4], and asuint reads it without changing a bit.
-struct NfscBlockVs { float4 v[256]; };
+struct Fh1BlockVs { float4 v[256]; };
 // FH1: pixel shaders use all 256 constants (NFS: 224).
-struct NfscBlockPs { float4 v[256]; };
-struct NfscBlockShared { float4 v[41]; };  // FH1: 164 words (nfsc-recomp: loop constants at 122-153; FH1 154-163)
-[[vk::binding(0, 4)]] ConstantBuffer<NfscBlockVs> g_UboVertex;
-[[vk::binding(1, 4)]] ConstantBuffer<NfscBlockPs> g_UboPixel;
-[[vk::binding(2, 4)]] ConstantBuffer<NfscBlockShared> g_UboShared;
+struct Fh1BlockPs { float4 v[256]; };
+struct Fh1BlockShared { float4 v[41]; };  // FH1: 164 words (nfsc-recomp: loop constants at 122-153; FH1 154-163)
+[[vk::binding(0, 4)]] ConstantBuffer<Fh1BlockVs> g_UboVertex;
+[[vk::binding(1, 4)]] ConstantBuffer<Fh1BlockPs> g_UboPixel;
+[[vk::binding(2, 4)]] ConstantBuffer<Fh1BlockShared> g_UboShared;
 #define NFSMW_UBO ((g_SpecConstants & SPEC_CONSTANT_CONSTANTS_UBO) != 0)
-#define NFSC_SHARED_UINT(B)  asuint(g_UboShared.v[(B) / 16][((B) % 16) / 4])
-#define NFSC_SHARED_FLOAT(B) g_UboShared.v[(B) / 16][((B) % 16) / 4]
+#define FH1_SHARED_UINT(B)  asuint(g_UboShared.v[(B) / 16][((B) % 16) / 4])
+#define FH1_SHARED_FLOAT(B) g_UboShared.v[(B) / 16][((B) % 16) / 4]
 
-#define g_Booleans                 (NFSMW_UBO ? NFSC_SHARED_UINT(256) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 256))
-#define g_SwappedTexcoords         (NFSMW_UBO ? NFSC_SHARED_UINT(260) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 260))
-#define g_HalfPixelOffset          (NFSMW_UBO ? float2(NFSC_SHARED_FLOAT(264), NFSC_SHARED_FLOAT(268)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 264))
-#define g_AlphaThreshold           (NFSMW_UBO ? NFSC_SHARED_FLOAT(272) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 272))
+#define g_Booleans                 (NFSMW_UBO ? FH1_SHARED_UINT(256) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 256))
+#define g_SwappedTexcoords         (NFSMW_UBO ? FH1_SHARED_UINT(260) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 260))
+#define g_HalfPixelOffset          (NFSMW_UBO ? float2(FH1_SHARED_FLOAT(264), FH1_SHARED_FLOAT(268)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 264))
+#define g_AlphaThreshold           (NFSMW_UBO ? FH1_SHARED_FLOAT(272) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 272))
 // NFSMW: alpha test function (RB_COLORCONTROL.alpha_func): 0 never, 1 <, 2 ==, 3 <=,
 // 4 >, 5 !=, 6 >=, 7 always.
-#define g_AlphaFunction            (NFSMW_UBO ? NFSC_SHARED_UINT(276) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 276))
+#define g_AlphaFunction            (NFSMW_UBO ? FH1_SHARED_UINT(276) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 276))
 // NFSMW: position to host clip space, like ndc_scale/ndc_offset in the
 // emulation (graphics/util/draw.cpp). (1, 1) and (0, 0) for normal draws;
 // with Xenos clipping disabled it converts from pixels to NDC.
-#define g_NdcScale                 (NFSMW_UBO ? float2(NFSC_SHARED_FLOAT(280), NFSC_SHARED_FLOAT(284)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 280))
-#define g_NdcOffset                (NFSMW_UBO ? float2(NFSC_SHARED_FLOAT(288), NFSC_SHARED_FLOAT(292)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 288))
+#define g_NdcScale                 (NFSMW_UBO ? float2(FH1_SHARED_FLOAT(280), FH1_SHARED_FLOAT(284)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 280))
+#define g_NdcOffset                (NFSMW_UBO ? float2(FH1_SHARED_FLOAT(288), FH1_SHARED_FLOAT(292)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 288))
 // NFSMW: where each component of the vertex input at that location comes from
 // (D3D patches the fetch swizzle according to the declaration). 0xFFF = as is.
-#define g_InputRemap(LOC)          (NFSMW_UBO ? NFSC_SHARED_UINT(296 + (LOC) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 296 + (LOC) * 4))
+#define g_InputRemap(LOC)          (NFSMW_UBO ? FH1_SHARED_UINT(296 + (LOC) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 296 + (LOC) * 4))
 
 [[vk::constant_id(0)]] const uint g_SpecConstants = 0;
 
@@ -141,8 +141,8 @@ uint g_SpecConstants();
 // (0 none, 1 8in16, 2 8in32, 3 16in32). Component layouts as in the SDK's SPIR-V translator
 // (spirv_translator_fetch.cpp); fraction formats are normalized (signed: max(v / (2^(w-1) - 1), -1)).
 #ifdef __spirv__
-#define g_GuestBase       (NFSMW_UBO ? (uint64_t(NFSC_SHARED_UINT(616)) | (uint64_t(NFSC_SHARED_UINT(620)) << 32)) : vk::RawBufferLoad<uint64_t>(g_PushConstants.SharedConstants + 616))
-#define g_FetchAddress(C) (NFSMW_UBO ? NFSC_SHARED_UINT(624 + ((C) - 24) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 624 + ((C) - 24) * 4))
+#define g_GuestBase       (NFSMW_UBO ? (uint64_t(FH1_SHARED_UINT(616)) | (uint64_t(FH1_SHARED_UINT(620)) << 32)) : vk::RawBufferLoad<uint64_t>(g_PushConstants.SharedConstants + 616))
+#define g_FetchAddress(C) (NFSMW_UBO ? FH1_SHARED_UINT(624 + ((C) - 24) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 624 + ((C) - 24) * 4))
 
 uint fh1Swap(uint w, uint endian)
 {
@@ -325,7 +325,7 @@ float4 tfetch2DShadow(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
     return tfetch2D(resourceDescriptorIndex, samplerDescriptorIndex, texCoord, offset, invSize);
 }
 
-// The shadow map with the minimum of its pair (nfsc_native_shadow_minimum). The library step changes
+// The shadow map with the minimum of its pair (fh1_native_shadow_minimum). The library step changes
 // all shadow map calls to this function and passes it the 3D index of that same register, which is
 // where the app puts the pair: the world map (or the texture itself, which gives the same texel, while
 // the app is checking). Both are sampled the same way (same point sampler, same coordinates and
@@ -333,7 +333,7 @@ float4 tfetch2DShadow(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
 // true and the driver removes it when specializing.
 float4 tfetch2DShadowMin(uint resourceDescriptorIndex, uint pairDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float2 invSize)
 {
-    [branch] if (g_SpecConstants() == NFSC_MARK_SHADOW_MINIMUM)
+    [branch] if (g_SpecConstants() == FH1_MARK_SHADOW_MINIMUM)
         return float4(0.0, 0.0, 0.0, 0.0);
     float4 input_value = tfetch2DShadow(resourceDescriptorIndex, samplerDescriptorIndex, texCoord, offset, invSize);
     [branch] if (g_SpecConstants() & SPEC_CONSTANT_SHADOW_MINIMUM)

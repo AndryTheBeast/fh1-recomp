@@ -1,5 +1,5 @@
 # Code gaps found by tools/gaps.py (--min 8) in the FH1 NTSC-U default.xex.
-# Every gap declared as a standalone function (kind 1 in reference/nfsmw-app/gaps.toml).
+# Every gap declared as a standalone function (kind 1 in nfsmw-nx's app/gaps.toml).
 # Regenerate after changing overrides.toml. Entries that turn out to be data or
 # continuations get removed or moved to overrides.toml with the reason.
 [functions]

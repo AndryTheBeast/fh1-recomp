@@ -1295,18 +1295,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
         {
             for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
             {
-                println("#define {}_Texture{}DescriptorIndex (NFSMW_UBO ? NFSC_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+                println("#define {}_Texture{}DescriptorIndex (NFSMW_UBO ? FH1_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
                     constantName, TEXTURE_DIMENSIONS[j], j * 64 + constantInfo->registerIndex * 4, j * 64 + constantInfo->registerIndex * 4);
             }
 
-            println("#define {}_SamplerDescriptorIndex (NFSMW_UBO ? NFSC_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+            println("#define {}_SamplerDescriptorIndex (NFSMW_UBO ? FH1_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
                 constantName, std::size(TEXTURE_DIMENSIONS) * 64 + constantInfo->registerIndex * 4, std::size(TEXTURE_DIMENSIONS) * 64 + constantInfo->registerIndex * 4);
 
             // 1/size of the host image of that slot, which the renderer writes at byte
             // 360 + slot * 8 of the shared constants (right after g_InputRemap).
             {
                 const uint32_t invBase = 360 + constantInfo->registerIndex * 8;
-                println("#define {}_InvSize (NFSMW_UBO ? float2(NFSC_SHARED_FLOAT({}), NFSC_SHARED_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
+                println("#define {}_InvSize (NFSMW_UBO ? float2(FH1_SHARED_FLOAT({}), FH1_SHARED_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
                     constantName, invBase, invBase + 4, invBase);
             }
 
@@ -1416,11 +1416,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
         if (samplers.count(slot))
             continue;
         for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
-            println("#define s{}_Texture{}DescriptorIndex (NFSMW_UBO ? NFSC_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+            println("#define s{}_Texture{}DescriptorIndex (NFSMW_UBO ? FH1_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
                 slot, TEXTURE_DIMENSIONS[j], j * 64 + slot * 4, j * 64 + slot * 4);
-        println("#define s{}_SamplerDescriptorIndex (NFSMW_UBO ? NFSC_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+        println("#define s{}_SamplerDescriptorIndex (NFSMW_UBO ? FH1_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
             slot, std::size(TEXTURE_DIMENSIONS) * 64 + slot * 4, std::size(TEXTURE_DIMENSIONS) * 64 + slot * 4);
-        println("#define s{}_InvSize (NFSMW_UBO ? float2(NFSC_SHARED_FLOAT({}), NFSC_SHARED_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
+        println("#define s{}_InvSize (NFSMW_UBO ? float2(FH1_SHARED_FLOAT({}), FH1_SHARED_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
             slot, 360 + slot * 8, 364 + slot * 8, 360 + slot * 8);
     }
 #endif
@@ -1612,7 +1612,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             value = reinterpret_cast<const PixelShader*>(shader)->interpolators[i];
 #ifdef NFSMW_RECOMP
             // FH1 (from nfsc-recomp): interpolants are named by position (TEXCOORDi = the i-th one), as the Xbox 360
-            // links them, so shaders from real containers and from microcode alone (tools/nfsc_synth_containers.py)
+            // links them, so shaders from real containers and from microcode alone (tools/fh1_synth_containers.py)
             // link with each other whatever semantics their containers declare.
             println("\tfloat4 r{} = iTexCoord{};", uint32_t(interpolator.reg), i);
 #else

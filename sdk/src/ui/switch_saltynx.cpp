@@ -120,7 +120,7 @@ uint64_t g_frames = 0;    // idem
 std::atomic<BlockReverseNx*> g_reverse{nullptr};
 std::atomic<bool> g_reverse_en_base{false};
 std::atomic<bool> g_reverse_active{false};
-/* Turned on by the game (cvar nfsc_switch_saltynx). On by default. */
+/* Turned on by the game (cvar fh1_switch_saltynx). On by default. */
 std::atomic<int> g_enabled{1};
 /*
  * Connection attempts left. The sysmodule may take longer than us to start, so if it is not there at

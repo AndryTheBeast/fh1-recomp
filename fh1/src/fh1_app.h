@@ -13,7 +13,6 @@
 #include "fh1_autoplay.h"
 #include "fh1_crash_report.h"
 #include "fh1_native_system.h"
-#include "nfsc_native_system.h"
 
 void Fh1StartProfiler();  // fh1_profiler.cpp
 namespace fh1::census { void Start(); }  // fh1_d3d_census_report.cpp
@@ -46,18 +45,14 @@ class Fh1App : public rex::ReXApp {
     Fh1StartProfiler();  // --fh1_profile=N (fh1_profiler.cpp)
     fh1::census::Start();  // --fh1_d3d_census (Direct3D mapping)
   }
-  // Forza Horizon has no native renderer (yet): draw through the SDK's Xbox 360
-  // GPU emulation. The SDK defaults to none because nfsmw-nx renders natively.
+  // By default Forza Horizon draws through the SDK's Xbox 360 GPU emulation (the native renderer
+  // is opt-in). The SDK defaults to none because nfsmw-nx renders natively.
   // --gpu_plugin=<name> on the command line still wins.
   void OnPreSetup(rex::RuntimeConfig& config) override {
-    // Native renderer in development (docs/native-renderer-fh1.md): --fh1_renderer=native puts the
-    // app's own graphics system in config.graphics, and ReXApp then does not load the GPU plugin.
+    // --fh1_renderer=native: FH1's native Vulkan renderer (src/native, docs/native-renderer-fh1.md) goes in
+    // config.graphics, and ReXApp then does not load the GPU plugin.
     if (fh1::native::Active()) {
-      config.graphics = fh1::native::CreateGraphicsSystem();
-    }
-    // --nfsc_renderer=native: the full native renderer copied from nfsc-recomp / nfsmw-nx (src/native).
-    if (!config.graphics && nfsc::native::Active()) {
-      config.graphics = nfsc::native::CreateSystemGraphics();
+      config.graphics = fh1::native::CreateSystemGraphics();
     }
     if (config.gpu_plugin.empty()) config.gpu_plugin = "xenos";
     // FH1 reads render-to-texture results on the CPU: its auto exposure (without it a wrong

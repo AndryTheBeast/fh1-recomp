@@ -2,7 +2,7 @@
 #  Forza Horizon (NTSC-U, Title ID 4D5309C9, default.xex v0.0.0.10) — manual
 #  declarations for the codegen. Included from fh1_manifest.toml.
 #  Flat schema: sections at the root. Format explained in
-#  reference/nfsmw-app/overrides.toml.
+#  nfsmw-nx's app/overrides.toml.
 # ============================================================================
 
 # setjmp / longjmp (XDK CRT). The game's libjpeg (paint shop, sub_82A1xxxx-82A2xxxx) reports

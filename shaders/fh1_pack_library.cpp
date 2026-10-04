@@ -1,6 +1,6 @@
 // FH1 version of nfsmw_pack_library.cpp: packs FH1's 2008 shader containers and their SPIR-V into
-// fh1_shaders.nfsp (fh1/src/fh1_shader_library.*). No 2005 conversion. Native renderer step N0.
-#include "../fh1/src/fh1_shader_library.h"
+// fh1_shaders.nfsp (fh1/src/native/fh1_shader_library.*). No 2005 conversion. Native renderer step N0.
+#include "../fh1/src/native/fh1_shader_library.h"
 
 #include <algorithm>
 #include <cstdio>

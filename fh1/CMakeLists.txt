@@ -31,23 +31,19 @@ set(FH1_SOURCES
     src/fh1_d3d_census_report.cpp
     src/fh1_perf_hooks.cpp
     src/fh1_shader_dump.cpp
-    src/fh1_native_system.cpp
-    src/fh1_native_shaders.cpp
-    src/fh1_native_targets.cpp
-    src/fh1_shader_library.cpp
-    # Native renderer from nfsc-recomp (GoatHonks), itself nfsmw-nx's (StevensND), GPL-3.0: see src/native/README.md.
-    # Run with --nfsc_renderer=native.
-    src/native/nfsc_native_system.cpp
-    src/native/nfsc_native_targets.cpp
-    src/native/nfsc_native_shaders.cpp
-    src/native/nfsc_shader_library.cpp
-    src/native/nfsc_native_hooks.cpp
-    src/native/nfsc_native_draws.cpp
-    src/native/nfsc_native_texture_pool.cpp
-    src/native/nfsc_native_capture.cpp
-    src/native/nfsc_graphics_settings.cpp
-    src/native/nfsc_native_stubs.cpp
-    src/native/nfsc_short_wait.cpp
+    # FH1's native renderer (--fh1_renderer=native). Started from nfsc-recomp's (GoatHonks), itself nfsmw-nx's
+    # (StevensND), GPL-3.0: see src/native/README.md.
+    src/native/fh1_native_system.cpp
+    src/native/fh1_native_targets.cpp
+    src/native/fh1_native_shaders.cpp
+    src/native/fh1_shader_library.cpp
+    src/native/fh1_native_hooks.cpp
+    src/native/fh1_native_draws.cpp
+    src/native/fh1_native_texture_pool.cpp
+    src/native/fh1_native_capture.cpp
+    src/native/fh1_graphics_settings.cpp
+    src/native/fh1_native_stubs.cpp
+    src/native/fh1_short_wait.cpp
     src/native/ring_progress.cpp
 )
 
@@ -71,14 +67,12 @@ if(NOT REXGLUE_PLATFORM_SWITCH AND TARGET imgui)
     target_include_directories(fh1 PRIVATE
         $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
-# xxhash.h for the native renderer's shader library (fh1_shader_library.cpp, fh1_native_shaders.cpp).
+# xxhash.h for the native renderer's shader library (src/native/fh1_shader_library.cpp, fh1_native_shaders.cpp).
 target_include_directories(fh1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sdk/thirdparty/xxHash)
 # The SDK presenter's SPIR-V for drawing the game image (fh1_native_targets.cpp).
 target_include_directories(fh1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sdk/src/ui/shaders)
-# The copied native renderer: its headers, two SDK headers nfsc-recomp added (compat/rex), and the
-# NFSC_NATIVE_RENDERER switch that keeps Most Wanted's game hooks out.
+# The native renderer: its headers and two SDK headers nfsc-recomp added (compat/rex).
 target_include_directories(fh1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/native ${CMAKE_CURRENT_SOURCE_DIR}/src/native/compat)
-target_compile_definitions(fh1 PRIVATE NFSC_NATIVE_RENDERER=1)
 if(NOT REXGLUE_PLATFORM_SWITCH AND TARGET renderdoc)
     target_include_directories(fh1 PRIVATE
         $<TARGET_PROPERTY:renderdoc,INTERFACE_INCLUDE_DIRECTORIES>)

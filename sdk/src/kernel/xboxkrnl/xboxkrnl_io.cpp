@@ -51,9 +51,9 @@
  *
  * A monotonic clock read per call is a few nanoseconds next to a trip to the SD. It is on.
  */
-REXCVAR_DEFINE_INT32(nfsc_io_warning_ms, 8, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_warning_ms, 8, "Filesystem",
                      "Logs a warning for every open or read slower than this many ms (0 = never).");
-REXCVAR_DEFINE_INT32(nfsc_io_summary_s, 15, "Filesystem",
+REXCVAR_DEFINE_INT32(fh1_io_summary_s, 15, "Filesystem",
                      "How often, in seconds, the [io] summary is written (0 = never).");
 
 namespace rex::kernel::xboxkrnl {
@@ -189,7 +189,7 @@ inline void MaxAtomic(std::atomic<uint64_t>& target, uint64_t input_value) {
 
 // A single thread writes the summary: whichever wins the exchange of the next deadline.
 void MaybeSummaryIo(uint64_t now_us) {
-  const int32_t period_s = REXCVAR_GET(nfsc_io_summary_s);
+  const int32_t period_s = REXCVAR_GET(fh1_io_summary_s);
   if (period_s <= 0) {
     return;
   }
@@ -301,7 +301,7 @@ void MaybeSummaryIo(uint64_t now_us) {
       window_evictions);
 
   /*
-   * The cache of large reads by exact range (nfsc_io_ranges_mb).
+   * The cache of large reads by exact range (fh1_io_ranges_mb).
    *
    * It is accumulated since startup, not per interval: there are few events and what matters is
    * the session total. And it is always printed, whether it is on or not and whether there was
@@ -339,7 +339,7 @@ inline void NoteOpen(uint64_t us, bool ok, const std::string_view path) {
   g_io.us_opens.fetch_add(us, std::memory_order_relaxed);
   MaxAtomic(g_io.us_open_worst, us);
 
-  const int32_t warning_ms = REXCVAR_GET(nfsc_io_warning_ms);
+  const int32_t warning_ms = REXCVAR_GET(fh1_io_warning_ms);
   if (warning_ms > 0 && us >= static_cast<uint64_t>(warning_ms) * 1000ull &&
       g_io_warnings.fetch_add(1, std::memory_order_relaxed) < 300) {
     REXKRNL_WARN("[io] SLOW: open '{}' tardo {:.1f} ms ({})", path, us / 1000.0,
@@ -356,7 +356,7 @@ inline void NoteRead(uint64_t us, uint32_t bytes, const std::string_view path,
 
   const bool reread = NoteRange(path, displacement, bytes);
 
-  const int32_t warning_ms = REXCVAR_GET(nfsc_io_warning_ms);
+  const int32_t warning_ms = REXCVAR_GET(fh1_io_warning_ms);
   if (warning_ms > 0 && us >= static_cast<uint64_t>(warning_ms) * 1000ull &&
       g_io_warnings.fetch_add(1, std::memory_order_relaxed) < 300) {
     // The offset is included. Without it a sequential sweep cannot be told apart from a reread.
@@ -372,32 +372,32 @@ inline void NoteRead(uint64_t us, uint32_t bytes, const std::string_view path,
 // Switch.
 namespace {
 std::mutex g_nfsmw_wmv_mutex;
-std::string g_nfsc_last_wmv;
-std::vector<std::pair<const rex::filesystem::Entry*, std::string>> g_nfsc_wmv_open;
-std::string g_nfsc_last_wmv_read;
+std::string g_fh1_last_wmv;
+std::vector<std::pair<const rex::filesystem::Entry*, std::string>> g_fh1_wmv_open;
+std::string g_fh1_last_wmv_read;
 
-void NfscNoteOpen(const rex::filesystem::Entry* entry, const std::string& path) {
+void Fh1NoteOpen(const rex::filesystem::Entry* entry, const std::string& path) {
   std::lock_guard<std::mutex> lock(g_nfsmw_wmv_mutex);
-  g_nfsc_last_wmv = path;
-  for (auto& [e, r] : g_nfsc_wmv_open) {
+  g_fh1_last_wmv = path;
+  for (auto& [e, r] : g_fh1_wmv_open) {
     if (e == entry) {
       r = path;
       return;
     }
   }
-  if (g_nfsc_wmv_open.size() >= 64) {
-    g_nfsc_wmv_open.erase(g_nfsc_wmv_open.begin());
+  if (g_fh1_wmv_open.size() >= 64) {
+    g_fh1_wmv_open.erase(g_fh1_wmv_open.begin());
   }
-  g_nfsc_wmv_open.emplace_back(entry, path);
+  g_fh1_wmv_open.emplace_back(entry, path);
   REXLOG_INFO("[video] the game opens '{}'", path);
 }
 
-void NfscNoteRead(const rex::filesystem::Entry* entry) {
+void Fh1NoteRead(const rex::filesystem::Entry* entry) {
   std::lock_guard<std::mutex> lock(g_nfsmw_wmv_mutex);
-  for (const auto& [e, r] : g_nfsc_wmv_open) {
+  for (const auto& [e, r] : g_fh1_wmv_open) {
     if (e == entry) {
-      if (r != g_nfsc_last_wmv_read) {
-        g_nfsc_last_wmv_read = r;
+      if (r != g_fh1_last_wmv_read) {
+        g_fh1_last_wmv_read = r;
         REXLOG_INFO("[video] the game reads '{}'", r);
       }
       return;
@@ -406,15 +406,15 @@ void NfscNoteRead(const rex::filesystem::Entry* entry) {
 }
 }  // namespace
 
-std::string NfscLastWmvOpen() {
+std::string Fh1LastWmvOpen() {
   std::lock_guard<std::mutex> lock(g_nfsmw_wmv_mutex);
-  return g_nfsc_last_wmv;
+  return g_fh1_last_wmv;
 }
 
 // NFSMW: last .wmv movie read by the game: the one being played.
-std::string NfscLastWmvRead() {
+std::string Fh1LastWmvRead() {
   std::lock_guard<std::mutex> lock(g_nfsmw_wmv_mutex);
-  return g_nfsc_last_wmv_read;
+  return g_fh1_last_wmv_read;
 }
 
 struct CreateOptions {
@@ -550,14 +550,14 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
     // Handle ref is incremented, so return that.
     handle = file->handle();
 
-    // NFSMW: records the .wmv movies (see NfscLastWmvOpen).
+    // NFSMW: records the .wmv movies (see Fh1LastWmvOpen).
     if (target_path.size() > 4) {
       std::string extension(target_path.substr(target_path.size() - 4));
       for (char& c : extension) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
       }
       if (extension == ".wmv") {
-        NfscNoteOpen(vfs_file->entry(), std::string(target_path));
+        Fh1NoteOpen(vfs_file->entry(), std::string(target_path));
       }
     }
   }
@@ -606,9 +606,9 @@ u32 NtReadFile_entry(u32 file_handle, u32 event_handle, mapped_void apc_routine_
   X_STATUS result = X_STATUS_SUCCESS;
   bool apc_queued = false;
 
-  // NFSMW: last .wmv movie read (see NfscLastWmvRead).
+  // NFSMW: last .wmv movie read (see Fh1LastWmvRead).
   if (auto read = REX_KERNEL_OBJECTS()->LookupObject<XFile>(file_handle)) {
-    NfscNoteRead(read->entry());
+    Fh1NoteRead(read->entry());
   }
 
   bool signal_event = false;
