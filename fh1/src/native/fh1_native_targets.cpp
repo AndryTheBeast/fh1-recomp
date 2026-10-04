@@ -1562,6 +1562,9 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
           base_resolved = base & 0x1FFFFFFF;
         }
         if (resolved) {
+          if (base_resolved && resolved->image.width >= 1280 && resolved->image.height >= 720) {
+            last_resolved_screen_ = base_resolved;  // FH1: see Present (Swap of a front buffer nobody resolved)
+          }
           NoteCopy(base & 0x1FFFFFFF, pitch_target, height_target, draws_before);
           if (composite_there_is_ || composite_stale_ != 0) {  // fh1_native_lazy_composite
             CompositeBeforeOfWriteTexture(base & 0x1FFFFFFF, x0 == 0 && y0 == 0 &&
@@ -2273,8 +2276,26 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       return painted_tile;
     }
     auto it = resolved_.find(base);
+    // FH1: while it loads at boot the game resolves its trademark screen once into a texture and then presents
+    // front buffers it has not resolved anything into. Show the last screen-sized resolved texture then, instead
+    // of nothing.
+    if ((it == resolved_.end() || !it->second.image.prepared) && last_resolved_screen_) {
+      it = resolved_.find(last_resolved_screen_);
+    }
     if (it == resolved_.end() || !it->second.image.prepared) {
-      Reject(4, "Swap without a resolved texture: the test color is painted");
+      {  // FH1 diagnostic: which front buffer the game presents and what has been resolved so far (first 6 times)
+        static uint32_t seen = 0;
+        if (seen < 6) {
+          ++seen;
+          std::string known;
+          for (const auto& [address, r] : resolved_) {
+            known += fmt::format(" {:08X}{}", address, r.image.prepared ? "" : "(not prepared)");
+          }
+          REXLOG_INFO("[fh1] Swap of front buffer {:08X} ({}x{}) without a resolved texture; resolved so far:{}", base,
+                      width, height, known);
+        }
+      }
+      Reject(4, "Swap without a resolved texture: nothing is painted");
       return false;
     }
     Resolved& resolved = it->second;
@@ -4060,6 +4081,10 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     switch (format) {
       case 12: return 3;
       case 10: return 2;
+      // FH1: k_8_8_8_8_GAMMA and k_8_8_8_8 are the same 32 bits in the EDRAM. The game draws its videos (boot logos,
+      // intro, menu backgrounds) into the gamma format and resolves them with the color info set to plain 8_8_8_8:
+      // with one image per format the resolve read a target nobody had drawn (white from its own clear).
+      case 1: return 0;
       default: return format;
     }
   }
@@ -4281,6 +4306,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     return nullptr;
   }
   bool tile_registered_ = false;
+  uint32_t last_resolved_screen_ = 0;  // FH1: address of the last resolved texture of 1280x720 or more
   bool strips_depth_warned_ = false;  // NFSC: depth resolve in strips (log once)
   uint64_t presented_stats_ = 0;  // NFSC: F2 monitor
   std::chrono::steady_clock::time_point last_presented_stats_{};

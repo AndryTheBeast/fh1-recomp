@@ -371,6 +371,9 @@ REXCVAR_DEFINE_BOOL(fh1_native_ring_core_exclusive, false, "FH1",
 REXCVAR_DEFINE_INT32(fh1_native_wait_regmem_us, 200, "FH1",
                      "Native renderer: pause between WAIT_REG_MEM polls in microseconds, after 8 quick yields "
                      "(NFSC: high-resolution timer on Windows, so it is accurate; was 1000)");
+REXCVAR_DEFINE_BOOL(fh1_native_swap_test_color, false, "FH1",
+                    "Native renderer: a Swap without a game image paints a pulsing blue-green test color instead of "
+                    "black (tests only: tells a running game from a stalled one)");
 REXCVAR_DEFINE_INT32(fh1_native_diag_frame_s, 0, "FH1",
                      "Native renderer: after this many seconds, logs every draw and every copy of one whole frame "
                      "(0 = no; tests only)");
@@ -2431,7 +2434,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   // One line per draw: shaders, render targets, state and the textures of the PS samplers
   // (address / format / dimension; ! if the fetch constant is not a texture).
   void TraceDraw() {
-    if (!tracing_ || traces_ >= 4000) {
+    if (!tracing_ || traces_ >= 20000) {
       return;
     }
     ++traces_;
@@ -2491,7 +2494,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   // textures, as they are in guest memory.
   void TraceVertices(uint32_t initiator) {
     namespace g = rex::graphics;
-    if (!vs_draw_ || !ps_draw_ || traces_ >= 4000 ||
+    if (!vs_draw_ || !ps_draw_ || traces_ >= 20000 ||
         vs_microcode_.size() != vs_draw_->microcode.size()) {
       return;
     }
@@ -2649,7 +2652,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   }
 
   void TraceCopy(const RegistersCopy& r) {
-    if (!tracing_ || traces_ >= 4000) {
+    if (!tracing_ || traces_ >= 20000) {
       return;
     }
     ++traces_;
@@ -3684,14 +3687,17 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     if (dfn.vkBeginCommandBuffer(commands_, &start) != VK_SUCCESS) {
       return false;
     }
-    // Test color: green goes up and down with each Swap, so a capture
-    // tells a running game from a stalled one.
-    const float phase = float(swap % 240) / 239.0f;
+    // A Swap without a game image (the first frames of boot): black, as the console shows. With
+    // fh1_native_swap_test_color the old test color is painted instead: green goes up and down with each Swap,
+    // so a capture tells a running game from a stalled one.
     VkClearValue color{};
-    color.color.float32[0] = 0.05f;
-    color.color.float32[1] = 0.10f + 0.40f * phase;
-    color.color.float32[2] = 0.35f;
     color.color.float32[3] = 1.0f;
+    if (REXCVAR_GET(fh1_native_swap_test_color)) {
+      const float phase = float(swap % 240) / 239.0f;
+      color.color.float32[0] = 0.05f;
+      color.color.float32[1] = 0.10f + 0.40f * phase;
+      color.color.float32[2] = 0.35f;
+    }
     VkRenderPassBeginInfo pass{};
     pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     pass.renderPass = render_pass_;
