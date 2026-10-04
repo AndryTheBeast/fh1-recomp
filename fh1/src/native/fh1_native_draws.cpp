@@ -85,6 +85,7 @@ static const uint32_t kSpirvGlowSoft[1] = {0};
 #include <system_error>  // the bind thread
 #include <unordered_map>
 #include <unordered_set>
+#include <deque>
 #include <vector>
 
 /*
@@ -1081,13 +1082,17 @@ REXCVAR_DEFINE_BOOL(fh1_msaa_4x_as_1x, false, "FH1",
                     "Native renderer: 4x MSAA passes draw into the 1x render target of twice the pitch, as they share the "
                     "EDRAM on the Xbox 360 (FH1 draws its scene depth that way). Off: the first try turned the festival pink/black "
                     "(2026-10-03); false = separate one-sample image");
+REXCVAR_DEFINE_BOOL(fh1_native_alpha_to_mask, true, "FH1",
+                    "Native renderer: draws with alpha to mask and no alpha test discard pixels below half alpha (the "
+                    "crowd and foliage cut-outs). false = drawn solid");
 REXCVAR_DEFINE_BOOL(fh1_msaa_4x_clears_as_1x, true, "FH1",
                     "Native renderer: 4x MSAA passes of 640 pitch or less (Direct3D's clears of depth and stencil) draw into "
                     "the 1x render target of twice the pitch, which is the one the game uses. false = an image of their "
                     "own (no shadows in the scene)");
-REXCVAR_DEFINE_INT32(fh1_vertices_10_11_11_mask, 0xFFFE, "FH1",
+REXCVAR_DEFINE_INT32(fh1_vertices_10_11_11_mask, 0xFFFF, "FH1",
                      "Vertex usages (bit = D3DDECLUSAGE: 0 position, 3 normal, 5 texcoord...) whose k_10_11_11 data is drawn. "
-                     "Positions off: with them the festival turns black (2026-10-03, not understood yet)");
+                     "Positions were off until 2026-10-04: their draws are billboards fetched with index / 4 "
+                     "(EntryVertices::index_computed), and drawn without that they covered the festival in black");
 REXCVAR_DEFINE_BOOL(fh1_barriers, true, "FH1",
                     "Full GPU memory barriers between copies, clears and render passes (needed on AMD). false = as the "
                     "Most Wanted port (no barriers: only for comparisons)")
@@ -1887,6 +1892,9 @@ struct EntryVertices {
   std::vector<AttributeVertices> attributes;
   std::vector<BindingVertices> bindings;
   std::array<uint32_t, 16> remaps{};  // g_InputRemap by location
+  // FH1: a fetch takes its vertex index from a value the shader computes instead of the vertex index itself
+  // (billboards: one stored vertex per quad, fetched with index / 4). See the vertex sources in Draw.
+  bool index_computed = false;
   uint32_t specialization = 0;
   uint64_t fingerprint = 0;
 };
@@ -2755,10 +2763,20 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       xenos::Endian order;
       uint32_t bytes;
       uint64_t address;  // physical, of the first byte used
+      bool expanded = false;  // FH1: data is a copy made here (vertices_expanded_), not guest memory
     };
     std::array<Source, 16> sources{};
     if (entry->bindings.size() > sources.size()) {
       return Reject(9, "too many vertex streams");
+    }
+    // FH1: billboards (crowd, trees, vegetation) are quad lists with one stored vertex per quad: the shader fetches
+    // vertex index / 4 and places the four corners from the index. The host fetches by the index itself, so each
+    // stored vertex is repeated four times in the copy. Only that case is known: quads.
+    if (entry->index_computed && !quads) {
+      return Reject(317, "vertex fetch with a computed index outside a quad list");
+    }
+    if (entry->index_computed) {
+      vertices_expanded_.clear();
     }
     VkDeviceSize bytes_vertices = 0;
     for (size_t b = 0; b < entry->bindings.size(); ++b) {
@@ -2770,6 +2788,24 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
       const uint64_t address = uint64_t(d0 & 0x1FFFFFFC);
       const uint64_t available = uint64_t((d1 >> 2) & 0xFFFFFF) * 4;
+      if (entry->index_computed) {
+        const uint32_t first = vmin / 4, last = vmax / 4;
+        const uint64_t start = uint64_t(first) * binding.stride;
+        if (start + uint64_t(last - first + 1) * binding.stride > available ||
+            address + start + uint64_t(last - first + 1) * binding.stride > kMemoryPhysical) {
+          return Reject(12, "vertices outside memory");
+        }
+        const uint8_t* guest = memory_->TranslatePhysical(uint32_t(address + start));
+        std::vector<uint8_t>& copy = vertices_expanded_.emplace_back(size_t(vertices) * binding.stride);
+        for (uint32_t j = 0; j < vertices; ++j) {
+          std::memcpy(copy.data() + size_t(j) * binding.stride,
+                      guest + size_t((vmin + j) / 4 - first) * binding.stride, binding.stride);
+        }
+        sources[b] = {copy.data(), static_cast<xenos::Endian>(d1 & 0x3), uint32_t(copy.size()), address + start,
+                      true};
+        bytes_vertices += (copy.size() + 3) & ~VkDeviceSize(3);
+        continue;
+      }
       const uint64_t start = uint64_t(vmin) * binding.stride;
       uint64_t needed = uint64_t(vertices) * binding.stride;
       if (start + needed > available) {
@@ -3172,7 +3208,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       VkDeviceSize offset;
       // If this same range was already copied in this frame, its place in the upload buffer is reused and
       // nothing is copied. See fh1_native_vertex_dedupe.h.
-      if (dedupe_active_ &&
+      if (dedupe_active_ && !source.expanded &&
           dedupe_.Find(source.address, source.bytes, uint32_t(source.order), offset)) {
         offsets_vertices[b] = offset;
         continue;
@@ -3184,12 +3220,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         Reserve(source.bytes, 4, offset);
       }
       const WorkCopy work{source.data, upload_data_ + offset, source.bytes / 4, source.order};
-      if (!copies_active_ || !EnqueueCopy(work)) {
+      // An expanded source lives only during this draw: copied now, never queued nor remembered.
+      if (source.expanded || !copies_active_ || !EnqueueCopy(work)) {
         CopyVertices(work);
       }
       bytes_vertices_ += source.bytes;
       offsets_vertices[b] = offset;
-      if (dedupe_active_) {
+      if (dedupe_active_ && !source.expanded) {
         dedupe_.Note(source.address, source.bytes, uint32_t(source.order), offset);
       }
     }
@@ -3309,6 +3346,14 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       specialization |= 0x2;
       // The function goes in the pipeline, not in the constants. RB_COLORCONTROL was already part of the key,
       // so this creates no pipelines that did not already exist.
+      specialization |= (function_alpha & 0x7u) << kSpecFunctionAlphaOffset;
+    } else if (ps && ((control_color >> 4) & 0x1) && REXCVAR_GET(fh1_native_alpha_to_mask)) {
+      // FH1: alpha to mask (RB_COLORCONTROL bit 4) without an alpha test: the crowd and the foliage are cut out by
+      // coverage of the 4x MSAA samples. The scene is drawn with one sample here, so the pixel is kept when half of
+      // the samples or more would be covered (alpha >= 0.5). Without this the billboards were solid rectangles.
+      threshold_alpha = 0.5f;
+      function_alpha = 6;
+      specialization |= 0x2;
       specialization |= (function_alpha & 0x7u) << kSpecFunctionAlphaOffset;
     }
     shared[64] = (r[kRegBooleans] & 0xFFFF) | ((r[kRegBooleans + 4] & 0xFFFF) << 16);
@@ -8637,6 +8682,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         return nullptr;
       }
       const uint32_t d0 = patched[q], d1 = patched[q + 1], d2 = patched[q + 2];
+      // FH1: source register and component of the fetch index (word 0 bits 5-10 and 30-31). Anything but r0.x is an
+      // index the shader computed; a mini fetch (word 1 bit 30) reuses the vertex of the fetch before it.
+      if (!((d1 >> 30) & 0x1) && (((d0 >> 5) & 0x3F) != 0 || ((d0 >> 30) & 0x3) != 0)) {
+        entry_.index_computed = true;
+      }
       const uint32_t slot = ((d0 >> 20) & 0x1F) * 3 + ((d0 >> 25) & 0x3);
       const uint32_t format = (d1 >> 16) & 0x3F;
       const uint32_t stride = (d2 & 0xFF) * 4;
@@ -13113,6 +13163,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   uint32_t pass_height_ = 0;
   float pass_scale_ = 1.0f;  // 1 except in the scaled shadow map
   float pass_msaa_scale_ = 1.0f;  // FH1: 2 in 4x MSAA passes (BeginPass)
+  std::deque<std::vector<uint8_t>> vertices_expanded_;  // FH1: the current draw's repeated vertices (index_computed)
   uint64_t clears_depth_in_pass_ = 0;  // ZCULL
   std::chrono::steady_clock::time_point start_pass_{};  // pass change breakdown
   uint32_t pass_formats_[5] = {};
