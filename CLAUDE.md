@@ -214,7 +214,8 @@ lists the actions and saves the render targets as PNG.
 
 ## Next steps
 
-See ROADMAP.md and docs/native-renderer-fh1.md: a native renderer built the nfsmw-nx way (user's
-decision 2026-10-02; the emulated-GPU experiments in docs/native-render-targets.md are paused).
-N0 shader library done for the loose .fxobj files (2,918 shaders); next: the LZX track archives,
-then N1 (own graphics system, `fh1_renderer=native`).
+**Read docs/handoff-native-renderer.md first.** User decision 2026-10-04: the native renderer must be FH1's own
+(`--fh1_renderer=native`), taking from nfsc-recomp the fixes that work for FH1 instead of running his renderer
+as is. Today the working picture comes from `fh1/src/native/nfsc_*` (`--nfsc_renderer=native`: title, menus,
+festival at 30 fps, with the open problems listed in that handoff); ask the user how to make it ours before
+coding. ROADMAP.md and docs/native-renderer-fh1.md have the phases (N0-N5).
