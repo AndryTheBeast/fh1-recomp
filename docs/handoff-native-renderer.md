@@ -58,8 +58,18 @@ Those are best removed one at a time with a festival screenshot after each, not 
    first draw with a packed position and compare its decoded positions with the emulated GPU's (sign / integer
    modes of the fetch, `remapInput`), and check whether those shaders also fetch from guest memory (`fh1Fetch`
    returns 0 while `g_GuestBase` is 0).
-1b. Green car: the player's car turns bright green after a while (user report 2026-10-04; it is orange in the first
-   seconds). Not understood yet; `build_logs\test-green-*` has a screenshot every 20 s.
+1b. Green car in the evening (user report 2026-10-04). The user's observation: it starts when the game's evening
+   lighting comes up. Measured: car orange until ~80 s after launch, green from ~100 s (test save, festival).
+   Reference with the emulated GPU at 130 s (`build_logs\test-eveXenos-*-130s.png`): ground lit grey-white by the
+   floodlights (the native picture does that too, so the ground is right), car stays orange. Native: the car's
+   upward-facing panels turn green, its sides stay brown - so the car paint shader gets a wrong colour for the
+   evening floodlight term (a light colour, constant or small texture read wrongly), not a wrong reflection: the
+   reflection cube faces look plausible (`fh1\out\win-release\dump_day` and `dump_eve`, every image of one frame).
+   Ruled out by tests: texture cache across frames, vertex dedupe, the glow-sprite pixel shaders n3325/n2933/n3285,
+   the vertex index. Note: `--fh1_native_diag_frame_s` stops at 4,000 lines, less than one FH1 frame, so two traces
+   do not cover the same draws; raise the cap (TraceDraw in fh1_native_system.cpp) before comparing frames.
+   Next: with `--fh1_native_diag_vertices_ps` / `--fh1_native_diag_constants_ps` on the car body's pixel shader,
+   compare its constants and sampler formats day vs evening.
 2. Speckled edges: depth/stencil fills drawn at 640 pitch 4x MSAA and used by the 1280x720 1x passes
    (`--fh1_msaa_4x_as_1x=true` turned the picture pink/black; needs `--fh1_dump_resolved_at_s=N`).
 3. White title / menu background: the frame composite pixel shader outputs white.
