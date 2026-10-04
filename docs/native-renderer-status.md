@@ -20,6 +20,26 @@ for the correct picture.
 ## Open problems, in the order to take them
 
 Compare `build_logs\reference\test-festX-*` (emulated, correct) with `test-a2m-*` (native, same seconds).
+`build_logs\reference\user-native-20261004-night.webp` is the user's own screenshot after the night's fixes.
+
+**The user's order for the next session (2026-10-04 night, "we're doing good"): A, then B. The numbered list
+after them keeps its order.**
+
+A. **Crowd animations.** The crowd is drawn but does not animate as on the emulated GPU (user). Not investigated.
+   Where to start: the crowd is VS n583 with PS n1809 (quad list, texture atlas 14DE8000, k_DXT1). The vertex shader
+   picks the atlas cell from `NumAlongNumDownWidthHeight`, `UVScaleSizeScale` and values derived from the vertex
+   index and the stored vertex; look for a time or frame constant among its inputs and log the vertex constants on
+   both renderers over a few seconds (`--fh1_native_diag_constants_*` only covers pixel constants today: add the
+   vertex ones). Also check `r0.x`: the vertex index the shader gets must be the guest's (0..count-1 within the
+   draw, plus the index offset), because the corner and the cell come from it. Guesses, not findings.
+B. **Over-sharp picture.** Everything looks harder than on the emulated GPU: light outlines on edges, crisp
+   textures, hard crowd cut-outs, stair-stepped shadow edges, no soft glow. Likely several causes together, to be
+   separated with the per-copy dumps (`frame_NN_*`) of both the native run and RenderDoc captures of the emulated
+   one: (1) the scene is drawn with one sample where the console uses 4x MSAA and resolves it; (2) the final
+   composite's blur / depth-of-field inputs (PS n716 reads 1DE5D000 and the velocity texture: check the 320x192
+   images are not empty or stale, as the velocity one was); (3) bloom missing (item 3 below); (4) the FXAA pass
+   (PS n2283) and its constants; (5) texture filtering and mip bias (LOD bias from the fetch constants, anisotropy).
+   Start by measuring: the same crop of both renderers enlarged with NEAREST.
 
 1. **Driving has not been checked since the fixes of 2026-10-04 night.** The user drives by hand: ask for a short
    drive first. To look at: motion blur while moving (the velocity pass now gets real depth and stencil; the car's

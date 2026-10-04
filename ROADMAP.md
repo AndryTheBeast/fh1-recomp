@@ -123,6 +123,8 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [x] Shadows in the scene (Direct3D's 4x clears)
   - [x] Crowd, trees and vegetation (billboards fetched with index / 4; packed positions)
   - [x] Crowd cut-outs (alpha to mask)
+  - [ ] **Next (user, 2026-10-04): crowd animations** (the crowd is drawn but does not animate)
+  - [ ] **Next (user, 2026-10-04): over-sharp picture** (hard edges and outlines, no softness)
   - [ ] Driving check after these fixes (motion blur while moving, frame drops) — the user drives
   - [ ] Evening: green / chrome car, strong glare and light beams
   - [ ] Daylight brightness and contrast; glow around lights (bloom)
