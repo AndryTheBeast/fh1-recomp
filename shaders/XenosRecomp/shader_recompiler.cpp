@@ -196,6 +196,7 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         fullFetchSwizzle = instr.srcSwizzle & 3;
         fullFetchStride = instr.stride;
         fullFetchRounded = instr.isIndexRounded;
+        fullFetchAddress = address;
     }
 #endif
 
@@ -206,7 +207,45 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
     out += " = ";
 
     auto findResult = vertexElements.find(address);
+#ifdef NFSMW_RECOMP
+    // FH1: a fetch whose index is a register the shader computed (anything but r0: the animated people take their
+    // bones from a stream at bone index + frame offset) cannot be a vertex attribute, declared or not: it is read
+    // from memory like the undeclared streams. Fetches indexed by r0 stay attributes (the billboards use r0.y =
+    // index / 4 and the renderer repeats their vertices).
+    const bool computedIndex = haveFullFetch && fullFetchSrc != 0;
+    if (findResult != vertexElements.end() && computedIndex)
+    {
+        // Direct3D fills a declared fetch's stream, stride, offset and format when the game draws, so the shader
+        // takes them from the renderer: two shared words per declared fetch instruction, numbered by the rank of
+        // its address among the declared fetches (the renderer numbers them the same way). A mini fetch reads the
+        // stream of its full fetch.
+        auto rankOf = [&](uint32_t a)
+        {
+            uint32_t rank = 0;
+            for (auto& [otherAddress, element] : vertexElements)
+            {
+                if (otherAddress < a)
+                    ++rank;
+            }
+            return rank;
+        };
+        const uint32_t rankOwn = rankOf(address);
+        const uint32_t rankFull = rankOf(fullFetchAddress);
+        if (rankOwn >= 32 || rankFull >= 32 || !vertexElements.count(fullFetchAddress))
+            throw std::runtime_error(fmt::format("computed-index FETCH beyond the 32 declared fetches (address {})", address));
+        print("fh1FetchRanked({}, {}, r{}.{}, {})", rankFull, rankOwn, fullFetchSrc, "xyzw"[fullFetchSwizzle],
+              fullFetchRounded ? "true" : "false");
+        out += '.';
+        printDstSwizzle(instr.dstSwizzle, true);
+        out += ";\n";
+        printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
+        closeSiWritesPredicate(markPredicate);
+        return;
+    }
     if (findResult == vertexElements.end())
+#else
+    if (findResult == vertexElements.end())
+#endif
     {
 #ifdef NFSMW_RECOMP
         // FH1: a fetch from a stream the declaration does not list: read guest memory directly.
@@ -222,7 +261,7 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
             throw std::runtime_error(fmt::format("direct FETCH with constant {} (only 24-31)", c));
         rawFetchConstants.insert(c);
         print("fh1Fetch({}, r{}.{}, {}, {}, {}, {}, {}, {})", c, src, "xyzw"[swz], rounded ? "true" : "false",
-              stride, int32_t(instr.offset), uint32_t(instr.format), instr.signedRfModeAll ? "true" : "false",
+              stride, int32_t(instr.offset), uint32_t(instr.format), instr.formatCompAll ? "true" : "false",
               instr.numFormatAll ? "false" : "true");
         out += '.';
         printDstSwizzle(instr.dstSwizzle, true);
@@ -463,6 +502,14 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
     out += ").";
 
     printDstSwizzle(instr.dstSwizzle, true);
+
+#ifdef NFSMW_RECOMP
+    // FH1: the texture's exponent bias (fetch constant exp_adjust, plus the bias of the resolve that made the
+    // image): a power-of-two scale on the fetched value, which the renderer writes per slot (<sampler>_ExpScale,
+    // 1.0 when there is none). FXAA reads the scene three times at 1, 1/2 and 1/4 this way.
+    if (instr.opcode == FetchOpcode::TextureFetch)
+        print(" * {}_ExpScale", constNamePtr);
+#endif
 
     out += ";\n";
 
@@ -1336,6 +1383,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 const uint32_t invBase = 360 + constantInfo->registerIndex * 8;
                 println("#define {}_InvSize (NFSMW_UBO ? float2(FH1_SHARED_FLOAT({}), FH1_SHARED_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
                     constantName, invBase, invBase + 4, invBase);
+                // FH1: exponent scale of that slot, at byte 656 + slot * 4 (after g_FetchAddress).
+                println("#define {}_ExpScale (NFSMW_UBO ? FH1_SHARED_FLOAT({}) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + {}))",
+                    constantName, 656 + constantInfo->registerIndex * 4, 656 + constantInfo->registerIndex * 4);
             }
 
             samplers.emplace(constantInfo->registerIndex, constantName);
@@ -1450,6 +1500,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             slot, std::size(TEXTURE_DIMENSIONS) * 64 + slot * 4, std::size(TEXTURE_DIMENSIONS) * 64 + slot * 4);
         println("#define s{}_InvSize (NFSMW_UBO ? float2(FH1_SHARED_FLOAT({}), FH1_SHARED_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
             slot, 360 + slot * 8, 364 + slot * 8, 360 + slot * 8);
+        println("#define s{}_ExpScale (NFSMW_UBO ? FH1_SHARED_FLOAT({}) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + {}))",
+            slot, 656 + slot * 4, 656 + slot * 4);
     }
 #endif
     out += "void main(\n";

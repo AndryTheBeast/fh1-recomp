@@ -392,6 +392,10 @@ REXCVAR_DEFINE_INT32(fh1_native_occlusion, 1, "FH1",
 REXCVAR_DEFINE_STRING(fh1_native_diag_constants_ps, "", "FH1",
                       "Native renderer (tests only): PS numbers (comma-separated) whose first 12 constants are "
                       "logged, at most every fh1_native_diag_constants_ms");
+REXCVAR_DEFINE_INT32(fh1_native_diag_constants_vs, 0, "FH1",
+                     "Native renderer (tests only): VS number whose constants c128-c163, texture 0 address and "
+                     "first vertices are logged, at most every fh1_native_diag_constants_ms")
+    .range(0, 100000);
 REXCVAR_DEFINE_INT32(fh1_native_diag_constants_ms, 250, "FH1",
                      "Native renderer (tests only): minimum interval between constant logs per PS")
     .range(0, 60000);
@@ -2261,6 +2265,45 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
 
   // Diagnostic fh1_native_diag_constants_ps: the first constants of the requested PS, at most once
   // every fh1_native_diag_constants_ms per PS (exposure and brightness of the visual treatment).
+  // Diagnostic fh1_native_diag_constants_vs: what a billboard (crowd) vertex shader gets, over time.
+  void NoteConstantsVs() {
+    const uint32_t wanted = uint32_t(REXCVAR_GET(fh1_native_diag_constants_vs));
+    if (!wanted || !vs_draw_ || vs_draw_->number != wanted) {
+      return;
+    }
+    const auto now = Clock::now();
+    if (now - constants_vs_last_ < std::chrono::milliseconds(REXCVAR_GET(fh1_native_diag_constants_ms))) {
+      if (constants_vs_swap_ != swaps_.load()) return;  // the rest of the same frame is logged too
+    } else {
+      constants_vs_last_ = now;
+      constants_vs_swap_ = swaps_.load();
+    }
+    std::string values;
+    for (uint32_t k = 128; k < 164; k = k == 131 ? 156 : k + 1) {
+      values += fmt::format(" c{}=(", k);
+      for (uint32_t c = 0; c < 4; ++c) {
+        float f;
+        const uint32_t bits = registers_[0x4000 + k * 4 + c];
+        std::memcpy(&f, &bits, sizeof(f));
+        values += fmt::format("{}{:.5g}", c ? "," : "", f);
+      }
+      values += ")";
+    }
+    values += fmt::format(" t0={:08X}", Register(0x4800) & 0xFFFFF000u);
+    values += fmt::format(" count={}", Register(0x21FC) >> 16);
+    for (uint32_t slot = 0; slot < 96; ++slot) {
+      const uint32_t d0 = Register(0x4800 + slot * 2), d1 = Register(0x4800 + slot * 2 + 1);
+      if ((d0 & 3) != 3 || !(d0 & 0x1FFFFFFC)) continue;
+      const uint32_t address = d0 & 0x1FFFFFFC, bytes = ((d1 >> 2) & 0xFFFFFF) * 4;
+      values += fmt::format(" vf{}={:08X}+{}:", slot, address, bytes);
+      const uint8_t* m = memory_->TranslatePhysical(address);
+      for (uint32_t i = 0; i < std::min(bytes, 96u); i += 4) {
+        values += fmt::format(" {:02X}{:02X}{:02X}{:02X}", m[i], m[i + 1], m[i + 2], m[i + 3]);
+      }
+    }
+    REXLOG_INFO("[native] VS constants n{} (Swap {}):{}", wanted, swaps_.load(), values);
+  }
+
   void NoteConstantsPs() {
     if (!ps_draw_) {
       return;
@@ -2387,6 +2430,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     if (diag_constants_active_) {
       NoteConstantsPs();
     }
+    NoteConstantsVs();
     RequestDraw request;
     request.register_values = registers_.data();
     request.vs = vs_draw_;
@@ -4913,6 +4957,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   std::string constants_list_text_;
   std::unordered_set<uint32_t> constants_list_;
   std::unordered_map<uint32_t, Clock::time_point> constants_last_;
+  Clock::time_point constants_vs_last_{};
+  uint64_t constants_vs_swap_ = ~0ull;
   // Test fh1_native_occlusion_toggle_s.
   bool occlusion_test_started_ = false;
   bool occlusion_test_faked_ = false;

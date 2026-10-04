@@ -55,6 +55,9 @@ struct ImageNative {
   // Resolved texture with RB_COPY_DEST_INFO.copy_dest_swap: the guest sees it with red and blue swapped
   // relative to the render target it comes from.
   bool swap_rb = false;
+  // FH1: RB_COPY_DEST_INFO.copy_dest_exp_bias of the resolve that filled it: the console stores the picture
+  // multiplied by 2^exp_bias; here it is stored as drawn and the scale is applied when it is fetched.
+  int32_t exp_bias = 0;
   // fh1_native_resolve_without_copy: when a whole render target is resolved, its image is swapped with the
   // resolved texture's instead of copied. The target keeps that texture's old content: if the game draws
   // on it again without clearing first, the content has to be brought back.

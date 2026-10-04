@@ -494,6 +494,10 @@ REXCVAR_DEFINE_BOOL(fh1_native_lazy_composite, false, "FH1",
                     "is written again (the raindrops) and dropped otherwise. Activates after the watching of "
                     "fh1_native_diag_readers_s and turns itself off at the first disagreement. false = always "
                     "copied");
+REXCVAR_DEFINE_BOOL(fh1_native_resolved_hdr, true, "FH1",
+                    "Native renderer: a float (HDR) render target resolved to a 32-bit texture format keeps a float "
+                    "resolved texture, so values above 1.0 reach the bloom, the reflections and the final composite as "
+                    "on the Xbox 360 (which stores them scaled by exp_bias). false = 8-bit resolved textures (cut at 1.0)");
 REXCVAR_DEFINE_BOOL(fh1_hdr_float, true, "FH1",
                     "Carbon's HDR scene targets (k_2_10_10_10_FLOAT and its 16_16_16_16 alias) are real 16-bit float images, as "
                     "on the Xbox 360 (values above 1.0 and fine dark steps survive blending). false = aliased to 8-bit")
@@ -1545,8 +1549,14 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         const uint32_t base_x = uint32_t(x0) & ~uint32_t(31);
         const uint32_t base_y = uint32_t(y0) & ~uint32_t(31);
         // FH1: 64-bit formats have 8 bytes per texel (log2 3) for the tiled offset.
-        const VkFormat format_copy_fh1 = FormatCopyFh1(format_target);
-        const uint32_t log2_bytes = BytesTexelLog2Fh1(format_copy_fh1);
+        // FH1: the HDR scene (float target) is resolved as k_2_10_10_10 with a negative exp_bias (1/4, 1/16) so that
+        // values above 1 survive. An 8-bit resolved texture cut them at 1 (no bloom, flat reflections); the resolved
+        // texture is a float image like its source and the bias is applied by the fetch (ImageNative::exp_bias).
+        const bool resolved_hdr = REXCVAR_GET(fh1_native_resolved_hdr) &&
+                                  target_render->format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                                  FormatCopyFh1(format_target) == VK_FORMAT_UNDEFINED;
+        const VkFormat format_copy_fh1 = resolved_hdr ? VK_FORMAT_R16G16B16A16_SFLOAT : FormatCopyFh1(format_target);
+        const uint32_t log2_bytes = BytesTexelLog2Fh1(FormatCopyFh1(format_target));
         const uint32_t base =
             reg.rb_copy_dest_base +
             uint32_t(OffsetTile2D(int32_t(base_x), int32_t(base_y), pitch_target, log2_bytes));
@@ -1556,7 +1566,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         // an exact number of 32-row stripes into the texture of the first tile. If this destination lies inside a
         // resolved texture that already exists, copy into that texture at the matching row.
         uint32_t row_extra = 0, base_container = 0;
-        Resolved* container = FindResolvedContainer(base & 0x1FFFFFFF, pitch_target, row_extra, base_container);
+        Resolved* container = FindResolvedContainer(base & 0x1FFFFFFF, pitch_target, row_extra, base_container,
+                                                    resolved_hdr ? VK_FORMAT_R16G16B16A16_SFLOAT : kFormatColor);
         if (container) {
           resolved = container;
           dy += row_extra;
@@ -1574,6 +1585,10 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
           base_resolved = base & 0x1FFFFFFF;
         }
         if (resolved) {
+          if (const int32_t exp_bias = int32_t((info_target >> 16) << 26) >> 26; resolved->image.exp_bias != exp_bias) {
+            resolved->image.exp_bias = exp_bias;
+            if (draws_) draws_->InvalidateTextures();
+          }
           if (base_resolved && resolved->image.width >= 1280 && resolved->image.height >= 720) {
             last_resolved_screen_ = base_resolved;  // FH1: see Present (Swap of a front buffer nobody resolved)
           }
@@ -5441,7 +5456,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     info_view.image = image.image;
     info_view.viewType = VK_IMAGE_VIEW_TYPE_2D;
     info_view.format = format;
-    info_view.subresourceRange = format == kFormatColor ? kRangeColor : kRangeDepth;
+    info_view.subresourceRange = IsDepthFormat(format) ? kRangeDepth : kRangeColor;  // FH1: float color images too
     if (dfn_.vkCreateImageView(device_, &info_view, nullptr, &image.view) != VK_SUCCESS) {
       Destroy(image);
       return false;

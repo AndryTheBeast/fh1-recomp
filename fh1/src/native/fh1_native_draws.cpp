@@ -780,6 +780,12 @@ REXCVAR_DEFINE_INT32(fh1_native_test_point_mip_toggle_s, 0, "FH1",
  *
  * If geometry ever looks stuck or stretched, this is the first thing to disable.
  */
+REXCVAR_DEFINE_BOOL(fh1_native_exp_bias, true, "FH1",
+                    "Native renderer: texture fetches are scaled by the console's exponent bias (the fetch constant's "
+                    "exp_adjust plus the exp_bias of the resolve that made the picture). The game's FXAA reads the scene "
+                    "at 1, 1/2 and 1/4 this way; without it edges get bright outlines. Needs the shader library built "
+                    "after 2026-10-04 night (<sampler>_ExpScale). false = no scale")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(fh1_native_dedupe_vertices, true, "FH1",
                     "Native renderer (21/09): if two draws of the same frame ask for the same vertex range, it is "
                     "uploaded only once. The C6 report logs hits and MB saved");
@@ -1195,7 +1201,10 @@ constexpr size_t kMaxRegistersList = 4096;
 // (68) and function (69), NDC (64-73) and g_InputRemap for the 16 locations (74-89).
 // 90 words up to g_InputRemap (bytes 296..359) and 32 more for 1/size of the 16 texture slots (bytes
 // 360..487), which avoid querying the texture size on every sample.
-constexpr uint32_t kWordsShared = 164;  // NFSC: + 32 loop constants (words 122-153); FH1: g_GuestBase / g_FetchAddress (154-163, zero for now)
+constexpr uint32_t kWordsShared = 244;  // NFSC: + 32 loop constants (words 122-153); FH1: g_GuestBase / g_FetchAddress (154-163), exponent scales (164-179), ranked fetches (180-243)
+constexpr uint32_t kWordFetchRankAddress = 180;  // FH1: g_FetchRankAddress, one word per declared fetch 0-31
+constexpr uint32_t kWordFetchRankParam = 212;    // FH1: g_FetchRankParam
+constexpr uint32_t kWordExpScale = 164;  // FH1: <sampler>_ExpScale, one float per fetch constant 0-15
 constexpr uint32_t kWordInvSize = 90;
 // Constants through a dynamic UBO (fh1_native_constants_ubo). The bit is SPEC_CONSTANT_CONSTANTS_UBO
 // from shader_common.h, and the sizes are the blocks the shaders declare: 256 and 224 float4, and 23 shared
@@ -1310,7 +1319,7 @@ constexpr uint32_t kSkyFramesTest = 90;
 constexpr uint32_t kSkyFramesWithOne = 90;
 constexpr VkDeviceSize kUboBytesVs = 256 * 16;
 constexpr VkDeviceSize kUboBytesPs = 256 * 16;  // NFSC: whole pixel constant bank
-constexpr VkDeviceSize kUboBytesShared = 41 * 16;  // FH1: matches Fh1BlockShared (v[41])
+constexpr VkDeviceSize kUboBytesShared = 61 * 16;  // FH1: matches Fh1BlockShared (v[61])
 constexpr uint32_t kRemapIdentity = 0xFFF;
 constexpr uint32_t kMaxVerticesByDraw = uint32_t(1) << 20;
 constexpr uint32_t kMemoryPhysical = 0x20000000;
@@ -1895,6 +1904,17 @@ struct EntryVertices {
   // FH1: a fetch takes its vertex index from a value the shader computes instead of the vertex index itself
   // (billboards: one stored vertex per quad, fetched with index / 4). See the vertex sources in Draw.
   bool index_computed = false;
+  // FH1: fetches indexed by a register other than r0 (the animated people: bone index + frame offset). The shader
+  // reads them from memory (fh1FetchRanked in shader_common.h); Draw uploads the stream and writes where it is.
+  // rank = position of the fetch instruction among the declared fetches, by address (the translator's numbering).
+  // stream = true for a full fetch: its stream (vertex fetch slot) is uploaded and its place written at the rank.
+  struct FetchMemory {
+    uint8_t rank = 0;
+    uint8_t slot = 0;
+    bool stream = false;
+    uint32_t param = 0;  // stride in words | offset in words << 8 | format << 24 | signed << 30 | integer << 31
+  };
+  std::vector<FetchMemory> fetches_memory;
   uint32_t specialization = 0;
   uint64_t fingerprint = 0;
 };
@@ -2773,6 +2793,23 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // vertex index / 4 and places the four corners from the index. The host fetches by the index itself, so each
     // stored vertex is repeated four times in the copy. Only that case is known: quads.
     if (entry->index_computed && !quads) {
+      {  // FH1 diagnostic: which draws these are (once per VS / type)
+        static std::unordered_set<uint64_t> seen;
+        if (seen.size() < 24 && seen.insert((uint64_t(p.vs->number) << 8) | type).second) {
+          std::string f;
+          for (const ElementVertex& e : p.vs->elements) {
+            const size_t i = size_t(e.instruction) * 3;
+            if (i + 2 >= p.vs_microcode.size()) continue;
+            f += fmt::format(" | {}{}@{} {:08X} {:08X} {:08X}", NameUse(e.use), e.index_use, e.instruction,
+                             p.vs_microcode[i], p.vs_microcode[i + 1], p.vs_microcode[i + 2]);
+          }
+          std::string ix;
+          for (size_t i = 0; i < indices_.size() && i < 16; ++i) ix += fmt::format(" {}", indices_[i]);
+          for (size_t i = 0; i < indices16_.size() && i < 16 && indices_de_16; ++i) ix += fmt::format(" {}", indices16_[i]);
+          REXLOG_INFO("[fh1] computed index: VS n{} PS n{} type {} count {} indexed {} vmin {} vmax {} indices:{} fetches:{}",
+                      p.vs->number, ps ? int(ps->number) : -1, type, count, con_indices, vmin, vmax, ix, f);
+        }
+      }
       return Reject(317, "vertex fetch with a computed index outside a quad list");
     }
     if (entry->index_computed) {
@@ -2819,6 +2856,38 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                      static_cast<xenos::Endian>(d1 & 0x3), uint32_t(needed),
                      address + start};
       bytes_vertices += (needed + 3) & ~VkDeviceSize(3);
+    }
+
+    // FH1: streams the shader reads from memory (EntryVertices::fetches_memory): the whole stream goes to the
+    // upload buffer once per frame (the vertex dedupe finds it for the other draws that use it).
+    struct SourceMemory {
+      const uint8_t* data = nullptr;
+      xenos::Endian order = xenos::Endian::kNone;
+      uint32_t bytes = 0;
+      uint64_t address = 0;
+      uint32_t rank = 0;
+    };
+    std::array<SourceMemory, 32> sources_memory{};
+    size_t sources_memory_n = 0;
+    for (const EntryVertices::FetchMemory& m : entry->fetches_memory) {
+      if (!m.stream) {
+        continue;
+      }
+      const uint32_t d0 = r[kRegFetch + uint32_t(m.slot) * 2];
+      const uint32_t d1 = r[kRegFetch + uint32_t(m.slot) * 2 + 1];
+      if ((d0 & 0x3) != uint32_t(xenos::FetchConstantType::kVertex)) {
+        return Reject(10, "invalid vertex fetch constant");
+      }
+      const uint64_t address = uint64_t(d0 & 0x1FFFFFFC);
+      const uint64_t available = uint64_t((d1 >> 2) & 0xFFFFFF) * 4;
+      if (!available || available > (uint64_t(16) << 20) || address + available > kMemoryPhysical ||
+          sources_memory_n >= sources_memory.size()) {
+        return Reject(320, "stream read by the shader: empty, larger than 16 MB or outside memory");
+      }
+      sources_memory[sources_memory_n++] = {memory_->TranslatePhysical(uint32_t(address)),
+                                            static_cast<xenos::Endian>(d1 & 0x3), uint32_t(available), address,
+                                            m.rank};
+      bytes_vertices += available + 16;
     }
 
     {  // FH1 diagnostic: the first packed k_10_11_11 inputs, their fetch fields and first three vertices
@@ -2934,6 +3003,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     Stage(1, mark);
     // --- Textures and samplers ----------------------------------------------------
     uint32_t shared[kWordsShared] = {};
+    for (uint32_t i = 0; i < 16; ++i) {
+      shared[kWordExpScale + i] = 0x3F800000u;  // 1.0: slots nobody prepares (vertex shader fetches)
+    }
     VkDeviceSize bytes_textures = 0;
     DiscardFingerprintsPlanned();  // those of the previous draw that never reached UploadTexture
     textures_a_upload_.clear();
@@ -2974,6 +3046,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         shared[cache.heap * 16 + sampler.reg_entry] = cache.slot;
         shared[48 + sampler.reg_entry] = cache.sampler;
         WriteInvSize(shared, sampler.reg_entry, cache.width, cache.height);
+        std::memcpy(shared + kWordExpScale + sampler.reg_entry, &cache.exp_scale, sizeof(float));
         ++samplers_cache_;
         continue;
       }
@@ -2981,6 +3054,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       uint32_t heap = 0;
       uint32_t slot_sampler = 0;
       uint32_t width_host = 0, height_host = 0;
+      float exp_scale = 1.0f;
       // Second cache, keyed by the whole fetch constant within the same frame and generation: a register
       // changes texture between draws, but textures repeat a lot within a frame, and PrepareTexture already
       // queued their upload the first time.
@@ -2996,6 +3070,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         valid_until = por_fetch.valid_until;
         width_host = por_fetch.width;
         height_host = por_fetch.height;
+        exp_scale = por_fetch.exp_scale;
         ++samplers_cache_fetch_;
       } else {
         // Why the table misses ("C6 cache by fetch" report, every 10 s).
@@ -3008,7 +3083,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         }
         bool sampling_point = false;
         PrepareTexture(fetch, slot_texture, heap, bytes_textures, sampling_point, valid_until,
-                        width_host, height_host);
+                        width_host, height_host, exp_scale);
         slot_sampler = SlotSampler(fetch, sampling_point);
         por_fetch.frame = frame_;
         por_fetch.generation = generation_textures_;
@@ -3019,6 +3094,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         por_fetch.valid_until = valid_until;
         por_fetch.width = width_host;
         por_fetch.height = height_host;
+        por_fetch.exp_scale = exp_scale;
         // A depth requested without being sampled is not stored in the caches: the next draw that really
         // samples it has to go through TextureResolved, which is where it is recorded if it was deferred.
         if (composition_without_blur && sampling_point) {
@@ -3031,6 +3107,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       shared[heap * 16 + sampler.reg_entry] = slot_texture;
       shared[48 + sampler.reg_entry] = slot_sampler;
       WriteInvSize(shared, sampler.reg_entry, width_host, height_host);
+      std::memcpy(shared + kWordExpScale + sampler.reg_entry, &exp_scale, sizeof(float));
+      cache.exp_scale = exp_scale;
       cache.frame = frame_;
       cache.generation = generation_textures_;
       std::memcpy(cache.fetch.data(), fetch, sizeof(cache.fetch));
@@ -3234,6 +3312,31 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       ns_vertices_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now() - before_vertices)
                                    .count());
+    }
+    // FH1: streams read by the shader. g_GuestBase (shared words 154-155) is the upload buffer's device address and
+    // g_FetchRankAddress(rank) the copy's offset in it; the copy is already in host byte order (endian bits 0). An
+    // offset under 4 means "no stream" to the shader, so the first bytes of the buffer are never used.
+    for (const EntryVertices::FetchMemory& m : entry->fetches_memory) {
+      shared[kWordFetchRankParam + m.rank] = m.param;
+    }
+    for (size_t i = 0; i < sources_memory_n; ++i) {
+      const SourceMemory& source = sources_memory[i];
+      VkDeviceSize offset;
+      if (!(dedupe_active_ && dedupe_.Find(source.address, source.bytes, uint32_t(source.order), offset))) {
+        if (upload_used_ < 16) {
+          upload_used_ = 16;
+        }
+        Reserve(source.bytes, 4, offset);
+        const WorkCopy work{source.data, upload_data_ + offset, source.bytes / 4, source.order};
+        CopyVertices(work);
+        bytes_vertices_ += source.bytes;
+        if (dedupe_active_) {
+          dedupe_.Note(source.address, source.bytes, uint32_t(source.order), offset);
+        }
+      }
+      const uint64_t base = upload_address_;
+      std::memcpy(shared + 154, &base, sizeof(base));
+      shared[kWordFetchRankAddress + source.rank] = uint32_t(offset);
     }
     VkDeviceSize offset_indices = 0;
     if (con_indices) {
@@ -5113,6 +5216,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     diag_skip_ps_text_ = REXCVAR_GET(fh1_native_diag_skip_ps);
     diag_vertices_repeated_ = REXCVAR_GET(fh1_native_diag_repeated_vertices);
     dedupe_active_ = REXCVAR_GET(fh1_native_dedupe_vertices);
+    exp_bias_ = REXCVAR_GET(fh1_native_exp_bias);
     vertices_base_zero_ = REXCVAR_GET(fh1_native_zero_based_vertices) && !vertices_base_zero_off_;
     diag_statistics_draw_ = REXCVAR_GET(fh1_native_per_draw_statistics_s) > 0;
     area_util_ = REXCVAR_GET(fh1_native_pass_useful_area);
@@ -8684,7 +8788,46 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       const uint32_t d0 = patched[q], d1 = patched[q + 1], d2 = patched[q + 2];
       // FH1: source register and component of the fetch index (word 0 bits 5-10 and 30-31). Anything but r0.x is an
       // index the shader computed; a mini fetch (word 1 bit 30) reuses the vertex of the fetch before it.
-      if (!((d1 >> 30) & 0x1) && (((d0 >> 5) & 0x3F) != 0 || ((d0 >> 30) & 0x3) != 0)) {
+      uint32_t d0_full = d0;
+      if ((d1 >> 30) & 0x1) {
+        // The full fetch a mini fetch belongs to: the nearest fetch instruction before it that is not one.
+        size_t best = SIZE_MAX;
+        for (const ElementVertex& other_value : vs.elements) {
+          const size_t i = size_t(other_value.instruction) * 3;
+          if (i < q && !((patched[i + 1] >> 30) & 0x1) && (best == SIZE_MAX || i > best)) {
+            best = i;
+          }
+        }
+        if (best != SIZE_MAX) {
+          d0_full = patched[best];
+        }
+      }
+      if (((d0_full >> 5) & 0x3F) != 0) {
+        // Indexed by a computed register: read from memory by the shader, not a vertex attribute.
+        uint32_t rank = 0;
+        for (const ElementVertex& other_value : vs.elements) {
+          if (size_t(other_value.instruction) * 3 < q) {
+            ++rank;
+          }
+        }
+        const int32_t offset_words = int32_t(d2 << 1) >> 9;
+        if (rank >= 32 || offset_words < 0 || offset_words > 0xFFFF) {
+          Reject(318, "vertex fetch with a computed index: beyond the 32 declared fetches or a negative offset");
+          return nullptr;
+        }
+        bool known = false;
+        for (const EntryVertices::FetchMemory& m : entry_.fetches_memory) {
+          known |= m.rank == rank;
+        }
+        if (!known) {
+          entry_.fetches_memory.push_back(
+              {uint8_t(rank), uint8_t(((d0_full >> 20) & 0x1F) * 3 + ((d0_full >> 25) & 0x3)), !((d1 >> 30) & 0x1),
+               (d2 & 0xFF) | (uint32_t(offset_words) << 8) | (((d1 >> 16) & 0x3F) << 24) |
+                   (((d1 >> 12) & 0x1) << 30) | (((d1 >> 13) & 0x1) << 31)});
+        }
+        continue;
+      }
+      if (!((d1 >> 30) & 0x1) && ((d0 >> 30) & 0x3) != 0) {
         entry_.index_computed = true;
       }
       const uint32_t slot = ((d0 >> 20) & 0x1F) * 3 + ((d0 >> 25) & 0x3);
@@ -8771,7 +8914,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   // with its data already prepared. Base level of 2D textures and cubemaps.
   void PrepareTexture(const uint32_t* f, uint32_t& slot, uint32_t& heap,
                        VkDeviceSize& bytes_upload, bool& sampling_point, uint64_t& valid_until,
-                       uint32_t& width_host_out, uint32_t& height_host_out) {
+                       uint32_t& width_host_out, uint32_t& height_host_out, float& exp_scale_out) {
+    // FH1: exponent bias. The console multiplies what a fetch returns by 2^exp_adjust (fetch constant word 3, bits
+    // 13-18, signed), and a resolve stores the picture multiplied by 2^exp_bias. Resolved images here hold the
+    // picture as drawn, so both are applied when it is read.
+    const int32_t exp_fetch = int32_t(f[3] << 13) >> 26;
+    exp_scale_out = exp_bias_ ? std::ldexp(1.0f, exp_fetch) : 1.0f;
     slot = 0;
     heap = 0;
     width_host_out = 0;  // 0 = unknown (1/size is not written)
@@ -8804,6 +8952,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         // shimmered as the camera moved. Resolved textures report their size like any other.
         width_host_out = resolved->width;
         height_host_out = resolved->height;
+        if (exp_bias_) {
+          exp_scale_out = std::ldexp(1.0f, exp_fetch + resolved->exp_bias);
+        }
         // One trace per size, to check in the log that the 1/size constant of resolved textures is no longer
         // 0 (that was the cause of the shadow flicker).
         if (warnings_invsize_resolved_.insert(uint64_t(resolved->width) << 32 | resolved->height).second) {
@@ -8963,20 +9114,27 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       for (uint32_t c = 0; c < 6 && resolved_2; ++c) {
         faces[c] = context_->TextureResolved(
             uint32_t((uint64_t(base) + c * stride_face) & 0x1FFFFFFF));
-        resolved_2 = faces[c] && faces[c]->format == VK_FORMAT_R8G8B8A8_UNORM &&
+        // FH1: the faces are float images when they come from the HDR target (fh1_native_resolved_hdr).
+        resolved_2 = faces[c] && (faces[c]->format == VK_FORMAT_R8G8B8A8_UNORM ||
+                                  faces[c]->format == VK_FORMAT_R16G16B16A16_SFLOAT) &&
+                    faces[c]->format == faces[0]->format &&
                     faces[c]->width >= width && faces[c]->height >= height;
       }
       if (resolved_2) {
-        const uint64_t key_resolved = key ^ 0x9E3779B97F4A7C15ull;
+        const VkFormat format_faces = faces[0]->format;
+        const uint64_t key_resolved = key ^ 0x9E3779B97F4A7C15ull ^ (uint64_t(format_faces) << 40);
+        if (exp_bias_) {
+          exp_scale_out = std::ldexp(1.0f, exp_fetch + faces[0]->exp_bias);
+        }
         Texture& texture = textures_[key_resolved];
         if (texture.image.image == VK_NULL_HANDLE) {
-          if (!CreateTexture(texture.image, VK_FORMAT_R8G8B8A8_UNORM, width, height, layers)) {
+          if (!CreateTexture(texture.image, format_faces, width, height, layers)) {
             textures_.erase(key_resolved);
             Notify(32, "could not create a texture");
             return;
           }
           texture.layers = layers;
-          texture.bytes = uint64_t(width) * height * 4 * layers;
+          texture.bytes = uint64_t(width) * height * (format_faces == VK_FORMAT_R8G8B8A8_UNORM ? 4 : 8) * layers;
           bytes_textures_ += texture.bytes;
           REXLOG_INFO("[native] C3: cube {:08X} {}x{} with its faces resolved by C2 (fetch {:08X} {:08X} {:08X} "
                       "{:08X} {:08X} {:08X})",
@@ -9013,7 +9171,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
             frame_report_cubes_ = frame_;
           }
         }
-        slot = SlotView(texture.image.image, VK_FORMAT_R8G8B8A8_UNORM, swizzle,
+        slot = SlotView(texture.image.image, format_faces, swizzle,
                              faces[0]->swap_rb ? kSwizzleBGRA : kSwizzleRGBA, heap);
         // The cubemap with the resolved faces must also report its size, or its 1/size stays at 0 and the
         // tfetch offsets are lost (see the branch above).
@@ -13465,7 +13623,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     uint64_t valid_until = 0;  // last frame it is valid without going back to PrepareTexture
     uint32_t width = 0;  // host image size, for 1/size
     uint32_t height = 0;
+    float exp_scale = 1.0f;  // FH1: 2^(the fetch constant's exp_adjust + the resolve's exp_bias)
   };
+  bool exp_bias_ = true;              // fh1_native_exp_bias
   bool cache_between_frames_ = true;  // fh1_native_texture_cache_across_frames
   bool mipmaps_ = true;                 // fh1_native_mipmaps
   bool gamma_textures_ = true;          // fh1_native_gamma_textures

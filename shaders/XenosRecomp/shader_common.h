@@ -89,7 +89,7 @@ struct PushConstants
 struct Fh1BlockVs { float4 v[256]; };
 // FH1: pixel shaders use all 256 constants (NFS: 224).
 struct Fh1BlockPs { float4 v[256]; };
-struct Fh1BlockShared { float4 v[41]; };  // FH1: 164 words (nfsc-recomp: loop constants at 122-153; FH1 154-163)
+struct Fh1BlockShared { float4 v[61]; };  // FH1: 244 words (nfsc-recomp: loop constants at 122-153; FH1 154-163, exponent scales 164-179, ranked fetches 180-243)
 [[vk::binding(0, 4)]] ConstantBuffer<Fh1BlockVs> g_UboVertex;
 [[vk::binding(1, 4)]] ConstantBuffer<Fh1BlockPs> g_UboPixel;
 [[vk::binding(2, 4)]] ConstantBuffer<Fh1BlockShared> g_UboShared;
@@ -153,9 +153,21 @@ uint fh1Swap(uint w, uint endian)
     return w;
 }
 
+// FH1: declared fetches indexed by a computed register (fh1FetchRanked). Per declared fetch instruction (rank of its
+// address, 0-31): word 180 + rank = where its stream is (as g_FetchAddress), word 212 + rank = stride in words (bits
+// 0-7), offset in words (8-23), format (24-29), signed (30), integer (31).
+#define g_FetchRankAddress(R) (NFSMW_UBO ? FH1_SHARED_UINT(720 + (R) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 720 + (R) * 4))
+#define g_FetchRankParam(R)   (NFSMW_UBO ? FH1_SHARED_UINT(848 + (R) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 848 + (R) * 4))
+
+uint fh1FetchWordAt(uint address, uint index, uint stride, int offset, uint i);
+
 uint fh1FetchWord(uint c, uint index, uint stride, int offset, uint i)
 {
-    uint address = g_FetchAddress(c);
+    return fh1FetchWordAt(g_FetchAddress(c), index, stride, offset, i);
+}
+
+uint fh1FetchWordAt(uint address, uint index, uint stride, int offset, uint i)
+{
     if (g_GuestBase == 0 || address < 4u)
         return 0u;
     uint byteAddress = (address & ~3u) + (index * stride + uint(offset) + i) * 4u;
@@ -173,11 +185,29 @@ float fh1Unpack(uint v, uint shift, uint width, bool isSigned, bool normalized)
     return normalized ? float(bits) / float((1u << width) - 1u) : float(bits);
 }
 
+float4 fh1FetchAt(uint c, float indexValue, bool rounded, uint stride, int offset, uint format, bool isSigned,
+                  bool normalized);
+
 float4 fh1Fetch(uint c, float indexValue, bool rounded, uint stride, int offset, uint format, bool isSigned,
                 bool normalized)
 {
+    return fh1FetchAt(g_FetchAddress(c), indexValue, rounded, stride, offset, format, isSigned, normalized);
+}
+
+float4 fh1FetchRanked(uint rankFull, uint rankOwn, float indexValue, bool rounded)
+{
+    uint full = g_FetchRankParam(rankFull);
+    uint own = g_FetchRankParam(rankOwn);
+    return fh1FetchAt(g_FetchRankAddress(rankFull), indexValue, rounded, full & 0xFFu, int((own >> 8) & 0xFFFFu),
+                      (own >> 24) & 0x3Fu, ((own >> 30) & 1u) != 0u, ((own >> 31) & 1u) == 0u);
+}
+
+// c is the stream's place (as g_FetchAddress gives it), not a fetch constant number.
+float4 fh1FetchAt(uint c, float indexValue, bool rounded, uint stride, int offset, uint format, bool isSigned,
+                  bool normalized)
+{
     uint index = uint(rounded ? round(indexValue) : floor(indexValue));
-    uint w0 = fh1FetchWord(c, index, stride, offset, 0);
+    uint w0 = fh1FetchWordAt(c, index, stride, offset, 0);
     switch (format)
     {
     case 6:   // 8_8_8_8
@@ -196,7 +226,7 @@ float4 fh1Fetch(uint c, float indexValue, bool rounded, uint stride, int offset,
         return float4(fh1Unpack(w0, 0, 16, isSigned, normalized), fh1Unpack(w0, 16, 16, isSigned, normalized), 0.0, 1.0);
     case 26:  // 16_16_16_16
     {
-        uint w1 = fh1FetchWord(c, index, stride, offset, 1);
+        uint w1 = fh1FetchWordAt(c, index, stride, offset, 1);
         return float4(fh1Unpack(w0, 0, 16, isSigned, normalized), fh1Unpack(w0, 16, 16, isSigned, normalized),
                       fh1Unpack(w1, 0, 16, isSigned, normalized), fh1Unpack(w1, 16, 16, isSigned, normalized));
     }
@@ -204,20 +234,20 @@ float4 fh1Fetch(uint c, float indexValue, bool rounded, uint stride, int offset,
         return float4(f16tof32(w0 & 0xFFFFu), f16tof32(w0 >> 16), 0.0, 1.0);
     case 32:  // 16_16_16_16_FLOAT
     {
-        uint w1 = fh1FetchWord(c, index, stride, offset, 1);
+        uint w1 = fh1FetchWordAt(c, index, stride, offset, 1);
         return float4(f16tof32(w0 & 0xFFFFu), f16tof32(w0 >> 16), f16tof32(w1 & 0xFFFFu), f16tof32(w1 >> 16));
     }
     case 36:  // 32_FLOAT
         return float4(asfloat(w0), 0.0, 0.0, 1.0);
     case 37:  // 32_32_FLOAT
-        return float4(asfloat(w0), asfloat(fh1FetchWord(c, index, stride, offset, 1)), 0.0, 1.0);
+        return float4(asfloat(w0), asfloat(fh1FetchWordAt(c, index, stride, offset, 1)), 0.0, 1.0);
     case 57:  // 32_32_32_FLOAT
-        return float4(asfloat(w0), asfloat(fh1FetchWord(c, index, stride, offset, 1)),
-                      asfloat(fh1FetchWord(c, index, stride, offset, 2)), 1.0);
+        return float4(asfloat(w0), asfloat(fh1FetchWordAt(c, index, stride, offset, 1)),
+                      asfloat(fh1FetchWordAt(c, index, stride, offset, 2)), 1.0);
     case 38:  // 32_32_32_32_FLOAT
-        return float4(asfloat(w0), asfloat(fh1FetchWord(c, index, stride, offset, 1)),
-                      asfloat(fh1FetchWord(c, index, stride, offset, 2)),
-                      asfloat(fh1FetchWord(c, index, stride, offset, 3)));
+        return float4(asfloat(w0), asfloat(fh1FetchWordAt(c, index, stride, offset, 1)),
+                      asfloat(fh1FetchWordAt(c, index, stride, offset, 2)),
+                      asfloat(fh1FetchWordAt(c, index, stride, offset, 3)));
     default:
         return float4(0.0, 0.0, 0.0, 1.0);
     }
