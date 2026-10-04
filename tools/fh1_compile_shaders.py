@@ -1,9 +1,12 @@
 """Compiles the translated FH1 shaders (HLSL from shaders/fh1_hlsl.exe) to SPIR-V with DXC, with the
 options nfsmw-nx used (shaders/nfsmw_rebuild_library_pcf.sh). Native renderer step N0.
 
-    python tools/fh1_compile_shaders.py HLSL_DIR SPIRV_DIR [DXC]
+    python tools/fh1_compile_shaders.py HLSL_DIR SPIRV_DIR [DXC [PREFIX]]
 
 DXC defaults to the Windows SDK's (Windows Kits 10, x64). Failures go to SPIRV_DIR/dxc_errors.txt.
+FH1: vertex shaders get -fvk-support-nonzero-base-vertex, so SV_VertexID (r0.x at the start of a vertex shader,
+as on the console) is the index of the draw rather than index + vertexOffset. Shaders that read it need the
+Vulkan feature shaderDrawParameters.
 """
 import concurrent.futures
 import glob
@@ -24,7 +27,7 @@ os.makedirs(spirv_dir, exist_ok=True)
 
 def compile_one(path):
     base = os.path.splitext(os.path.basename(path))[0]
-    target, extra = ('ps_6_6', []) if base.startswith('p_') else ('vs_6_6', ['-fvk-invert-y'])
+    target, extra = ('ps_6_6', []) if base.startswith('p_') else ('vs_6_6', ['-fvk-invert-y', '-fvk-support-nonzero-base-vertex'])
     out = os.path.join(spirv_dir, base + '.spv')
     r = subprocess.run([dxc, '-spirv', '-T', target, '-E', 'main', '-HV', '2021',
                         '-fspv-target-env=vulkan1.2', '-fvk-use-dx-layout', *extra, '-Fo', out, path],
@@ -32,7 +35,9 @@ def compile_one(path):
     return base, r.returncode, (r.stderr or r.stdout)
 
 
-files = sorted(glob.glob(os.path.join(hlsl_dir, '*.hlsl')))
+# Optional 4th argument: only files starting with it (v_ = vertex shaders, p_ = pixel shaders).
+only = sys.argv[4] if len(sys.argv) > 4 else ''
+files = sorted(glob.glob(os.path.join(hlsl_dir, only + '*.hlsl')))
 ok, errors = 0, []
 with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 1)) as pool:
     for base, code, text in pool.map(compile_one, files):

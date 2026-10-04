@@ -1525,6 +1525,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             out += "\tin uint iInstanceId : SV_InstanceID,\n";
         }
     #endif
+    #ifdef NFSMW_RECOMP
+        // FH1: on the Xbox 360 a vertex shader starts with the vertex index in r0.x; the vegetation and billboard
+        // shaders read it (corner = index mod 4). Compiled with -fvk-support-nonzero-base-vertex so that it is the
+        // index of the draw and not index + vertexOffset. Shaders that never read it lose the input when optimised.
+        out += "\tin uint iVertexId : SV_VertexID,\n";
+    #endif
 
         out += "\tout float4 oPos : SV_Position";
 
@@ -1666,6 +1672,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             else if (!isPixelShader && hasIndexCount && i == 0)
             {
                 out += "float4(iVertexId + g_IndexCount.x * iInstanceId, 0.0, 0.0, 0.0);\n";
+            }
+        #endif
+        #ifdef NFSMW_RECOMP
+            else if (!isPixelShader && i == 0)
+            {
+                out += "float4(float(iVertexId), 0.0, 0.0, 0.0);\n";  // FH1: the vertex index
             }
         #endif
             else

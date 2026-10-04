@@ -138,6 +138,10 @@ class VulkanDevice {
 
     bool scalarBlockLayout = false;
 
+    // Vulkan 1.1 (FH1 native renderer: SV_VertexID as the index of the draw)
+
+    bool shaderDrawParameters = false;
+
     // VK_KHR_portability_subset (#164)
 
     bool constantAlphaColorBlendFactors = false;

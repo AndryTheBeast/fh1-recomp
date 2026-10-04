@@ -313,6 +313,10 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
 
   VkPhysicalDeviceFeatures2 supported_features_2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
 
+  // FH1 native renderer: shaderDrawParameters (the vertex index of the draw in the vertex shaders).
+  VulkanFeatures<VkPhysicalDeviceVulkan11Features,
+                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES>
+      features_1_1;
   VulkanFeatures<VkPhysicalDeviceVulkan12Features,
                  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES>
       features_1_2;
@@ -357,6 +361,7 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
   if (get_physical_device_properties2_supported) {
     if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 2, 0)) {
       features_1_2.Link(supported_features_2, device_create_info);
+      features_1_1.Link(supported_features_2, device_create_info);
     }
     if (properties.apiVersion >= VK_MAKE_API_VERSION(0, 1, 3, 0)) {
       features_1_3.Link(supported_features_2, device_create_info);
@@ -682,6 +687,7 @@ std::unique_ptr<VulkanDevice> VulkanDevice::CreateIfSupported(
       // renderer). Without the feature the query pool cannot be created.
       XE_UI_VULKAN_FEATURE(pipelineStatisticsQuery)
       XE_UI_VULKAN_FEATURE_2(features_1_2, bufferDeviceAddress);
+      XE_UI_VULKAN_FEATURE_2(features_1_1, shaderDrawParameters);
       XE_UI_VULKAN_FEATURE_2(features_1_2, runtimeDescriptorArray);
       // Native renderer: unbounded textures and samplers that are added while the
       // command buffer is already recording.

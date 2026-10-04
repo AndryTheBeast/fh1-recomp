@@ -53,7 +53,7 @@ int main(int argc, char** argv) try {
   std::ofstream f(output, std::ios::binary);
   if (!f.write(reinterpret_cast<const char*>(packet.data()), packet.size()) || !f.flush())
     throw std::runtime_error("Could not write the whole package");
-  std::printf("%zu containers -> %zu shaders unicos, %zu bytes; all recuperables\n",
+  std::printf("%zu containers -> %zu unique shaders, %zu bytes; all found again\n",
               paths.size(), library.shaders().size(), packet.size());
   return 0;
 } catch (const std::exception& e) {
