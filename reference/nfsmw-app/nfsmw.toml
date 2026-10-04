@@ -8,7 +8,7 @@
 #  the same next to NFS_Most_Wanted.exe as next to nfsmw.exe.
 #
 #  Command-line arguments take precedence over what is here, so things
-#  can still be tried with PROBAR_RTV.bat without touching the file.
+#  can still be tried with TEST_RTV.bat without touching the file.
 # ============================================================================
 
 

@@ -35,13 +35,13 @@
  * exactly on those 64 KB. The RAM ceiling goes down, not up: 16 windows x 256 KB = 4 MB, against
  * 128 x 64 KB = 8 MB.
  */
-REXCVAR_DEFINE_INT32(nfsmw_io_ventana_kb, 256, "Filesystem",
-                     "Lectura anticipada por fichero, en KB (0 = apagada). Solo datos de solo lectura.");
+REXCVAR_DEFINE_INT32(nfsc_io_window_kb, 256, "Filesystem",
+                     "ReadAccess early por file, en KB (0 = off). Solo data de solo read.");
 
 // How many windows can exist at once. A hard cap so that opening many files does not eat the RAM.
 // 128 was an arbitrary number; in a whole measured session there were never more than 10 live windows.
-REXCVAR_DEFINE_INT32(nfsmw_io_ventanas_max, 16, "Filesystem",
-                     "Maximo de ficheros con lectura anticipada a la vez.");
+REXCVAR_DEFINE_INT32(nfsc_io_windows_max, 16, "Filesystem",
+                     "Maximum de files con read early a la time.");
 
 /*
  * Split large direct reads into pieces of this many MB. 0 = a single call.
@@ -65,19 +65,19 @@ REXCVAR_DEFINE_INT32(nfsmw_io_ventanas_max, 16, "Filesystem",
  * loading screens there is no correlation between slow reads and stutters. It is on because it
  * bounds the worst case and fixes short reads, not because a gain is expected.
  */
-REXCVAR_DEFINE_INT32(nfsmw_io_trozo_mb, 4, "Filesystem",
-                     "Parte las lecturas directas grandes en trozos de estos MB (0 = de una sola vez).");
+REXCVAR_DEFINE_INT32(nfsc_io_chunk_mb, 4, "Filesystem",
+                     "Part the reads direct grandes en chunks de estos MB (0 = de one sola time).");
 
 /*
- * RAM read cache by blocks (nfsmw_io_cache_mb, off). The game rereads the same data from the SD
+ * RAM read cache by blocks (nfsc_io_cache_mb, off). The game rereads the same data from the SD
  * every lap.
  *
- * Measured over 5 minutes of racing (line `[io] rangos:`):
+ * Measured over 5 minutes of racing (line `[io] ranges:`):
  *     from minute 2 on, between 79 % and 95 % of the bytes the game reads from disk had already
  *     been read before, and the sizes repeat with the lap period (20.9 MB three times, 13.0-13.6 MB
  *     twice...).
  * NFSMW streaming works per zone pack (eStreamingPack): on leaving a zone it releases the whole
- * pack and on entering again it asks for it again. We evict nothing (`0 desalojos` in every
+ * pack and on entering again it asks for it again. We evict nothing (`0 window_evictions` in every
  * report): the one releasing it is the game's memory manager, and it cannot be told no.
  *
  * What can be done is make the second time not cost a trip to the SD. In a race that is 441
@@ -109,22 +109,22 @@ REXCVAR_DEFINE_INT32(nfsmw_io_trozo_mb, 4, "Filesystem",
  *  game crawled.)
  * ================================================================================================
  */
-REXCVAR_DEFINE_INT32(nfsmw_io_cache_mb, 0, "Filesystem",
-                     "Cache en RAM de lo ya leido del disco, en MB (0 = apagada). Solo datos de solo "
-                     "lectura. El juego relee cada vuelta lo mismo.");
+REXCVAR_DEFINE_INT32(nfsc_io_cache_mb, 0, "Filesystem",
+                     "Cache en RAM de lo ya read del disco, en MB (0 = off). Solo data de solo "
+                     "read. El game relee every lap lo same.");
 
 /*
  * Read cache by exact range. This is the second attempt, not the block cache above.
  *
  * What was measured. Across two different builds the per-lap stutter pattern is identical: a period
  * of 62-68 s, three or four fixed places, always in the same order and with the same size. In those
- * frames the breakdown says GPU 27-29 ms (normal) and the `grabar` stage 0.2-0.4 ms: the time is
- * neither in the GPU nor in recording. What does go together with the big stutters are `[io] LENTO`
- * reads of NFS\ZZDATA6.BIN marked (RELEIDA), of 11 to 20 ms, and the worst one of the session
+ * frames the breakdown says GPU 27-29 ms (normal) and the `record` stage 0.2-0.4 ms: the time is
+ * neither in the GPU nor in recording. What does go together with the big stutters are `[io] SLOW`
+ * reads of NFS\ZZDATA6.BIN marked (REREAD), of 11 to 20 ms, and the worst one of the session
  * blocks for 132 to 140 ms. They are rereads of the zone pack: the game releases the pack on
  * leaving and asks for it again on entering, with the same offset and the same size.
  *
- * Why by range and not by blocks. The block cache above (nfsmw_io_cache_mb) failed on the console
+ * Why by range and not by blocks. The block cache above (nfsc_io_cache_mb) failed on the console
  * because of the blocks: only 1 % of the offsets the game asks for are aligned to 256 KB, so it
  * brought 365 KB from the SD for every 110 KB requested (x3.3 amplification) and ended up reading
  * more disk than it saved. Storing the exact range (file, offset, bytes) makes the amplification
@@ -158,7 +158,7 @@ REXCVAR_DEFINE_INT32(nfsmw_io_cache_mb, 0, "Filesystem",
  *
  * 1. The 34 evictions were not race data: they were the sequential sweep of the level load
  *    (34 blocks of ZZDATA0.BIN, 4 MB at a time, 154 MB, each read once). Raising the cap from 32
- *    to 128 did not buy a single hit. What is needed is not storing that sweep (see GuardarRango).
+ *    to 128 did not buy a single hit. What is needed is not storing that sweep (see SaveRange).
  * 2. The 4 MB floor did not see what repeats during a race, which is small: 62 distinct requests
  *    of 0.14 to 2.0 MB (24.7 MB in total), repeated 2 to 10 times each, almost all from
  *    ZZDATA6.BIN. Simulated on the real trace: floor 4 MB -> 16.6 % hits and 10 ms; floor
@@ -168,85 +168,85 @@ REXCVAR_DEFINE_INT32(nfsmw_io_cache_mb, 0, "Filesystem",
  * Memory: it comes from the host heap (1,024 MB), not from the GPU heap. With ~506 MB for the guest
  * and the thread stacks, 64 MB leaves margin; 128 would not in the pessimistic case.
  */
-REXCVAR_DEFINE_INT32(nfsmw_io_rangos_mb, 64, "Filesystem",
-                     "Cache de lecturas por rango exacto, tope total en MB (0 = apagada). 64 = la huella "
-                     "medida de una carrera (56,6 MB) sin expulsiones; mas no compra nada.");
+REXCVAR_DEFINE_INT32(nfsc_io_ranges_mb, 64, "Filesystem",
+                     "Cache de reads por range exacto, cap total en MB (0 = off). 64 = la fingerprint "
+                     "measurement de one race (56,6 MB) sin cache_evictions; mas no compra nothing.");
 
 // Floor, in KB. At 4 MB it left out everything that is reread during a race (0.14-2.0 MB).
-REXCVAR_DEFINE_INT32(nfsmw_io_rangos_min_kb, 256, "Filesystem",
-                     "Solo se cachean las lecturas de estos KB o mas. 256 = el punto donde la simulacion "
-                     "deja de ganar (con 128 suben las expulsiones y bajan los aciertos).");
+REXCVAR_DEFINE_INT32(nfsc_io_ranges_min_kb, 256, "Filesystem",
+                     "Solo se cachean the reads de estos KB o mas. 256 = el punto where la simulacion "
+                     "leaves de ganar (con 128 suben the cache_evictions y bajan los hits).");
 
 // Compatibility: the old cvar in MB. If a toml sets it to a value > 0, it overrides the KB one.
-REXCVAR_DEFINE_INT32(nfsmw_io_rangos_min_mb, 0, "Filesystem",
-                     "OBSOLETO (build 131): usar nfsmw_io_rangos_min_kb. Si es > 0 manda sobre el de KB.");
+REXCVAR_DEFINE_INT32(nfsc_io_ranges_min_mb, 0, "Filesystem",
+                     "OBSOLETO (build 131): use nfsc_io_ranges_min_kb. Si es > 0 manda over el de KB.");
 
 // Per-entry ceiling: a single read cannot take more than this out of the total cap.
-REXCVAR_DEFINE_INT32(nfsmw_io_rangos_max_mb, 12, "Filesystem",
-                     "Ninguna entrada de la cache de rangos pasa de estos MB.");
+REXCVAR_DEFINE_INT32(nfsc_io_ranges_max_mb, 12, "Filesystem",
+                     "Ninguna entry de la cache de ranges pasa de estos MB.");
 
 namespace rex::filesystem {
 
 namespace {
-std::atomic<uint64_t> g_aciertos{0};
-std::atomic<uint64_t> g_rellenos{0};
-std::atomic<uint64_t> g_directas{0};
+std::atomic<uint64_t> g_hits{0};
+std::atomic<uint64_t> g_fills{0};
+std::atomic<uint64_t> g_direct{0};
 std::atomic<uint64_t> g_bytes_ram{0};
-std::atomic<int64_t> g_ventanas_vivas{0};
+std::atomic<int64_t> g_windows_live{0};
 
 // Above this it does not pay off: the request is already large and the window would only add an extra copy.
-constexpr size_t kPeticionMaxFraccion = 4;  // pedido <= ventana/4
+constexpr size_t kRequestMaxFraction = 4;  // requested <= window/4
 
-/* The read cache (see nfsmw_io_cache_mb). */
-constexpr size_t kBloqueCache = 256 * 1024;
+/* The read cache (see nfsc_io_cache_mb). */
+constexpr size_t kBlockCache = 256 * 1024;
 
-struct BloqueCache {
-  std::vector<uint8_t> datos;  // may be shorter than kBloqueCache at end of file
-  uint64_t uso = 0;            // for the LRU
+struct BlockCache {
+  std::vector<uint8_t> data;  // may be shorter than kBlockCache at end of file
+  uint64_t use = 0;            // for the LRU
 };
 
 std::mutex g_cache_mutex;
-std::unordered_map<uint64_t, BloqueCache> g_cache;   // clave: id de fichero << 32 | bloque
+std::unordered_map<uint64_t, BlockCache> g_cache;   // key: id de file << 32 | block
 std::map<uint64_t, uint64_t> g_cache_lru;            // use -> key, oldest first
 std::unordered_map<std::string, uint32_t> g_cache_ids;  // path -> id, so the key is exact
 uint64_t g_cache_bytes = 0;
-uint64_t g_cache_uso = 0;
-uint64_t g_cache_aciertos = 0;
-uint64_t g_cache_fallos = 0;
-uint64_t g_cache_bytes_servidos = 0;
+uint64_t g_cache_use = 0;
+uint64_t g_cache_hits = 0;
+uint64_t g_cache_misses = 0;
+uint64_t g_cache_bytes_served = 0;
 uint64_t g_cache_bytes_disco = 0;
-uint64_t g_cache_expulsados = 0;
-uint64_t g_cache_informe = 0;
-bool g_cache_sin_memoria = false;  // turned itself off for lack of RAM: not retried
+uint64_t g_cache_evicted = 0;
+uint64_t g_cache_report = 0;
+bool g_cache_without_memory = false;  // turned itself off for lack of RAM: not retried
 
 // Stable id per path, assigned the first time it is opened. With it, the block key cannot
 // collide between files (a 64-bit hash could, and a collision would serve another file's data).
-uint32_t IdDeRuta(const std::string& ruta) {
+uint32_t IdOfPath(const std::string& path) {
   std::lock_guard lock(g_cache_mutex);
-  const auto [it, nuevo] = g_cache_ids.try_emplace(ruta, uint32_t(g_cache_ids.size() + 1));
+  const auto [it, new_value] = g_cache_ids.try_emplace(path, uint32_t(g_cache_ids.size() + 1));
   return it->second;
 }
 
 // Marks a block as just used. Called with g_cache_mutex held.
-void TocarBloque(uint64_t clave, BloqueCache& bloque) {
-  if (bloque.uso) {
-    g_cache_lru.erase(bloque.uso);
+void TouchBlock(uint64_t key, BlockCache& block) {
+  if (block.use) {
+    g_cache_lru.erase(block.use);
   }
-  bloque.uso = ++g_cache_uso;
-  g_cache_lru[bloque.uso] = clave;
+  block.use = ++g_cache_use;
+  g_cache_lru[block.use] = key;
 }
 
 // Brings the cache under the limit by dropping the oldest blocks. Called with g_cache_mutex held.
-void PodarCache(size_t limite) {
-  while (g_cache_bytes > limite && !g_cache_lru.empty()) {
-    const auto viejo = g_cache_lru.begin();
-    const auto it = g_cache.find(viejo->second);
+void PruneCache(size_t limit) {
+  while (g_cache_bytes > limit && !g_cache_lru.empty()) {
+    const auto old = g_cache_lru.begin();
+    const auto it = g_cache.find(old->second);
     if (it != g_cache.end()) {
-      g_cache_bytes -= it->second.datos.size();
+      g_cache_bytes -= it->second.data.size();
       g_cache.erase(it);
-      ++g_cache_expulsados;
+      ++g_cache_evicted;
     }
-    g_cache_lru.erase(viejo);
+    g_cache_lru.erase(old);
   }
 }
 
@@ -255,125 +255,125 @@ void PodarCache(size_t limite) {
  * contiguous range). Returns false if it cannot: then the usual path answers and nothing that
  * matters has been touched.
  */
-bool LeerConCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_t byte_offset,
+bool ReadWithCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_t byte_offset,
                   size_t* out_bytes_read) {
-  const size_t limite = static_cast<size_t>(REXCVAR_GET(nfsmw_io_cache_mb)) * 1024u * 1024u;
-  const size_t pedido = buffer.size();
-  if (!limite || !pedido || !id || g_cache_sin_memoria) {
+  const size_t limit = static_cast<size_t>(REXCVAR_GET(nfsc_io_cache_mb)) * 1024u * 1024u;
+  const size_t requested = buffer.size();
+  if (!limit || !requested || !id || g_cache_without_memory) {
     return false;
   }
-  const uint64_t primero = byte_offset / kBloqueCache;
-  const uint64_t ultimo = (byte_offset + pedido - 1) / kBloqueCache;
+  const uint64_t first = byte_offset / kBlockCache;
+  const uint64_t last = (byte_offset + requested - 1) / kBlockCache;
   // A request larger than half the cache would fill it on its own and evict everything useful.
-  if ((ultimo - primero + 1) * kBloqueCache > limite / 2) {
+  if ((last - first + 1) * kBlockCache > limit / 2) {
     return false;
   }
 
   std::lock_guard lock(g_cache_mutex);
-  size_t copiados = 0;
-  for (uint64_t b = primero; b <= ultimo; ++b) {
-    const uint64_t clave = (static_cast<uint64_t>(id) << 32) | b;
-    auto it = g_cache.find(clave);
+  size_t copied = 0;
+  for (uint64_t b = first; b <= last; ++b) {
+    const uint64_t key = (static_cast<uint64_t>(id) << 32) | b;
+    auto it = g_cache.find(key);
     if (it == g_cache.end()) {
       // Contiguous run of missing blocks: a single read for all of them.
       uint64_t fin = b;
-      while (fin < ultimo && !g_cache.count((static_cast<uint64_t>(id) << 32) | (fin + 1))) {
+      while (fin < last && !g_cache.count((static_cast<uint64_t>(id) << 32) | (fin + 1))) {
         ++fin;
       }
-      const size_t tramo = static_cast<size_t>(fin - b + 1) * kBloqueCache;
-      size_t leidos = 0;
+      const size_t range = static_cast<size_t>(fin - b + 1) * kBlockCache;
+      size_t read = 0;
       /*
        * If the console does not have that RAM, the cache turns itself off and does not try again:
        * the game carries on down the usual path. It can never bring the process down for lack of memory.
        */
       try {
-        std::vector<uint8_t> tmp(tramo);
+        std::vector<uint8_t> tmp(range);
         /*
-         * Same as LeerDirecta: in pieces, and a short read is not end of file (the file system
+         * Same as ReadDirect: in pieces, and a short read is not end of file (the file system
          * truncates large ones). The loop only stops when a piece returns 0 bytes. Without this,
          * half-filled blocks would be cached and the game would get incomplete data.
          */
-        const int32_t trozo_mb = REXCVAR_GET(nfsmw_io_trozo_mb);
-        const size_t trozo = trozo_mb > 0 ? static_cast<size_t>(trozo_mb) * 1024u * 1024u : tramo;
-        while (leidos < tramo) {
+        const int32_t chunk_mb = REXCVAR_GET(nfsc_io_chunk_mb);
+        const size_t chunk = chunk_mb > 0 ? static_cast<size_t>(chunk_mb) * 1024u * 1024u : range;
+        while (read < range) {
           size_t n = 0;
-          const size_t pide = std::min(trozo, tramo - leidos);
-          if (!fh->Read(b * kBloqueCache + leidos, tmp.data() + leidos, pide, &n)) {
-            if (leidos == 0) {
+          const size_t asks = std::min(chunk, range - read);
+          if (!fh->Read(b * kBlockCache + read, tmp.data() + read, asks, &n)) {
+            if (read == 0) {
               return false;  // real error: let the usual path answer
             }
             break;
           }
           if (n == 0) {
-            break;  // fin de fichero
+            break;  // fin de file
           }
-          leidos += n;
+          read += n;
         }
-        ++g_cache_fallos;
-        g_cache_bytes_disco += leidos;
+        ++g_cache_misses;
+        g_cache_bytes_disco += read;
         for (uint64_t k = b; k <= fin; ++k) {
-          const size_t desde = static_cast<size_t>(k - b) * kBloqueCache;
-          if (desde >= leidos) {
-            break;  // fin de fichero
+          const size_t since = static_cast<size_t>(k - b) * kBlockCache;
+          if (since >= read) {
+            break;  // fin de file
           }
-          const size_t n = std::min(kBloqueCache, leidos - desde);
+          const size_t n = std::min(kBlockCache, read - since);
           const uint64_t ck = (static_cast<uint64_t>(id) << 32) | k;
-          BloqueCache& nuevo = g_cache[ck];
-          nuevo.datos.assign(tmp.begin() + desde, tmp.begin() + desde + n);
+          BlockCache& new_value = g_cache[ck];
+          new_value.data.assign(tmp.begin() + since, tmp.begin() + since + n);
           g_cache_bytes += n;
-          TocarBloque(ck, nuevo);
+          TouchBlock(ck, new_value);
         }
       } catch (const std::bad_alloc&) {
         const uint64_t tenia = g_cache_bytes >> 20;
-        g_cache_sin_memoria = true;
+        g_cache_without_memory = true;
         g_cache.clear();
         g_cache_lru.clear();
         g_cache_bytes = 0;
-        REXLOG_WARN("[io] cache en RAM: sin memoria, se apaga (iba por {} MB). El juego sigue leyendo "
-                    "del disco como antes",
+        REXLOG_WARN("[io] cache en RAM: sin memory_block, se apaga (iba por {} MB). El game sigue leyendo "
+                    "del disco as before",
                     tenia);
         return false;
       }
-      PodarCache(limite);
-      it = g_cache.find(clave);  // the insertion may have rebuilt the table
+      PruneCache(limit);
+      it = g_cache.find(key);  // the insertion may have rebuilt the table
       if (it == g_cache.end()) {
         break;  // not even the first block had bytes: end of file
       }
     } else {
-      ++g_cache_aciertos;
-      TocarBloque(clave, it->second);
+      ++g_cache_hits;
+      TouchBlock(key, it->second);
     }
-    const size_t dentro = byte_offset + copiados - static_cast<size_t>(b * kBloqueCache);
-    if (dentro >= it->second.datos.size()) {
+    const size_t inside = byte_offset + copied - static_cast<size_t>(b * kBlockCache);
+    if (inside >= it->second.data.size()) {
       break;  // the block ends before the requested range: end of file
     }
-    const size_t n = std::min(it->second.datos.size() - dentro, pedido - copiados);
-    std::memcpy(buffer.data() + copiados, it->second.datos.data() + dentro, n);
-    copiados += n;
-    if (it->second.datos.size() < kBloqueCache) {
+    const size_t n = std::min(it->second.data.size() - inside, requested - copied);
+    std::memcpy(buffer.data() + copied, it->second.data.data() + inside, n);
+    copied += n;
+    if (it->second.data.size() < kBlockCache) {
       break;  // short block: no more file
     }
   }
-  g_cache_bytes_servidos += copiados;
-  *out_bytes_read = copiados;
+  g_cache_bytes_served += copied;
+  *out_bytes_read = copied;
 
-  const uint64_t vueltas = g_cache_aciertos + g_cache_fallos;
-  if (vueltas >= g_cache_informe + 200) {
-    g_cache_informe = vueltas;
-    REXLOG_INFO("[io] cache en RAM: {} bloques ({} MB de {}), {} servidas de RAM y {} del disco "
-                "({:.1f} % de aciertos); {:.1f} MB entregados, {:.1f} leidos de la SD, {} bloques "
-                "expulsados",
-                g_cache.size(), g_cache_bytes >> 20, REXCVAR_GET(nfsmw_io_cache_mb), g_cache_aciertos,
-                g_cache_fallos, vueltas ? 100.0 * double(g_cache_aciertos) / double(vueltas) : 0.0,
-                double(g_cache_bytes_servidos) / 1048576.0, double(g_cache_bytes_disco) / 1048576.0,
-                g_cache_expulsados);
+  const uint64_t laps = g_cache_hits + g_cache_misses;
+  if (laps >= g_cache_report + 200) {
+    g_cache_report = laps;
+    REXLOG_INFO("[io] cache en RAM: {} blocks ({} MB de {}), {} servidas de RAM y {} del disco "
+                "({:.1f} % de hits); {:.1f} MB entregados, {:.1f} read de la SD, {} blocks "
+                "evicted",
+                g_cache.size(), g_cache_bytes >> 20, REXCVAR_GET(nfsc_io_cache_mb), g_cache_hits,
+                g_cache_misses, laps ? 100.0 * double(g_cache_hits) / double(laps) : 0.0,
+                double(g_cache_bytes_served) / 1048576.0, double(g_cache_bytes_disco) / 1048576.0,
+                g_cache_evicted);
   }
   return true;
 }
 
 /*
  * ================================================================================================
- * The exact-range cache. See nfsmw_io_rangos_mb above.
+ * The exact-range cache. See nfsc_io_ranges_mb above.
  *
  * The table is a vector and is scanned in full. This is deliberate: it was sized for a 32 MB cap
  * and a 4 MB floor per entry, where at most eight entries fit and the linear search is eight
@@ -382,62 +382,62 @@ bool LeerConCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_t
  * would serve another file's data.
  * ================================================================================================
  */
-struct EntradaRango {
-  uint32_t id = 0;               // file (stable id per path, the same as IdDeRuta)
-  uint64_t desplazamiento = 0;   // where the read starts
-  uint32_t pedido = 0;           // how much the game asked for: part of the key, not a detail
-  // The bytes the disk returned. It can be shorter than `pedido` if the file ends earlier; it is
+struct EntryRange {
+  uint32_t id = 0;               // file (stable id per path, the same as IdOfPath)
+  uint64_t displacement = 0;   // where the read starts
+  uint32_t requested = 0;           // how much the game asked for: part of the key, not a detail
+  // The bytes the disk returned. It can be shorter than `requested` if the file ends earlier; it is
   // stored as is and returned as is, which is what the disk would have answered.
-  std::shared_ptr<const std::vector<uint8_t>> datos;
-  uint64_t uso = 0;              // for the LRU
+  std::shared_ptr<const std::vector<uint8_t>> data;
+  uint64_t use = 0;              // for the LRU
 };
 
-std::mutex g_rangos_mutex;
-std::vector<EntradaRango> g_rangos;
-uint64_t g_rangos_uso = 0;
-uint64_t g_rangos_bytes = 0;
-bool g_rangos_sin_memoria = false;  // turned itself off for lack of RAM: not retried
+std::mutex g_ranges_mutex;
+std::vector<EntryRange> g_ranges;
+uint64_t g_ranges_use = 0;
+uint64_t g_ranges_bytes = 0;
+bool g_ranges_without_memory = false;  // turned itself off for lack of RAM: not retried
 
 // Counters. Atomic so the periodic summary can read them without taking the lock.
-std::atomic<uint64_t> g_rangos_aciertos{0};
-std::atomic<uint64_t> g_rangos_fallos{0};
-std::atomic<uint64_t> g_rangos_bytes_ram{0};
-std::atomic<uint64_t> g_rangos_bytes_disco{0};
-std::atomic<uint64_t> g_rangos_expulsiones{0};
-std::atomic<uint64_t> g_rangos_entradas{0};
-std::atomic<uint64_t> g_rangos_bytes_vivos{0};
+std::atomic<uint64_t> g_ranges_hits{0};
+std::atomic<uint64_t> g_ranges_misses{0};
+std::atomic<uint64_t> g_ranges_bytes_ram{0};
+std::atomic<uint64_t> g_ranges_bytes_disco{0};
+std::atomic<uint64_t> g_ranges_evictions{0};
+std::atomic<uint64_t> g_ranges_entries{0};
+std::atomic<uint64_t> g_ranges_bytes_live{0};
 // Why something is not cached. Without this the cache could not be tuned: the counter said how
 // often it hit, but not whether the misses came from the floor, the ceiling or the load sweep.
-std::atomic<uint64_t> g_rangos_bajo_suelo{0};     // reads skipped for being too small
-std::atomic<uint64_t> g_rangos_sobre_techo{0};    // skipped for being too large
-std::atomic<uint64_t> g_rangos_secuenciales{0};   // rejected as part of the load sweep
-std::atomic<uint64_t> g_rangos_secuenciales_mb{0};
+std::atomic<uint64_t> g_ranges_low_floor{0};     // reads skipped for being too small
+std::atomic<uint64_t> g_ranges_over_ceiling{0};    // skipped for being too large
+std::atomic<uint64_t> g_ranges_sequential{0};   // rejected as part of the load sweep
+std::atomic<uint64_t> g_ranges_sequential_mb{0};
 
-// Last byte read for each file, to detect the sequential sweep. Guarded by g_rangos_mutex.
-std::unordered_map<uint32_t, uint64_t> g_rangos_ultimo_fin;
+// Last byte read for each file, to detect the sequential sweep. Guarded by g_ranges_mutex.
+std::unordered_map<uint32_t, uint64_t> g_ranges_last_end;
 
-int64_t SueloBytes() {
-  const int64_t viejo_mb = REXCVAR_GET(nfsmw_io_rangos_min_mb);
-  if (viejo_mb > 0) {
-    return viejo_mb * 1024 * 1024;  // an old toml sets it: honor it
+int64_t FloorBytes() {
+  const int64_t old_mb = REXCVAR_GET(nfsc_io_ranges_min_mb);
+  if (old_mb > 0) {
+    return old_mb * 1024 * 1024;  // an old toml sets it: honor it
   }
-  return int64_t(REXCVAR_GET(nfsmw_io_rangos_min_kb)) * 1024;
+  return int64_t(REXCVAR_GET(nfsc_io_ranges_min_kb)) * 1024;
 }
 
 // Does this read go into the cache? Only the size decides; the constructor already took care of
 // the file being read-only when it gave (or did not give) it an id.
-bool RangoElegible(size_t pedido) {
-  const int64_t tope = int64_t(REXCVAR_GET(nfsmw_io_rangos_mb)) * 1024 * 1024;
-  if (tope <= 0) {
+bool RangeEligible(size_t requested) {
+  const int64_t cap = int64_t(REXCVAR_GET(nfsc_io_ranges_mb)) * 1024 * 1024;
+  if (cap <= 0) {
     return false;
   }
-  const int64_t techo = int64_t(REXCVAR_GET(nfsmw_io_rangos_max_mb)) * 1024 * 1024;
-  if (int64_t(pedido) < SueloBytes()) {
-    g_rangos_bajo_suelo.fetch_add(1, std::memory_order_relaxed);
+  const int64_t ceiling = int64_t(REXCVAR_GET(nfsc_io_ranges_max_mb)) * 1024 * 1024;
+  if (int64_t(requested) < FloorBytes()) {
+    g_ranges_low_floor.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
-  if (int64_t(pedido) > techo || int64_t(pedido) > tope) {
-    g_rangos_sobre_techo.fetch_add(1, std::memory_order_relaxed);
+  if (int64_t(requested) > ceiling || int64_t(requested) > cap) {
+    g_ranges_over_ceiling.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
   return true;
@@ -453,14 +453,14 @@ bool RangoElegible(size_t pedido) {
  * here. The end of every eligible read is recorded (including the first read of the sweep, which
  * is stored: it is 1 block out of 31 and gets evicted on its own).
  */
-constexpr uint64_t kBarridoMinimo = uint64_t(4) << 20;
+constexpr uint64_t kScanMinimum = uint64_t(4) << 20;
 
-bool EsBarridoYAnotar(uint32_t id, uint64_t desplazamiento, uint32_t pedido) {
-  // Llamar con g_rangos_mutex cogido.
-  auto it = g_rangos_ultimo_fin.find(id);
-  const bool seguida = it != g_rangos_ultimo_fin.end() && it->second == desplazamiento;
-  g_rangos_ultimo_fin[id] = desplazamiento + pedido;
-  return seguida && pedido >= kBarridoMinimo;
+bool IsScanYNote(uint32_t id, uint64_t displacement, uint32_t requested) {
+  // Call con g_ranges_mutex cogido.
+  auto it = g_ranges_last_end.find(id);
+  const bool consecutive = it != g_ranges_last_end.end() && it->second == displacement;
+  g_ranges_last_end[id] = displacement + requested;
+  return consecutive && requested >= kScanMinimum;
 }
 
 /*
@@ -470,13 +470,13 @@ bool EsBarridoYAnotar(uint32_t id, uint64_t desplazamiento, uint32_t pedido) {
  * and while it copies another thread may evict this entry. With the shared_ptr that only removes
  * the entry from the table; the bytes stay alive until the last reader releases them.
  */
-std::shared_ptr<const std::vector<uint8_t>> BuscarRango(uint32_t id, uint64_t desplazamiento,
-                                                        uint32_t pedido) {
-  std::lock_guard lock(g_rangos_mutex);
-  for (auto& e : g_rangos) {
-    if (e.id == id && e.desplazamiento == desplazamiento && e.pedido == pedido) {
-      e.uso = ++g_rangos_uso;
-      return e.datos;
+std::shared_ptr<const std::vector<uint8_t>> FindRange(uint32_t id, uint64_t displacement,
+                                                        uint32_t requested) {
+  std::lock_guard lock(g_ranges_mutex);
+  for (auto& e : g_ranges) {
+    if (e.id == id && e.displacement == displacement && e.requested == requested) {
+      e.use = ++g_ranges_use;
+      return e.data;
     }
   }
   return nullptr;
@@ -489,110 +489,110 @@ std::shared_ptr<const std::vector<uint8_t>> BuscarRango(uint32_t id, uint64_t de
  * The copy is done outside the lock: it is up to 12 MB of memcpy plus a heap allocation, and
  * neither has any reason to block another thread that only wants to look at the table.
  */
-void GuardarRango(uint32_t id, uint64_t desplazamiento, uint32_t pedido, const uint8_t* datos,
+void SaveRange(uint32_t id, uint64_t displacement, uint32_t requested, const uint8_t* data,
                   size_t bytes) {
   if (!bytes) {
     return;
   }
   {
-    std::lock_guard lock(g_rangos_mutex);
-    if (g_rangos_sin_memoria) {
+    std::lock_guard lock(g_ranges_mutex);
+    if (g_ranges_without_memory) {
       return;
     }
     // The load sweep does not go in. Decided here, before copying the megabytes.
-    if (EsBarridoYAnotar(id, desplazamiento, pedido)) {
-      g_rangos_secuenciales.fetch_add(1, std::memory_order_relaxed);
-      g_rangos_secuenciales_mb.fetch_add(bytes, std::memory_order_relaxed);
+    if (IsScanYNote(id, displacement, requested)) {
+      g_ranges_sequential.fetch_add(1, std::memory_order_relaxed);
+      g_ranges_sequential_mb.fetch_add(bytes, std::memory_order_relaxed);
       return;
     }
   }
 
-  std::shared_ptr<std::vector<uint8_t>> copia;
+  std::shared_ptr<std::vector<uint8_t>> copy;
   try {
-    copia = std::make_shared<std::vector<uint8_t>>(datos, datos + bytes);
+    copy = std::make_shared<std::vector<uint8_t>>(data, data + bytes);
   } catch (const std::bad_alloc&) {
     // If the console does not have that RAM, the cache turns off and is not retried. The game keeps
     // reading from disk as usual: it can never bring the process down for lack of memory.
     uint64_t tenia = 0;
     {
-      std::lock_guard lock(g_rangos_mutex);
-      tenia = g_rangos_bytes >> 20;
-      g_rangos_sin_memoria = true;
-      g_rangos.clear();
-      g_rangos_bytes = 0;
+      std::lock_guard lock(g_ranges_mutex);
+      tenia = g_ranges_bytes >> 20;
+      g_ranges_without_memory = true;
+      g_ranges.clear();
+      g_ranges_bytes = 0;
     }
-    g_rangos_entradas.store(0, std::memory_order_relaxed);
-    g_rangos_bytes_vivos.store(0, std::memory_order_relaxed);
-    REXLOG_WARN("[io] rangos-cache: sin memoria, se apaga (iba por {} MB). El juego sigue leyendo "
-                "del disco como antes",
+    g_ranges_entries.store(0, std::memory_order_relaxed);
+    g_ranges_bytes_live.store(0, std::memory_order_relaxed);
+    REXLOG_WARN("[io] ranges-cache: sin memory_block, se apaga (iba por {} MB). El game sigue leyendo "
+                "del disco as before",
                 tenia);
     return;
   }
 
-  const size_t tope = size_t(REXCVAR_GET(nfsmw_io_rangos_mb)) * 1024u * 1024u;
-  std::lock_guard lock(g_rangos_mutex);
-  for (const auto& e : g_rangos) {
-    if (e.id == id && e.desplazamiento == desplazamiento && e.pedido == pedido) {
+  const size_t cap = size_t(REXCVAR_GET(nfsc_io_ranges_mb)) * 1024u * 1024u;
+  std::lock_guard lock(g_ranges_mutex);
+  for (const auto& e : g_ranges) {
+    if (e.id == id && e.displacement == displacement && e.requested == requested) {
       return;  // another thread asked for the same range and got there first: its copy is just as good
     }
   }
-  EntradaRango& nueva = g_rangos.emplace_back();
-  nueva.id = id;
-  nueva.desplazamiento = desplazamiento;
-  nueva.pedido = pedido;
-  nueva.datos = std::move(copia);
-  nueva.uso = ++g_rangos_uso;
-  g_rangos_bytes += bytes;
+  EntryRange& new_entry = g_ranges.emplace_back();
+  new_entry.id = id;
+  new_entry.displacement = displacement;
+  new_entry.requested = requested;
+  new_entry.data = std::move(copy);
+  new_entry.use = ++g_ranges_use;
+  g_ranges_bytes += bytes;
 
   // LRU: evict the oldest until it fits. The entry just added has the highest use count, so it is
   // never the one evicted.
-  while (g_rangos_bytes > tope && g_rangos.size() > 1) {
-    size_t viejo = 0;
-    for (size_t i = 1; i < g_rangos.size(); ++i) {
-      if (g_rangos[i].uso < g_rangos[viejo].uso) {
-        viejo = i;
+  while (g_ranges_bytes > cap && g_ranges.size() > 1) {
+    size_t old = 0;
+    for (size_t i = 1; i < g_ranges.size(); ++i) {
+      if (g_ranges[i].use < g_ranges[old].use) {
+        old = i;
       }
     }
-    g_rangos_bytes -= g_rangos[viejo].datos->size();
-    g_rangos.erase(g_rangos.begin() + static_cast<ptrdiff_t>(viejo));
-    g_rangos_expulsiones.fetch_add(1, std::memory_order_relaxed);
+    g_ranges_bytes -= g_ranges[old].data->size();
+    g_ranges.erase(g_ranges.begin() + static_cast<ptrdiff_t>(old));
+    g_ranges_evictions.fetch_add(1, std::memory_order_relaxed);
   }
-  g_rangos_entradas.store(g_rangos.size(), std::memory_order_relaxed);
-  g_rangos_bytes_vivos.store(g_rangos_bytes, std::memory_order_relaxed);
+  g_ranges_entries.store(g_ranges.size(), std::memory_order_relaxed);
+  g_ranges_bytes_live.store(g_ranges_bytes, std::memory_order_relaxed);
 }
 }  // namespace
 
-EstadisticasRangos LeerEstadisticasRangos() {
-  EstadisticasRangos e;
-  e.aciertos = g_rangos_aciertos.load(std::memory_order_relaxed);
-  e.fallos = g_rangos_fallos.load(std::memory_order_relaxed);
-  e.bytes_ram = g_rangos_bytes_ram.load(std::memory_order_relaxed);
-  e.bytes_disco = g_rangos_bytes_disco.load(std::memory_order_relaxed);
-  e.entradas = g_rangos_entradas.load(std::memory_order_relaxed);
-  e.bytes_vivos = g_rangos_bytes_vivos.load(std::memory_order_relaxed);
-  e.expulsiones = g_rangos_expulsiones.load(std::memory_order_relaxed);
-  e.bajo_suelo = g_rangos_bajo_suelo.load(std::memory_order_relaxed);
-  e.sobre_techo = g_rangos_sobre_techo.load(std::memory_order_relaxed);
-  e.secuenciales = g_rangos_secuenciales.load(std::memory_order_relaxed);
-  e.secuenciales_bytes = g_rangos_secuenciales_mb.load(std::memory_order_relaxed);
-  e.suelo_kb = uint64_t(SueloBytes() / 1024);
-  const int32_t tope = REXCVAR_GET(nfsmw_io_rangos_mb);
-  e.tope_mb = tope > 0 ? uint64_t(tope) : 0;
+StatisticsRanges ReadStatisticsRanges() {
+  StatisticsRanges e;
+  e.hits = g_ranges_hits.load(std::memory_order_relaxed);
+  e.misses = g_ranges_misses.load(std::memory_order_relaxed);
+  e.bytes_ram = g_ranges_bytes_ram.load(std::memory_order_relaxed);
+  e.bytes_disco = g_ranges_bytes_disco.load(std::memory_order_relaxed);
+  e.entries = g_ranges_entries.load(std::memory_order_relaxed);
+  e.bytes_live = g_ranges_bytes_live.load(std::memory_order_relaxed);
+  e.cache_evictions = g_ranges_evictions.load(std::memory_order_relaxed);
+  e.low_floor = g_ranges_low_floor.load(std::memory_order_relaxed);
+  e.over_ceiling = g_ranges_over_ceiling.load(std::memory_order_relaxed);
+  e.sequential = g_ranges_sequential.load(std::memory_order_relaxed);
+  e.sequential_bytes = g_ranges_sequential_mb.load(std::memory_order_relaxed);
+  e.floor_kb = uint64_t(FloorBytes() / 1024);
+  const int32_t cap = REXCVAR_GET(nfsc_io_ranges_mb);
+  e.cap_mb = cap > 0 ? uint64_t(cap) : 0;
   {
-    std::lock_guard lock(g_rangos_mutex);
-    e.sin_memoria = g_rangos_sin_memoria;
+    std::lock_guard lock(g_ranges_mutex);
+    e.without_memory = g_ranges_without_memory;
   }
   return e;
 }
 
-EstadisticasVentana LeerEstadisticasVentana() {
-  EstadisticasVentana e;
-  e.aciertos = g_aciertos.load(std::memory_order_relaxed);
-  e.rellenos = g_rellenos.load(std::memory_order_relaxed);
-  e.directas = g_directas.load(std::memory_order_relaxed);
+StatisticsWindow ReadStatisticsWindow() {
+  StatisticsWindow e;
+  e.hits = g_hits.load(std::memory_order_relaxed);
+  e.fills = g_fills.load(std::memory_order_relaxed);
+  e.direct = g_direct.load(std::memory_order_relaxed);
   e.bytes_ram = g_bytes_ram.load(std::memory_order_relaxed);
-  int64_t vivas = g_ventanas_vivas.load(std::memory_order_relaxed);
-  e.ventanas_vivas = vivas > 0 ? static_cast<uint64_t>(vivas) : 0;
+  int64_t live = g_windows_live.load(std::memory_order_relaxed);
+  e.windows_live = live > 0 ? static_cast<uint64_t>(live) : 0;
   return e;
 }
 
@@ -601,8 +601,8 @@ HostPathFile::HostPathFile(uint32_t file_access, HostPathEntry* entry,
     : File(file_access, entry), file_handle_(std::move(file_handle)) {
   // The window is decided once, at open time. Conditions: there is a handle (it is not a directory),
   // the device is read-only, the file was not opened for writing and the cvar allows it.
-  const int32_t kb = REXCVAR_GET(nfsmw_io_ventana_kb);
-  const bool quiere_escribir =
+  const int32_t kb = REXCVAR_GET(nfsc_io_window_kb);
+  const bool quiere_write =
       (file_access & (FileAccess::kGenericWrite | FileAccess::kFileWriteData |
                       FileAccess::kFileAppendData | FileAccess::kGenericAll)) != 0;
   /*
@@ -614,25 +614,25 @@ HostPathFile::HostPathFile(uint32_t file_access, HostPathEntry* entry,
    * neither cache can ever touch a save or a profile, where the bytes change underneath us and
    * serving a stale copy would mean a corrupt save.
    */
-  if (file_handle_ && entry && entry->is_read_only() && !quiere_escribir &&
-      (REXCVAR_GET(nfsmw_io_cache_mb) > 0 || REXCVAR_GET(nfsmw_io_rangos_mb) > 0)) {
-    cache_id_ = IdDeRuta(entry->path());
+  if (file_handle_ && entry && entry->is_read_only() && !quiere_write &&
+      (REXCVAR_GET(nfsc_io_cache_mb) > 0 || REXCVAR_GET(nfsc_io_ranges_mb) > 0)) {
+    cache_id_ = IdOfPath(entry->path());
   }
-  if (file_handle_ && kb > 0 && entry && entry->is_read_only() && !quiere_escribir) {
-    const int64_t max = REXCVAR_GET(nfsmw_io_ventanas_max);
-    if (g_ventanas_vivas.fetch_add(1, std::memory_order_relaxed) < max) {
-      ventana_tam_ = static_cast<size_t>(kb) * 1024u;
-      ventana_activa_ = true;
-      ventana_contada_ = true;
+  if (file_handle_ && kb > 0 && entry && entry->is_read_only() && !quiere_write) {
+    const int64_t max = REXCVAR_GET(nfsc_io_windows_max);
+    if (g_windows_live.fetch_add(1, std::memory_order_relaxed) < max) {
+      window_size_ = static_cast<size_t>(kb) * 1024u;
+      window_active_ = true;
+      window_counted_ = true;
     } else {
-      g_ventanas_vivas.fetch_sub(1, std::memory_order_relaxed);
+      g_windows_live.fetch_sub(1, std::memory_order_relaxed);
     }
   }
 }
 
 HostPathFile::~HostPathFile() {
-  if (ventana_contada_) {
-    g_ventanas_vivas.fetch_sub(1, std::memory_order_relaxed);
+  if (window_counted_) {
+    g_windows_live.fetch_sub(1, std::memory_order_relaxed);
   }
 }
 
@@ -651,30 +651,30 @@ X_STATUS HostPathFile::Flush() {
   return X_STATUS_SUCCESS;
 }
 
-bool HostPathFile::RellenarVentana(size_t byte_offset, size_t pedido, std::span<uint8_t> buffer,
+bool HostPathFile::FillWindow(size_t byte_offset, size_t requested, std::span<uint8_t> buffer,
                                    size_t* out_bytes_read, X_STATUS* out_status) {
-  if (ventana_.size() != ventana_tam_) {
-    ventana_.resize(ventana_tam_);
+  if (window_.size() != window_size_) {
+    window_.resize(window_size_);
   }
 
-  size_t leidos = 0;
-  ++ventana_rellenos_;
-  g_rellenos.fetch_add(1, std::memory_order_relaxed);
-  if (!file_handle_->Read(byte_offset, ventana_.data(), ventana_tam_, &leidos)) {
+  size_t read = 0;
+  ++window_fills_;
+  g_fills.fetch_add(1, std::memory_order_relaxed);
+  if (!file_handle_->Read(byte_offset, window_.data(), window_size_, &read)) {
     // Real error. The window is turned off and the normal path answers.
-    ventana_bytes_ = 0;
-    ventana_activa_ = false;
-    ventana_.clear();
-    ventana_.shrink_to_fit();
+    window_bytes_ = 0;
+    window_active_ = false;
+    window_.clear();
+    window_.shrink_to_fit();
     return false;
   }
 
   // What was read is valid whether or not it covers the request: they are real bytes of the file and
   // the file is read-only.
-  ventana_inicio_ = byte_offset;
-  ventana_bytes_ = leidos;
+  window_start_ = byte_offset;
+  window_bytes_ = read;
 
-  if (leidos < pedido) {
+  if (read < requested) {
     /*
      * The window does not cover the request. It can be the end of the file (and then the direct read
      * will return the same) or a short read from the file system, which cannot be told apart here. In
@@ -682,37 +682,37 @@ bool HostPathFile::RellenarVentana(size_t byte_offset, size_t pedido, std::span<
      * happens several times in a row, the file system is truncating large reads, and the window would
      * only add an extra trip per read: it is turned off for this file.
      */
-    if (++ventana_cortas_ >= 4) {
-      ventana_activa_ = false;
-      ventana_bytes_ = 0;
-      ventana_.clear();
-      ventana_.shrink_to_fit();
+    if (++window_short_ >= 4) {
+      window_active_ = false;
+      window_bytes_ = 0;
+      window_.clear();
+      window_.shrink_to_fit();
     }
     return false;
   }
-  ventana_cortas_ = 0;
+  window_short_ = 0;
 
-  std::memcpy(buffer.data(), ventana_.data(), pedido);
-  *out_bytes_read = pedido;
+  std::memcpy(buffer.data(), window_.data(), requested);
+  *out_bytes_read = requested;
   *out_status = X_STATUS_SUCCESS;
-  g_bytes_ram.fetch_add(pedido, std::memory_order_relaxed);
+  g_bytes_ram.fetch_add(requested, std::memory_order_relaxed);
   return true;
 }
 
 /*
- * The direct read, split into pieces. See nfsmw_io_trozo_mb above.
+ * The direct read, split into pieces. See nfsc_io_chunk_mb above.
  *
  * It must return exactly the same as a single pread in every case the game can see: success with
  * whatever count results, and X_STATUS_END_OF_FILE only if the first call really fails.
  */
-X_STATUS HostPathFile::LeerDirecta(std::span<uint8_t> buffer, size_t byte_offset,
+X_STATUS HostPathFile::ReadDirect(std::span<uint8_t> buffer, size_t byte_offset,
                                    size_t* out_bytes_read) {
-  const size_t pedido = buffer.size();
-  const int32_t trozo_mb = REXCVAR_GET(nfsmw_io_trozo_mb);
-  const size_t trozo = trozo_mb > 0 ? static_cast<size_t>(trozo_mb) * 1024u * 1024u : 0;
+  const size_t requested = buffer.size();
+  const int32_t chunk_mb = REXCVAR_GET(nfsc_io_chunk_mb);
+  const size_t chunk = chunk_mb > 0 ? static_cast<size_t>(chunk_mb) * 1024u * 1024u : 0;
 
-  if (!trozo || pedido <= trozo) {
-    if (file_handle_->Read(byte_offset, buffer.data(), pedido, out_bytes_read)) {
+  if (!chunk || requested <= chunk) {
+    if (file_handle_->Read(byte_offset, buffer.data(), requested, out_bytes_read)) {
       return X_STATUS_SUCCESS;
     }
     *out_bytes_read = 0;
@@ -720,10 +720,10 @@ X_STATUS HostPathFile::LeerDirecta(std::span<uint8_t> buffer, size_t byte_offset
   }
 
   size_t total = 0;
-  while (total < pedido) {
-    const size_t n = std::min(trozo, pedido - total);
-    size_t leidos = 0;
-    if (!file_handle_->Read(byte_offset + total, buffer.data() + total, n, &leidos)) {
+  while (total < requested) {
+    const size_t n = std::min(chunk, requested - total);
+    size_t read = 0;
+    if (!file_handle_->Read(byte_offset + total, buffer.data() + total, n, &read)) {
       // Real error. If there were already good bytes they are delivered; if not, it is the usual failure.
       if (total == 0) {
         *out_bytes_read = 0;
@@ -731,12 +731,12 @@ X_STATUS HostPathFile::LeerDirecta(std::span<uint8_t> buffer, size_t byte_offset
       }
       break;
     }
-    if (leidos == 0) {
+    if (read == 0) {
       // End of file. A short but non-empty piece does not stop the loop: it asks again from where it
       // stopped, which is better than a single pread (that returned the short read and nothing more).
       break;
     }
-    total += leidos;
+    total += read;
   }
 
   *out_bytes_read = total;
@@ -753,21 +753,21 @@ X_STATUS HostPathFile::ReadSync(std::span<uint8_t> buffer, size_t byte_offset,
     return X_STATUS_ACCESS_DENIED;
   }
 
-  const size_t pedido = buffer.size();
-  if (ventana_activa_ && pedido && pedido <= ventana_tam_ / kPeticionMaxFraccion) {
+  const size_t requested = buffer.size();
+  if (window_active_ && requested && requested <= window_size_ / kRequestMaxFraction) {
     // The request falls entirely within what is already in RAM.
-    if (ventana_bytes_ && byte_offset >= ventana_inicio_ &&
-        byte_offset + pedido <= ventana_inicio_ + ventana_bytes_) {
-      std::memcpy(buffer.data(), ventana_.data() + (byte_offset - ventana_inicio_), pedido);
-      *out_bytes_read = pedido;
-      ++ventana_aciertos_;
-      g_aciertos.fetch_add(1, std::memory_order_relaxed);
-      g_bytes_ram.fetch_add(pedido, std::memory_order_relaxed);
+    if (window_bytes_ && byte_offset >= window_start_ &&
+        byte_offset + requested <= window_start_ + window_bytes_) {
+      std::memcpy(buffer.data(), window_.data() + (byte_offset - window_start_), requested);
+      *out_bytes_read = requested;
+      ++window_hits_;
+      g_hits.fetch_add(1, std::memory_order_relaxed);
+      g_bytes_ram.fetch_add(requested, std::memory_order_relaxed);
       return X_STATUS_SUCCESS;
     }
 
-    X_STATUS estado = X_STATUS_SUCCESS;
-    const bool servida = RellenarVentana(byte_offset, pedido, buffer, out_bytes_read, &estado);
+    X_STATUS state = X_STATUS_SUCCESS;
+    const bool served = FillWindow(byte_offset, requested, buffer, out_bytes_read, &state);
 
     /*
      * Audit. Each fill is a 256 KB read from the SD that only pays off if hits follow. If after
@@ -775,64 +775,64 @@ X_STATUS HostPathFile::ReadSync(std::span<uint8_t> buffer, size_t byte_offset,
      * sequentially and the window is pure cost: it is turned off for this file. This prevents a
      * repeat of the measured case where 4.1 MB of SD reads served 0.3 MB without anyone noticing.
      */
-    if (ventana_activa_ && ventana_rellenos_ >= 8 && ventana_aciertos_ < ventana_rellenos_) {
-      ventana_activa_ = false;
-      ventana_bytes_ = 0;
-      ventana_.clear();
-      ventana_.shrink_to_fit();
+    if (window_active_ && window_fills_ >= 8 && window_hits_ < window_fills_) {
+      window_active_ = false;
+      window_bytes_ = 0;
+      window_.clear();
+      window_.shrink_to_fit();
     }
 
-    if (servida) {
-      return estado;
+    if (served) {
+      return state;
     }
     // If it could not, it falls through to the usual path below.
   }
 
   /*
-   * The exact-range cache, before going to disk. See nfsmw_io_rangos_mb.
+   * The exact-range cache, before going to disk. See nfsc_io_ranges_mb.
    *
    * It is the only thing between the game and the SD for large reads: the zone pack that the game
    * releases on leaving and asks for again on entering, byte for byte, at the same place and with
    * the same size. Those rereads are the ones that block for 11 to 140 ms in the middle of a lap.
    */
-  const bool rango_elegible = cache_id_ && RangoElegible(pedido);
-  if (rango_elegible) {
+  const bool range_eligible = cache_id_ && RangeEligible(requested);
+  if (range_eligible) {
     // The lock only lasts as long as the table lookup; the memcpy happens outside it, and the
     // shared_ptr keeps the data alive even if another thread evicts this entry while we copy.
-    if (auto datos = BuscarRango(cache_id_, byte_offset, uint32_t(pedido))) {
-      const size_t n = std::min(datos->size(), pedido);
-      std::memcpy(buffer.data(), datos->data(), n);
+    if (auto data = FindRange(cache_id_, byte_offset, uint32_t(requested))) {
+      const size_t n = std::min(data->size(), requested);
+      std::memcpy(buffer.data(), data->data(), n);
       *out_bytes_read = n;
-      g_rangos_aciertos.fetch_add(1, std::memory_order_relaxed);
-      g_rangos_bytes_ram.fetch_add(n, std::memory_order_relaxed);
+      g_ranges_hits.fetch_add(1, std::memory_order_relaxed);
+      g_ranges_bytes_ram.fetch_add(n, std::memory_order_relaxed);
       return X_STATUS_SUCCESS;
     }
   }
 
-  // The RAM cache, before going to disk. See nfsmw_io_cache_mb: the game rereads the same data every
+  // The RAM cache, before going to disk. See nfsc_io_cache_mb: the game rereads the same data every
   // lap, and those reads are what make a facade take a while to get its proper texture.
-  if (cache_id_ && pedido) {
-    size_t leidos = 0;
-    if (LeerConCache(file_handle_.get(), cache_id_, buffer, byte_offset, &leidos)) {
-      *out_bytes_read = leidos;
+  if (cache_id_ && requested) {
+    size_t read = 0;
+    if (ReadWithCache(file_handle_.get(), cache_id_, buffer, byte_offset, &read)) {
+      *out_bytes_read = read;
       return X_STATUS_SUCCESS;
     }
   }
 
-  g_directas.fetch_add(1, std::memory_order_relaxed);
-  const X_STATUS estado = LeerDirecta(buffer, byte_offset, out_bytes_read);
+  g_direct.fetch_add(1, std::memory_order_relaxed);
+  const X_STATUS state = ReadDirect(buffer, byte_offset, out_bytes_read);
 
   /*
    * And here what just arrived is stored. None of this happens with a shared lock held: the read
    * above has already finished. That exact mistake (g_cache_mutex held inside the pread) is what
    * made the block cache block the other threads without showing in any counter.
    */
-  if (rango_elegible && estado == X_STATUS_SUCCESS && *out_bytes_read) {
-    g_rangos_fallos.fetch_add(1, std::memory_order_relaxed);
-    g_rangos_bytes_disco.fetch_add(*out_bytes_read, std::memory_order_relaxed);
-    GuardarRango(cache_id_, byte_offset, uint32_t(pedido), buffer.data(), *out_bytes_read);
+  if (range_eligible && state == X_STATUS_SUCCESS && *out_bytes_read) {
+    g_ranges_misses.fetch_add(1, std::memory_order_relaxed);
+    g_ranges_bytes_disco.fetch_add(*out_bytes_read, std::memory_order_relaxed);
+    SaveRange(cache_id_, byte_offset, uint32_t(requested), buffer.data(), *out_bytes_read);
   }
-  return estado;
+  return state;
 }
 
 X_STATUS HostPathFile::WriteSync(std::span<const uint8_t> buffer, size_t byte_offset,
@@ -847,8 +847,8 @@ X_STATUS HostPathFile::WriteSync(std::span<const uint8_t> buffer, size_t byte_of
 
   // Safety belt: a file being written cannot have a window. It should never get here with one (it is
   // only enabled on read-only devices and without write access), but if it did, the window is dropped.
-  ventana_activa_ = false;
-  ventana_bytes_ = 0;
+  window_active_ = false;
+  window_bytes_ = 0;
 
   if (file_handle_->Write(byte_offset, buffer.data(), buffer.size(), out_bytes_written)) {
     return X_STATUS_SUCCESS;
@@ -865,8 +865,8 @@ X_STATUS HostPathFile::SetLength(size_t length) {
     return X_STATUS_ACCESS_DENIED;
   }
 
-  ventana_activa_ = false;
-  ventana_bytes_ = 0;
+  window_active_ = false;
+  window_bytes_ = 0;
 
   if (file_handle_->SetLength(length)) {
     return X_STATUS_SUCCESS;

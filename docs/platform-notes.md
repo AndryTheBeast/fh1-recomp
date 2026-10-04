@@ -34,7 +34,7 @@ measure and optimise against them:
 - **The handheld GPU speed depends on the program.** In handheld mode the GPU has three speeds (307.2, 384 and
   460.8 MHz), and each title gets its own. A [homebrew](glossary.md#homebrew) application starts at 307.2 MHz. It can
   ask the system for a faster official mode (see [Clocks](#clocks)): this port asks for configuration `0x92220008`,
-  the GPU at 460.8 MHz with memory at 1331.2 MHz (setting `nfsmw_switch_gpu_mhz`). That is not an overclock. Profiles
+  the GPU at 460.8 MHz with memory at 1331.2 MHz (setting `nfsc_switch_gpu_mhz`). That is not an overclock. Profiles
   of commercial games that report 460.8 MHz only show what those games ask for, not what your program gets by
   default.
 - **Three of the four CPU cores** are available to the application. Its core mask (a number with one bit for each
@@ -134,7 +134,7 @@ mapped (see above). The code is in `sdk/src/core/exception_handler_switch.cpp`.
   100 % while doing nothing. The fix was to [hook](glossary.md#hook) the polling functions: the hook sleeps for a
   limited time, or until another thread wakes it up, and then calls the original function so the game's own checks
   still run. On the PC that brought the two threads down to 25 % and 17 %. The hooks are in
-  `app/src/nfsmw_espera_anillo.cpp` and `app/src/nfsmw_espera_fotograma.cpp`.
+  `app/src/nfsc_wait_ring.cpp` and `app/src/nfsc_wait_frame.cpp`.
 - **When a hook reads guest memory, apply the same address offset as the recompiled code.** On the PC build,
   addresses at or above 0xE0000000 are shifted by 0x1000.
 
@@ -182,7 +182,7 @@ how that driver behaves on the console:
   to images with `SAMPLED | TRANSFER_DST` usage (read by shaders and filled by copies), like this game's textures. So
   the renderer takes its textures from large shared blocks instead (*sub-allocation*). With 32 MB blocks the cost
   fell to 0.75 ms per texture, and a burst of 15 new textures in one frame went from 28.5 to 11.3 ms. The code is in
-  `app/src/nfsmw_nativo_texturas_pool.cpp`. Two facts help: `requiresDedicatedAllocation` is never true on this
+  `app/src/nfsc_native_texture_pool.cpp`. Two facts help: `requiresDedicatedAllocation` is never true on this
   driver, and image sizes are already rounded to 64 KiB for sub-allocators.
 - **The number of GPU allocations is limited, not their size.** libnx gives nvdrv (the system's GPU driver service)
   8 MB of transfer memory (`__nx_nv_transfermem_size`) to keep track of allocations. That is enough for roughly
@@ -195,7 +195,7 @@ how that driver behaves on the console:
   entries, not by megabytes. Its size setting, `NOUVEAU_HORIZON_BO_CACHE_MB`, is 128 MB by default.
 - **Driver options are environment variables.** The driver reads them with `getenv` when the Vulkan instance and the
   devices are created, so they must be set before creating the instance. In this port you write them in the setting
-  `nfsmw_mesa_entorno` of `nfsmw.toml` (see [mesa/README.md](../mesa/README.md)). Useful ones:
+  `nfsc_mesa_environment` of `nfsmw.toml` (see [mesa/README.md](../mesa/README.md)). Useful ones:
   `MESA_SHADER_CACHE_DISABLE` (turns off the shader cache on the SD card, below), `NVK_SWITCH_PERF_LOG` (counters and
   timers of the driver's Horizon code, for diagnostics), `NVK_SWITCH_CPU_WRITE_MEM_UNCACHED` (whether memory the CPU
   only writes to skips the CPU cache; on by default) and `NOUVEAU_HORIZON_BO_CACHE_MB`.

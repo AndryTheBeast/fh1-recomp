@@ -338,7 +338,7 @@ struct xex2_game_ratings_t {
   be<xex2_rating_pegi_fi_value> pegifi;
   be<xex2_rating_pegi_pt_value> pegipt;
   be<xex2_rating_bbfc_value> bbfc;
-  be<xex2_rating_cero_value> cero;
+  be<xex2_rating_cero_value> zero;
   be<xex2_rating_usk_value> usk;
   be<xex2_rating_oflc_au_value> oflcau;
   be<xex2_rating_oflc_nz_value> oflcnz;

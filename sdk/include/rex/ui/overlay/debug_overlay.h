@@ -28,7 +28,7 @@ struct FrameStats {
 
 // true while the debug overlay exists. On Switch, with it open, L+R and the right stick move it, and
 // the input driver does not pass L, R or that stick to the game while L and R are held.
-bool DebugOverlayAbierto();
+bool DebugOverlayOpen();
 
 class DebugOverlayDialog : public ImGuiDialog {
  public:

@@ -28,10 +28,10 @@
 REXCVAR_DEFINE_INT32(
     audio_maxqframes, 8, "Audio",
     "Max buffered audio frames (range 4-64). Lower reduces latency but may cause stuttering.");
-REXCVAR_DEFINE_BOOL(audio_diag_prioridad_critica, false, "Audio",
-                    "Diagnostico (solo PC): Audio Worker y XMA Decoder a prioridad de tiempo critico, "
-                    "como en la Switch, donde van por encima de los hilos del juego y no ceden el "
-                    "nucleo mientras tienen trabajo");
+REXCVAR_DEFINE_BOOL(audio_diag_critical_priority, false, "Audio",
+                    "Diagnostic (solo PC): Audio Worker y XMA Decoder a priority de time critico, "
+                    "as en la Switch, where van por encima de los threads del game y no ceden el "
+                    "core mientras tienen work");
 
 // As with normal Microsoft, there are like twelve different ways to access
 // the audio APIs. Early games use XMA*() methods almost exclusively to touch
@@ -49,11 +49,11 @@ namespace rex::audio {
 
 namespace {
 constexpr std::chrono::milliseconds kWorkerShutdownTimeout{500};
-std::atomic<GanchoAntesDeTrama> g_gancho_antes_de_trama{nullptr};
+std::atomic<HookBeforeOfFrame> g_hook_before_of_frame{nullptr};
 }  // namespace
 
-void SetGanchoAntesDeTrama(GanchoAntesDeTrama gancho) {
-  g_gancho_antes_de_trama.store(gancho, std::memory_order_release);
+void SetHookBeforeOfFrame(HookBeforeOfFrame hook) {
+  g_hook_before_of_frame.store(hook, std::memory_order_release);
 }
 
 AudioSystem::AudioSystem(runtime::FunctionDispatcher* function_dispatcher)
@@ -103,9 +103,9 @@ X_STATUS AudioSystem::Setup(system::KernelState* kernel_state) {
   worker_thread_->set_name("Audio Worker");
   worker_thread_->Create();
 #if REX_PLATFORM_WIN32
-  // Diagnostic audio_diag_prioridad_critica: as on the Switch, above the game threads
+  // Diagnostic audio_diag_critical_priority: as on the Switch, above the game threads
   // (THREAD_PRIORITY_TIME_CRITICAL = 15).
-  if (REXCVAR_GET(audio_diag_prioridad_critica) && worker_thread_->thread()) {
+  if (REXCVAR_GET(audio_diag_critical_priority) && worker_thread_->thread()) {
     worker_thread_->thread()->set_priority(15);
   }
 #endif
@@ -161,8 +161,8 @@ void AudioSystem::WorkerThreadMain() {
           REXAPU_DEBUG("AudioWorker: dispatching callback {:08X} with arg {:08X} for client {}",
                        client_callback, client_callback_arg, index);
         }
-        if (const GanchoAntesDeTrama gancho = g_gancho_antes_de_trama.load(std::memory_order_acquire)) {
-          gancho(index);
+        if (const HookBeforeOfFrame hook = g_hook_before_of_frame.load(std::memory_order_acquire)) {
+          hook(index);
         }
         SCOPE_profile_cpu_i("apu", "rex::audio::AudioSystem->client_callback");
         uint64_t args[] = {client_callback_arg};

@@ -1,7 +1,7 @@
 // fh1 - native renderer, step N1: the app's own graphics system (docs/native-renderer-fh1.md).
 //
 // With --fh1_renderer=native, OnPreSetup (fh1_app.h) puts this system in config.graphics and the
-// xenos GPU emulation plugin is not loaded. Modelled on nfsmw-nx's nfsmw_nativo_sistema.cpp (stage
+// xenos GPU emulation plugin is not loaded. Modelled on nfsmw-nx's nfsc_native_system.cpp (stage
 // C1): it answers what the game expects from the GPU and presents a test colour; draws come later.
 
 #pragma once

@@ -26,53 +26,53 @@ class HostPathEntry;
 /*
  * How much is being served from RAM instead of from the SD.
  *
- * aciertos  = game reads answered without going to disk.
- * rellenos  = times the disk had to be read to fill the window.
- * directas  = reads that bypassed the window (large ones, writes, save files).
+ * hits  = game reads answered without going to disk.
+ * fills  = times the disk had to be read to fill the window.
+ * direct  = reads that bypassed the window (large ones, writes, save files).
  * bytes_ram = bytes the game received from the window.
  */
-struct EstadisticasVentana {
-  uint64_t aciertos = 0;
-  uint64_t rellenos = 0;
-  uint64_t directas = 0;
+struct StatisticsWindow {
+  uint64_t hits = 0;
+  uint64_t fills = 0;
+  uint64_t direct = 0;
   uint64_t bytes_ram = 0;
-  uint64_t ventanas_vivas = 0;
+  uint64_t windows_live = 0;
 };
-EstadisticasVentana LeerEstadisticasVentana();
+StatisticsWindow ReadStatisticsWindow();
 
 /*
- * Exact-range read cache. See nfsmw_io_rangos_mb in the .cpp.
+ * Exact-range read cache. See nfsc_io_ranges_mb in the .cpp.
  *
  * Everything is cumulative since startup, not per interval: there are few events and the total is
  * what matters.
  *
- * aciertos     = large reads answered from RAM, without going to the SD.
- * fallos       = eligible large reads that did have to go to the SD.
+ * hits     = large reads answered from RAM, without going to the SD.
+ * misses       = eligible large reads that did have to go to the SD.
  * bytes_ram    = bytes delivered to the game from the cache.
  * bytes_disco  = bytes those same reads brought from the SD.
- * entradas     = ranges alive right now.
- * bytes_vivos  = what those ranges take in the host heap.
- * expulsiones  = ranges dropped because of the cap. If this grows, the cap is too small.
- * sin_memoria  = the cache turned itself off for lack of RAM.
+ * entries     = ranges alive right now.
+ * bytes_live  = what those ranges take in the host heap.
+ * cache_evictions  = ranges dropped because of the cap. If this grows, the cap is too small.
+ * without_memory  = the cache turned itself off for lack of RAM.
  */
-struct EstadisticasRangos {
-  uint64_t aciertos = 0;
-  uint64_t fallos = 0;
+struct StatisticsRanges {
+  uint64_t hits = 0;
+  uint64_t misses = 0;
   uint64_t bytes_ram = 0;
   uint64_t bytes_disco = 0;
-  uint64_t entradas = 0;
-  uint64_t bytes_vivos = 0;
-  uint64_t expulsiones = 0;
-  uint64_t tope_mb = 0;  // the cvar, so the summary does not have to declare it on its own
+  uint64_t entries = 0;
+  uint64_t bytes_live = 0;
+  uint64_t cache_evictions = 0;
+  uint64_t cap_mb = 0;  // the cvar, so the summary does not have to declare it on its own
   // Why something was not cached. Without this the cache could not be tuned.
-  uint64_t bajo_suelo = 0;          // lecturas demasiado pequenas
-  uint64_t sobre_techo = 0;         // demasiado grandes
-  uint64_t secuenciales = 0;        // the level-load sweep, which is not kept
-  uint64_t secuenciales_bytes = 0;
-  uint64_t suelo_kb = 0;
-  bool sin_memoria = false;
+  uint64_t low_floor = 0;          // reads demasiado pequenas
+  uint64_t over_ceiling = 0;         // demasiado grandes
+  uint64_t sequential = 0;        // the level-load sweep, which is not kept
+  uint64_t sequential_bytes = 0;
+  uint64_t floor_kb = 0;
+  bool without_memory = false;
 };
-EstadisticasRangos LeerEstadisticasRangos();
+StatisticsRanges ReadStatisticsRanges();
 
 class HostPathFile : public File {
  public:
@@ -124,26 +124,26 @@ class HostPathFile : public File {
    * given at least one hit per refill, the pattern is not sequential and the window is turned off for
    * it; that way it can never again be pure cost in silence.
    */
-  bool RellenarVentana(size_t byte_offset, size_t pedido, std::span<uint8_t> buffer,
+  bool FillWindow(size_t byte_offset, size_t requested, std::span<uint8_t> buffer,
                        size_t* out_bytes_read, X_STATUS* out_status);
 
-  // Direct read split into chunks. See the comment on nfsmw_io_trozo_mb in the .cpp.
-  X_STATUS LeerDirecta(std::span<uint8_t> buffer, size_t byte_offset, size_t* out_bytes_read);
+  // Direct read split into chunks. See the comment on nfsc_io_chunk_mb in the .cpp.
+  X_STATUS ReadDirect(std::span<uint8_t> buffer, size_t byte_offset, size_t* out_bytes_read);
 
   std::unique_ptr<rex::filesystem::FileHandle> file_handle_;
 
-  std::vector<uint8_t> ventana_;
-  size_t ventana_inicio_ = 0;
-  size_t ventana_bytes_ = 0;
-  size_t ventana_tam_ = 0;
-  uint32_t ventana_cortas_ = 0;
+  std::vector<uint8_t> window_;
+  size_t window_start_ = 0;
+  size_t window_bytes_ = 0;
+  size_t window_size_ = 0;
+  uint32_t window_short_ = 0;
   // Per-file audit: a window that does not hit turns itself off.
-  uint32_t ventana_rellenos_ = 0;
-  uint32_t ventana_aciertos_ = 0;
-  bool ventana_activa_ = false;
-  bool ventana_contada_ = false;
+  uint32_t window_fills_ = 0;
+  uint32_t window_hits_ = 0;
+  bool window_active_ = false;
+  bool window_counted_ = false;
   // File id inside the RAM cache (0 = this file is not cached). See
-  // nfsmw_io_cache_mb.
+  // nfsc_io_cache_mb.
   uint32_t cache_id_ = 0;
 };
 

@@ -41,13 +41,13 @@
  *   - A "[guardado]" trace in the log: every create, open and close, with the real path and the files
  *     inside with their sizes. A 0-byte save, or one that never gets written, shows at a glance.
  *   - content_backup_root: if it is not empty, when a container is closed it is copied whole to
- *     <content_backup_root>/<perfil>/actual, and whatever was there before moves to <perfil>/anterior.
+ *     <content_backup_root>/<profile>/actual, and whatever was there before moves to <profile>/previous.
  *     Besides giving readable copies of the saves, sorted by profile, it always keeps a previous
  *     version to recover a profile that got corrupted.
  */
 REXCVAR_DEFINE_STRING(content_backup_root, "", "Kernel",
-                      "Carpeta donde dejar una copia de cada guardado, con una subcarpeta por perfil. "
-                      "Vacia = no se copia nada");
+                      "Folder where dejar one copy de every guardado, con one subcarpeta por profile. "
+                      "Empty = no se copy nothing");
 
 namespace rex {
 namespace system {
@@ -64,8 +64,8 @@ static int content_device_id_ = 0;
 namespace {
 
 // A folder name the SD accepts, derived from the one the player sees.
-std::string NombreSeguro(const std::string_view original) {
-  std::string limpio;
+std::string NameSafe(const std::string_view original) {
+  std::string clean;
   for (const char c : original) {
     const unsigned char u = static_cast<unsigned char>(c);
     if (u < 0x20 || u == 0x7F) {
@@ -76,121 +76,121 @@ std::string NombreSeguro(const std::string_view original) {
         c == '|' || u == 0x5C) {
       continue;
     }
-    limpio.push_back(c);
+    clean.push_back(c);
   }
-  while (!limpio.empty() && (limpio.back() == ' ' || limpio.back() == '.')) {
-    limpio.pop_back();
+  while (!clean.empty() && (clean.back() == ' ' || clean.back() == '.')) {
+    clean.pop_back();
   }
-  return limpio.empty() ? std::string("sin_nombre") : limpio;
+  return clean.empty() ? std::string("without_name") : clean;
 }
 
 // What is inside a container, for the log. It is the line that says whether the save has data or not.
-std::string QueHayDentro(const std::filesystem::path& carpeta) {
-  std::string texto;
+std::string ThatThereIsInside(const std::filesystem::path& folder) {
+  std::string text;
   uint64_t total = 0;
-  uint32_t cuantos = 0;
-  for (const auto& f : rex::filesystem::ListFiles(carpeta)) {
+  uint32_t how_many_2 = 0;
+  for (const auto& f : rex::filesystem::ListFiles(folder)) {
     if (f.type != rex::filesystem::FileInfo::Type::kFile) {
       continue;
     }
-    if (!texto.empty()) {
-      texto += ", ";
+    if (!text.empty()) {
+      text += ", ";
     }
-    texto += fmt::format("{} ({} B)", rex::path_to_utf8(f.name), f.total_size);
+    text += fmt::format("{} ({} B)", rex::path_to_utf8(f.name), f.total_size);
     total += f.total_size;
-    ++cuantos;
+    ++how_many_2;
   }
-  if (cuantos == 0) {
-    return "VACIO";
+  if (how_many_2 == 0) {
+    return "EMPTY";
   }
-  return fmt::format("{} fichero(s), {} B: {}", cuantos, total, texto);
+  return fmt::format("{} file(s), {} B: {}", how_many_2, total, text);
 }
 
-bool CopiarFichero(const std::filesystem::path& origen, const std::filesystem::path& destino) {
-  FILE* entrada = rex::filesystem::OpenFile(origen, "rb");
-  if (!entrada) {
+bool CopyFile(const std::filesystem::path& source, const std::filesystem::path& target) {
+  FILE* entry = rex::filesystem::OpenFile(source, "rb");
+  if (!entry) {
     return false;
   }
-  FILE* salida = rex::filesystem::OpenFile(destino, "wb");
-  if (!salida) {
-    fclose(entrada);
+  FILE* output = rex::filesystem::OpenFile(target, "wb");
+  if (!output) {
+    fclose(entry);
     return false;
   }
-  std::vector<uint8_t> bufer(64 * 1024);
-  bool bien = true;
+  std::vector<uint8_t> buffer(64 * 1024);
+  bool ok = true;
   while (true) {
-    const size_t leidos = fread(bufer.data(), 1, bufer.size(), entrada);
-    if (leidos == 0) {
+    const size_t read = fread(buffer.data(), 1, buffer.size(), entry);
+    if (read == 0) {
       break;
     }
-    if (fwrite(bufer.data(), 1, leidos, salida) != leidos) {
-      bien = false;
+    if (fwrite(buffer.data(), 1, read, output) != read) {
+      ok = false;
       break;
     }
   }
-  if (ferror(entrada)) {
-    bien = false;
+  if (ferror(entry)) {
+    ok = false;
   }
-  fclose(entrada);
-  if (fclose(salida) != 0) {
-    bien = false;
+  fclose(entry);
+  if (fclose(output) != 0) {
+    ok = false;
   }
-  return bien;
+  return ok;
 }
 
 // Saves are small, so copying them by hand is cheaper than fighting std::filesystem on Horizon.
-bool CopiarCarpeta(const std::filesystem::path& origen, const std::filesystem::path& destino,
-                   uint32_t& ficheros) {
+bool CopyFolder(const std::filesystem::path& source, const std::filesystem::path& target,
+                   uint32_t& files) {
   std::error_code ec;
-  std::filesystem::create_directories(destino, ec);
-  bool bien = true;
-  for (const auto& f : rex::filesystem::ListFiles(origen)) {
+  std::filesystem::create_directories(target, ec);
+  bool ok = true;
+  for (const auto& f : rex::filesystem::ListFiles(source)) {
     if (f.type == rex::filesystem::FileInfo::Type::kDirectory) {
-      bien = CopiarCarpeta(origen / f.name, destino / f.name, ficheros) && bien;
+      ok = CopyFolder(source / f.name, target / f.name, files) && ok;
       continue;
     }
-    if (CopiarFichero(origen / f.name, destino / f.name)) {
-      ++ficheros;
+    if (CopyFile(source / f.name, target / f.name)) {
+      ++files;
     } else {
-      bien = false;
+      ok = false;
     }
   }
-  return bien;
+  return ok;
 }
 
-// The readable copy: <content_backup_root>/<perfil>/actual, and the previous one to <perfil>/anterior.
-void CopiaParaElUsuario(const std::string_view nombre, const std::filesystem::path& origen) {
-  const std::string raiz = REXCVAR_GET(content_backup_root);
-  if (raiz.empty()) {
+// The readable copy: <content_backup_root>/<profile>/actual, and the previous one to <profile>/previous.
+void CopyForTheUser(const std::string_view name, const std::filesystem::path& source) {
+  const std::string root_value = REXCVAR_GET(content_backup_root);
+  if (root_value.empty()) {
     return;
   }
-  const std::string perfil = NombreSeguro(nombre);
-  const std::filesystem::path base = std::filesystem::path(raiz) / perfil;
+  const std::string profile = NameSafe(name);
+  const std::filesystem::path base = std::filesystem::path(root_value) / profile;
   const std::filesystem::path actual = base / "actual";
-  const std::filesystem::path anterior = base / "anterior";
+  const std::filesystem::path previous = base / "previous";
 
   std::error_code ec;
   if (std::filesystem::exists(actual, ec)) {
-    std::filesystem::remove_all(anterior, ec);
+    std::filesystem::remove_all(previous, ec);
     ec.clear();
-    std::filesystem::rename(actual, anterior, ec);
+    std::filesystem::rename(actual, previous, ec);
     if (ec) {
       // If renaming is not allowed, copy and delete: what matters is not losing the previous version.
       uint32_t n = 0;
-      CopiarCarpeta(actual, anterior, n);
+      CopyFolder(actual, previous, n);
       std::filesystem::remove_all(actual, ec);
       ec.clear();
     }
   }
 
-  uint32_t ficheros = 0;
-  const bool bien = CopiarCarpeta(origen, actual, ficheros);
-  if (bien) {
-    REXSYS_INFO("[guardado] copia de «{}»: {} fichero(s) en {}", perfil, ficheros,
+  uint32_t files = 0;
+  const bool ok = CopyFolder(source, actual, files);
+  if (ok) {
+    REXSYS_INFO("[guardado] copy de «{}»: {} file(s) en {}", profile, files,
                 rex::path_to_utf8(actual));
   } else {
-    REXSYS_WARN("[guardado] la copia de «{}» ha fallado a medias ({} fichero(s) en {})", perfil,
-                ficheros, rex::path_to_utf8(actual));
+    REXSYS_WARN("[guardado] la copy de «{}» ha fallado a medias ({} file(s) en {})", profile,
+                files, rex::path_to_utf8(actual));
   }
 }
 
@@ -331,11 +331,11 @@ std::vector<XCONTENT_AGGREGATE_DATA> ContentManager::ListContent(uint32_t device
   // What the game sees when it asks for the list of saves. If a profile that exists on disk does not show
   // up here, the problem is the enumeration; if it shows up and is then reported as damaged, the problem
   // is its contents.
-  REXSYS_INFO("[guardado] listar tipo {:08X} en {}: {} entrada(s)", uint32_t(content_type),
+  REXSYS_INFO("[guardado] list type {:08X} en {}: {} entry(s)", uint32_t(content_type),
               rex::path_to_utf8(package_root), result.size());
-  for (const auto& entrada : result) {
-    REXSYS_INFO("[guardado]   «{}» (mostrado como «{}»)", entrada.file_name(),
-                rex::string::to_utf8(entrada.display_name()));
+  for (const auto& entry : result) {
+    REXSYS_INFO("[guardado]   «{}» (mostrado as «{}»)", entry.file_name(),
+                rex::string::to_utf8(entry.display_name()));
   }
 
   return result;
@@ -386,9 +386,9 @@ X_RESULT ContentManager::WriteContentHeaderFile(uint64_t xuid, XCONTENT_AGGREGAT
   if (license_mask != 0) {
     fwrite(&license_mask, 1, sizeof(license_mask), file);
   }
-  const bool bien = fclose(file) == 0;
-  REXSYS_INFO("[guardado] cabecera de «{}» {} en {}", data.file_name(),
-              bien ? "escrita" : "FALLO al cerrarse", rex::path_to_utf8(header_path));
+  const bool ok = fclose(file) == 0;
+  REXSYS_INFO("[guardado] header de «{}» {} en {}", data.file_name(),
+              ok ? "written" : "MISS al cerrarse", rex::path_to_utf8(header_path));
   return X_ERROR_SUCCESS;
 }
 
@@ -435,14 +435,14 @@ X_RESULT ContentManager::CreateContent(const std::string_view root_name, uint64_
   }
 
   auto package_path = ResolvePackagePath(xuid, data);
-  REXSYS_INFO("[guardado] crear «{}» (raiz {}) en {}", data.file_name(), root_name,
+  REXSYS_INFO("[guardado] create «{}» (root_value {}) en {}", data.file_name(), root_name,
               rex::path_to_utf8(package_path));
   if (std::filesystem::exists(package_path)) {
-    REXSYS_WARN("[guardado] crear «{}»: ya existia, se devuelve ALREADY_EXISTS", data.file_name());
+    REXSYS_WARN("[guardado] create «{}»: ya existia, se devuelve ALREADY_EXISTS", data.file_name());
     return X_ERROR_ALREADY_EXISTS;
   }
   if (!std::filesystem::create_directories(package_path)) {
-    REXSYS_ERROR("[guardado] crear «{}»: NO se ha podido crear {}", data.file_name(),
+    REXSYS_ERROR("[guardado] create «{}»: NO se ha podido create {}", data.file_name(),
                  rex::path_to_utf8(package_path));
     return X_ERROR_ACCESS_DENIED;
   }
@@ -471,15 +471,15 @@ X_RESULT ContentManager::OpenContent(const std::string_view root_name, uint64_t 
 
   auto package_path = ResolvePackagePath(xuid, data);
   if (!std::filesystem::exists(package_path)) {
-    REXSYS_WARN("[guardado] abrir «{}»: no existe {}", data.file_name(),
+    REXSYS_WARN("[guardado] open «{}»: no existe {}", data.file_name(),
                 rex::path_to_utf8(package_path));
     return X_ERROR_FILE_NOT_FOUND;
   }
-  // What the game will find inside. If this says VACIO and the profile is then reported as damaged, the
+  // What the game will find inside. If this says EMPTY and the profile is then reported as damaged, the
   // failure was in saving; if it lists the files with their sizes, the failure is in reading them or in
   // the contents themselves.
-  REXSYS_INFO("[guardado] abrir «{}» (raiz {}) en {} -> {}", data.file_name(), root_name,
-              rex::path_to_utf8(package_path), QueHayDentro(package_path));
+  REXSYS_INFO("[guardado] open «{}» (root_value {}) en {} -> {}", data.file_name(), root_name,
+              rex::path_to_utf8(package_path), ThatThereIsInside(package_path));
   auto package = ResolvePackage(root_name, xuid, data);
   assert_not_null(package);
   package->LoadPackageLicenseMask(ResolvePackageHeaderPath(
@@ -508,13 +508,13 @@ X_RESULT ContentManager::CloseContent(const std::string_view root_name) {
     package = DetachPackage(it);
   }
   // The path and name are recorded before destroying the package, which is what holds them.
-  const std::filesystem::path ruta = package->package_path();
-  const std::string nombre = package->GetPackageContentData().file_name();
+  const std::filesystem::path path = package->package_path();
+  const std::string name = package->GetPackageContentData().file_name();
   delete package;  // unmounts the guest drive: from here on the files are in place
 
-  REXSYS_INFO("[guardado] cerrar «{}» (raiz {}) en {} -> {}", nombre, root_name,
-              rex::path_to_utf8(ruta), QueHayDentro(ruta));
-  CopiaParaElUsuario(nombre, ruta);
+  REXSYS_INFO("[guardado] close «{}» (root_value {}) en {} -> {}", name, root_name,
+              rex::path_to_utf8(path), ThatThereIsInside(path));
+  CopyForTheUser(name, path);
   return X_ERROR_SUCCESS;
 }
 

@@ -353,7 +353,7 @@ int SwitchPriorityFor(bool guest_thread, std::string_view name) {
   // set_name() stores the name with the handle appended ("Audio Worker (F8000014)"),
   // so the prefix is compared. With an exact comparison the Audio Worker and the
   // XMA Decoder stayed at the presentation priority (0x2C) instead of the audio one
-  // (0x2B), as rex_perfil.log showed on the console.
+  // (0x2B), as rex_profile.log showed on the console.
   if (name.starts_with("Audio Worker") || name.starts_with("XMA Decoder")) {
     return REX_SWITCH_PRIO_AUDIO;
   }

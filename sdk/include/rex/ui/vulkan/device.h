@@ -16,10 +16,10 @@
 
 #include <rex/ui/vulkan/instance.h>
 
-// This SDK enables VK_EXT_extended_dynamic_state3 (NFSMW's ui_vulkan_estado_dinamico3.patch). The
+// This SDK enables VK_EXT_extended_dynamic_state3 (NFSMW's ui_vulkan_state_dynamic3.patch). The
 // native renderer checks this marker to read Extensions::ext_EXT_extended_dynamic_state3 and its
 // three properties.
-#define REX_UI_VULKAN_ESTADO_DINAMICO3 1
+#define REX_UI_VULKAN_STATE_DYNAMIC3 1
 
 namespace rex {
 namespace ui {

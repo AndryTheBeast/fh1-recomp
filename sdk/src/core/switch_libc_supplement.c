@@ -41,11 +41,11 @@
  * could still clobber it. The SDK does not mix both styles on one file.
  */
 
-#define REX_FRANJAS 64
-static Mutex g_franjas[REX_FRANJAS]; /* zeroed = unlocked */
+#define REX_STRIPES 64
+static Mutex g_stripes[REX_STRIPES]; /* zeroed = unlocked */
 
-static Mutex* Franja(int fd) {
-    return &g_franjas[(unsigned)fd % REX_FRANJAS];
+static Mutex* Stripe(int fd) {
+    return &g_stripes[(unsigned)fd % REX_STRIPES];
 }
 
 ssize_t pread(int fd, void* buf, size_t nbytes, off_t offset) {
@@ -53,14 +53,14 @@ ssize_t pread(int fd, void* buf, size_t nbytes, off_t offset) {
         errno = EINVAL;
         return -1;
     }
-    Mutex* m = Franja(fd);
+    Mutex* m = Stripe(fd);
     mutexLock(m);
     ssize_t r = -1;
-    const off_t antes = lseek(fd, 0, SEEK_CUR);
-    if (antes >= 0 && lseek(fd, offset, SEEK_SET) == offset) {
+    const off_t before = lseek(fd, 0, SEEK_CUR);
+    if (before >= 0 && lseek(fd, offset, SEEK_SET) == offset) {
         r = read(fd, buf, nbytes);
         const int e = errno;
-        lseek(fd, antes, SEEK_SET);
+        lseek(fd, before, SEEK_SET);
         errno = e;
     }
     mutexUnlock(m);
@@ -72,14 +72,14 @@ ssize_t pwrite(int fd, const void* buf, size_t nbytes, off_t offset) {
         errno = EINVAL;
         return -1;
     }
-    Mutex* m = Franja(fd);
+    Mutex* m = Stripe(fd);
     mutexLock(m);
     ssize_t r = -1;
-    const off_t antes = lseek(fd, 0, SEEK_CUR);
-    if (antes >= 0 && lseek(fd, offset, SEEK_SET) == offset) {
+    const off_t before = lseek(fd, 0, SEEK_CUR);
+    if (before >= 0 && lseek(fd, offset, SEEK_SET) == offset) {
         r = write(fd, buf, nbytes);
         const int e = errno;
-        lseek(fd, antes, SEEK_SET);
+        lseek(fd, before, SEEK_SET);
         errno = e;
     }
     mutexUnlock(m);
@@ -207,14 +207,14 @@ time_t timegm(struct tm* tm) {
 const char* RexSwitchLogDir(void);
 
 void __assert_func(const char* file, int line, const char* func, const char* expr) {
-    static _Atomic int dentro = 0;
-    if (dentro++ == 0) { /* an assert inside fopen does not re-enter */
+    static _Atomic int inside = 0;
+    if (inside++ == 0) { /* an assert inside fopen does not re-enter */
         /* in <NRO folder>/logs/rex/ (switch_crash_hooks.c) */
-        char ruta[FS_MAX_PATH];
-        snprintf(ruta, sizeof(ruta), "%srex_assert.log", RexSwitchLogDir());
-        FILE* f = fopen(ruta, "a");
+        char path[FS_MAX_PATH];
+        snprintf(path, sizeof(path), "%srex_assert.log", RexSwitchLogDir());
+        FILE* f = fopen(path, "a");
         if (f) {
-            fprintf(f, "assert fallido: %s\n  en %s:%d (%s)\n", expr ? expr : "?",
+            fprintf(f, "assert failed: %s\n  en %s:%d (%s)\n", expr ? expr : "?",
                     file ? file : "?", line, func ? func : "?");
             fclose(f);
         }

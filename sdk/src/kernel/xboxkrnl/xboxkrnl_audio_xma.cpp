@@ -373,15 +373,15 @@ inline u32 XmaContextField(const void* context_ptr, size_t word, unsigned shift)
  * core to run).
  *
  * It only sleeps when it is clear the game is spinning idle: same context and same
- * answer kVueltasEnVacio times in a row. The first query, and any whose answer
+ * answer kLapsInEmpty times in a row. The first query, and any whose answer
  * changes, return immediately, so no latency is added to audio that is progressing.
  *
  * 50 us is less than a hundredth of an audio block (a block is 256 samples, about
  * 5.3 ms at 48 kHz), so the decoder has plenty of time to advance before the game
  * looks again.
  */
-constexpr unsigned kVueltasEnVacio = 32;
-constexpr auto kDormir = std::chrono::microseconds(50);
+constexpr unsigned kLapsInEmpty = 32;
+constexpr auto kSleep = std::chrono::microseconds(50);
 
 /*
  * Two bugs of the first version, measured on the console
@@ -399,45 +399,45 @@ constexpr auto kDormir = std::chrono::microseconds(50);
  *    state is enough: if two threads polled at the same time, the worst case is
  *    that one sleeps when it should not.
  */
-struct EstadoSondeo {
-  const void* contexto = nullptr;
-  u32 ultima_lectura = ~0u;
-  u32 ultima_escritura = ~0u;
-  unsigned vueltas = 0;
+struct StatePoll {
+  const void* context_id = nullptr;
+  u32 last_read = ~0u;
+  u32 last_write = ~0u;
+  unsigned laps = 0;
 };
-EstadoSondeo g_sondeo;
+StatePoll g_poll;
 
-void FrenarSondeo(const void* context_ptr, u32 valor, bool es_lectura) {
-  EstadoSondeo& e = g_sondeo;
-  u32& ultimo = es_lectura ? e.ultima_lectura : e.ultima_escritura;
+void BrakePoll(const void* context_ptr, u32 input_value, bool is_read) {
+  StatePoll& e = g_poll;
+  u32& last = is_read ? e.last_read : e.last_write;
 
-  if (context_ptr != e.contexto) {
-    e.contexto = context_ptr;
-    e.ultima_lectura = ~0u;
-    e.ultima_escritura = ~0u;
-    e.vueltas = 0;
-    ultimo = valor;
+  if (context_ptr != e.context_id) {
+    e.context_id = context_ptr;
+    e.last_read = ~0u;
+    e.last_write = ~0u;
+    e.laps = 0;
+    last = input_value;
     return;
   }
-  if (valor != ultimo) {
-    ultimo = valor;
-    e.vueltas = 0;  // something moved: the game is not spinning idle
+  if (input_value != last) {
+    last = input_value;
+    e.laps = 0;  // something moved: the game is not spinning idle
     return;
   }
-  if (++e.vueltas >= kVueltasEnVacio) {
-    rex::thread::Sleep(kDormir);
+  if (++e.laps >= kLapsInEmpty) {
+    rex::thread::Sleep(kSleep);
   }
 }
 #else
-inline void FrenarSondeo(const void*, u32, bool) {}
+inline void BrakePoll(const void*, u32, bool) {}
 #endif
 
 }  // namespace
 
 u32 XMAGetOutputBufferReadOffset_entry(mapped_void context_ptr) {
-  const u32 valor = XmaContextField(context_ptr, kXmaReadOffsetWord, kXmaReadOffsetShift);
-  FrenarSondeo(context_ptr, valor, true);
-  return valor;
+  const u32 input_value = XmaContextField(context_ptr, kXmaReadOffsetWord, kXmaReadOffsetShift);
+  BrakePoll(context_ptr, input_value, true);
+  return input_value;
 }
 
 u32 XMASetOutputBufferReadOffset_entry(mapped_void context_ptr, u32 value) {
@@ -449,9 +449,9 @@ u32 XMASetOutputBufferReadOffset_entry(mapped_void context_ptr, u32 value) {
 }
 
 u32 XMAGetOutputBufferWriteOffset_entry(mapped_void context_ptr) {
-  const u32 valor = XmaContextField(context_ptr, kXmaWriteOffsetWord, kXmaWriteOffsetShift);
-  FrenarSondeo(context_ptr, valor, false);
-  return valor;
+  const u32 input_value = XmaContextField(context_ptr, kXmaWriteOffsetWord, kXmaWriteOffsetShift);
+  BrakePoll(context_ptr, input_value, false);
+  return input_value;
 }
 
 /*
@@ -463,18 +463,18 @@ namespace {
 
 struct XmaOffsetCheck {
   XmaOffsetCheck() {
-    uint32_t crudo[sizeof(XMA_CONTEXT_DATA) / 4] = {};
-    XMA_CONTEXT_DATA c(crudo);
+    uint32_t raw[sizeof(XMA_CONTEXT_DATA) / 4] = {};
+    XMA_CONTEXT_DATA c(raw);
     c.output_buffer_read_offset = kXmaOffsetMask;
-    c.Store(crudo);
-    assert_true(XmaContextField(crudo, kXmaReadOffsetWord, kXmaReadOffsetShift) ==
+    c.Store(raw);
+    assert_true(XmaContextField(raw, kXmaReadOffsetWord, kXmaReadOffsetShift) ==
                 kXmaOffsetMask);
 
-    std::memset(crudo, 0, sizeof(crudo));
-    XMA_CONTEXT_DATA w(crudo);
+    std::memset(raw, 0, sizeof(raw));
+    XMA_CONTEXT_DATA w(raw);
     w.output_buffer_write_offset = kXmaOffsetMask;
-    w.Store(crudo);
-    assert_true(XmaContextField(crudo, kXmaWriteOffsetWord, kXmaWriteOffsetShift) ==
+    w.Store(raw);
+    assert_true(XmaContextField(raw, kXmaWriteOffsetWord, kXmaWriteOffsetShift) ==
                 kXmaOffsetMask);
   }
 };

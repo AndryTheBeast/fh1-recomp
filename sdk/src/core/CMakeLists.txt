@@ -70,7 +70,7 @@ elseif(REXGLUE_PLATFORM_SWITCH)
         socket_posix.cpp
         system_posix.cpp
         threading_posix.cpp           # patched: suspension through svcSetThreadActivity
-        threading_switch.cpp          # relleno: afinidad, prioridad, cpu_set_t, gettid
+        threading_switch.cpp          # fill: afinidad, priority, cpu_set_t, gettid
         dynlib_switch.cpp             # an NRO has no dlopen
         exception_handler_switch.cpp  # a single __libnx_exception_handler
         fiber_switch.cpp              # context switch in assembly, without ucontext

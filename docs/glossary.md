@@ -107,7 +107,7 @@ the most CPU time get one. Each comes with a [guard](#guard).
 
 A safety check that comes with every [native replacement](#native-replacement). For a while, or on some calls, the
 port runs both the original function and the replacement and compares their results. If they ever differ, it writes
-`DIFERENCIA` in the log and turns the replacement off until the game is closed.
+`DIFFERENCE` in the log and turns the replacement off until the game is closed.
 
 ## The Switch
 
@@ -212,7 +212,7 @@ If that happens while playing, it causes a stutter.
 ### Pipeline cache
 
 A file where the compiled [pipelines](#pipeline) are saved, so they are not compiled again next time:
-`cache/nfsmw_nativo_pipelines.bin` in the port's folder. That is why the first race after installing can stutter,
+`cache/nfsc_native_pipelines.bin` in the port's folder. That is why the first race after installing can stutter,
 and later ones do not.
 
 ### ZCULL
@@ -248,7 +248,7 @@ the "profile"). Then the normal build uses it to optimize and arrange that code 
 ### Function ordering
 
 Putting the functions that run most often next to each other in the program, so the processor keeps them in its fast
-memory (its cache) more easily. The list is `app/orden_funciones.ld`.
+memory (its cache) more easily. The list is `app/order_functions.ld`.
 
 ## This port
 

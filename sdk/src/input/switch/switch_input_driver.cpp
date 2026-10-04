@@ -33,7 +33,7 @@ REXCVAR_DEFINE_BOOL(input_xbox_layout, false, "Input",
 
 namespace rex::ui {
 // rex/ui/overlay/debug_overlay.h (not included here because it pulls in ImGui).
-bool DebugOverlayAbierto();
+bool DebugOverlayOpen();
 }  // namespace rex::ui
 
 namespace rex::input::nx {
@@ -55,7 +55,7 @@ struct ButtonMapping {
 };
 
 // Face buttons by letter (the default): the Switch's A is the Xbox A.
-constexpr std::array<ButtonMapping, 4> kFrontalesPorLetra = {{
+constexpr std::array<ButtonMapping, 4> kFrontByLetter = {{
     {HidNpadButton_A, X_INPUT_GAMEPAD_A},
     {HidNpadButton_B, X_INPUT_GAMEPAD_B},
     {HidNpadButton_X, X_INPUT_GAMEPAD_X},
@@ -64,7 +64,7 @@ constexpr std::array<ButtonMapping, 4> kFrontalesPorLetra = {{
 
 // By position (input_xbox_layout), as on an Xbox pad: the bottom one is A.
 // On Switch pads that button is labelled B.
-constexpr std::array<ButtonMapping, 4> kFrontalesPorPosicion = {{
+constexpr std::array<ButtonMapping, 4> kFrontByPosition = {{
     {HidNpadButton_B, X_INPUT_GAMEPAD_A},
     {HidNpadButton_A, X_INPUT_GAMEPAD_B},
     {HidNpadButton_Y, X_INPUT_GAMEPAD_X},
@@ -213,7 +213,7 @@ struct SwitchInputDriver::Slot {
   // The last value sent to the controller. Stack sampling put 5.8 % of the thread that prepares
   // each frame inside SetState: the game calls XInputSetState very often, and every call ended
   // in hidSendVibrationValues, an IPC request that blocks the thread. With vibration off
-  // (input_vibracion = false) it kept sending "zero" over and over. If the requested value is
+  // (input_vibration = false) it kept sending "zero" over and over. If the requested value is
   // the same as the controller already has, nothing is sent: the controller is already in that
   // state.
   bool vibration_sent = false;
@@ -297,9 +297,9 @@ void SwitchInputDriver::Poll(size_t index) {
   DispatchMenuShortcuts(slot, held);
   X_INPUT_GAMEPAD gamepad{};
   uint16_t buttons = 0;
-  const auto& frontales =
-      REXCVAR_GET(input_xbox_layout) ? kFrontalesPorPosicion : kFrontalesPorLetra;
-  for (const ButtonMapping& mapping : frontales) {
+  const auto& front =
+      REXCVAR_GET(input_xbox_layout) ? kFrontByPosition : kFrontByLetter;
+  for (const ButtonMapping& mapping : front) {
     if (held & mapping.npad) {
       buttons |= mapping.xinput;
     }
@@ -325,8 +325,8 @@ void SwitchInputDriver::Poll(size_t index) {
    * on the UI thread). While L and R are held, the game sees neither those two
    * buttons nor the right stick.
    */
-  constexpr uint64_t kMoverOverlay = HidNpadButton_L | HidNpadButton_R;
-  if ((held & kMoverOverlay) == kMoverOverlay && rex::ui::DebugOverlayAbierto()) {
+  constexpr uint64_t kMoveOverlay = HidNpadButton_L | HidNpadButton_R;
+  if ((held & kMoveOverlay) == kMoveOverlay && rex::ui::DebugOverlayOpen()) {
     // The XInput state fields are stored big-endian: they are rewritten whole.
     gamepad.buttons = static_cast<uint16_t>(
         buttons & ~(X_INPUT_GAMEPAD_LEFT_SHOULDER | X_INPUT_GAMEPAD_RIGHT_SHOULDER));
@@ -363,42 +363,42 @@ extern "C" void RexSwitchPerfToggleAb(void);
  * slot.menu_shortcuts with the state from the previous poll.
  */
 void SwitchInputDriver::DispatchMenuShortcuts(Slot& slot, uint64_t held) {
-  struct Atajo {
-    uint64_t boton;
-    rex::ui::VirtualKey tecla;
+  struct Shortcut {
+    uint64_t button;
+    rex::ui::VirtualKey key;
   };
-  constexpr uint64_t kModificador = HidNpadButton_L | HidNpadButton_R;
-  static const Atajo kAtajos[] = {
+  constexpr uint64_t kModifier = HidNpadButton_L | HidNpadButton_R;
+  static const Shortcut kShortcuts[] = {
       {HidNpadButton_Up, rex::ui::VirtualKey::kF3},
       {HidNpadButton_Right, rex::ui::VirtualKey::kF4},
       {HidNpadButton_Down, rex::ui::VirtualKey::kOem3},
       {HidNpadButton_Left, rex::ui::VirtualKey::kF7},
   };
 
-  const bool modificador = (held & kModificador) == kModificador;
-  for (size_t i = 0; i < std::size(kAtajos); ++i) {
+  const bool modifier = (held & kModifier) == kModifier;
+  for (size_t i = 0; i < std::size(kShortcuts); ++i) {
     const uint64_t bit = uint64_t(1) << i;
-    const bool ahora = modificador && (held & kAtajos[i].boton) != 0;
-    const bool antes = (slot.menu_shortcuts & bit) != 0;
-    if (ahora && !antes) {
+    const bool now = modifier && (held & kShortcuts[i].button) != 0;
+    const bool before = (slot.menu_shortcuts & bit) != 0;
+    if (now && !before) {
       /*
        * Each shortcut creates or destroys an ImGui menu, and the UI thread
        * draws them continuously while any is open. From this game thread a
        * menu could be deleted in the middle of its Draw, so it is done on the
        * UI thread.
        */
-      const rex::ui::VirtualKey vk = kAtajos[i].tecla;
-      auto pulsar = [vk] {
-        rex::ui::KeyEvent tecla(nullptr, vk, 1, false, false, false, false, false);
-        rex::ui::ProcessKeyEvent(tecla);
+      const rex::ui::VirtualKey vk = kShortcuts[i].key;
+      auto press = [vk] {
+        rex::ui::KeyEvent key(nullptr, vk, 1, false, false, false, false, false);
+        rex::ui::ProcessKeyEvent(key);
       };
-      rex::ui::Window* const ventana = ventana_ui_.load(std::memory_order_acquire);
-      if (!ventana || !ventana->app_context().CallInUIThread(pulsar)) {
-        pulsar();
+      rex::ui::Window* const window = window_ui_.load(std::memory_order_acquire);
+      if (!window || !window->app_context().CallInUIThread(press)) {
+        press();
       }
-      REXLOG_INFO("atajo de menu: {}", rex::ui::VirtualKeyToString(vk));
+      REXLOG_INFO("shortcut de menu: {}", rex::ui::VirtualKeyToString(vk));
     }
-    slot.menu_shortcuts = ahora ? (slot.menu_shortcuts | bit) : (slot.menu_shortcuts & ~bit);
+    slot.menu_shortcuts = now ? (slot.menu_shortcuts | bit) : (slot.menu_shortcuts & ~bit);
   }
 
   /*
@@ -407,13 +407,13 @@ void SwitchInputDriver::DispatchMenuShortcuts(Slot& slot, uint64_t held) {
    * above because that one translates buttons into keys and this is not a key.
    */
   const uint64_t kBitAb = uint64_t(1) << 8;
-  const bool ab_ahora = modificador && (held & HidNpadButton_ZL) != 0;
-  const bool ab_antes = (slot.menu_shortcuts & kBitAb) != 0;
-  if (ab_ahora && !ab_antes) {
+  const bool ab_now = modifier && (held & HidNpadButton_ZL) != 0;
+  const bool ab_before = (slot.menu_shortcuts & kBitAb) != 0;
+  if (ab_now && !ab_before) {
     RexSwitchPerfToggleAb();
-    REXLOG_INFO("atajo de menu: pruebas A/B de GPU");
+    REXLOG_INFO("shortcut de menu: tests A/B de GPU");
   }
-  slot.menu_shortcuts = ab_ahora ? (slot.menu_shortcuts | kBitAb)
+  slot.menu_shortcuts = ab_now ? (slot.menu_shortcuts | kBitAb)
                                  : (slot.menu_shortcuts & ~kBitAb);
 }
 

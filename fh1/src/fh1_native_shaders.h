@@ -1,6 +1,6 @@
 // fh1 - native renderer, step N2: identify the shaders the game's D3D uploads to the ring
 // (PM4_IM_LOAD / IM_LOAD_IMMEDIATE) in the shader library (fh1_shaders.nfsp, built by
-// tools/build_shader_library.ps1). FH1 version of nfsmw-nx's nfsmw_nativo_shaders.* for the 2008
+// tools/build_shader_library.ps1). FH1 version of nfsmw-nx's nfsc_native_shaders.* for the 2008
 // container layout.
 //
 // Pixel shaders arrive as they are and are found by their microcode. Vertex shaders arrive patched

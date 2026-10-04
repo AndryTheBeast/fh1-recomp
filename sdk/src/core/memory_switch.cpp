@@ -132,8 +132,8 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
   }
 
   if (!InWindow(base_address, length)) {
-    REXLOG_ERROR("AllocFixed en Switch fuera de la ventana del invitado: 0x{:016X} (0x{:X} bytes). "
-                 "Horizon no permite fijar direcciones arbitrarias.",
+    REXLOG_ERROR("AllocFixed en Switch outside de la window del guest: 0x{:016X} (0x{:X} bytes). "
+                 "Horizon no permite fix addresses arbitrarias.",
                  reinterpret_cast<uintptr_t>(base_address), length);
     return nullptr;
   }
@@ -146,7 +146,7 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
 
   size_t offset = 0;
   if (!RexGmWindowToOffset(reinterpret_cast<uint64_t>(base_address), &offset)) {
-    REXLOG_ERROR("AllocFixed: 0x{:016X} no pertenece a ninguna vista del invitado",
+    REXLOG_ERROR("AllocFixed: 0x{:016X} no pertenece a ninguna vista del guest",
                  reinterpret_cast<uintptr_t>(base_address));
     return nullptr;
   }
@@ -159,8 +159,8 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
     // once more per 360 view. The limit figures come from the profiler
     // (switch_perf.cpp); switch.h cannot be included here without clashing with
     // the SDK types.
-    REXLOG_ERROR("AllocFixed: no se pudo confirmar 0x{:X} bytes en 0x{:016X}. Fallo 0x{:08X}; "
-                 "respaldo {} MB, mapeado {} MB contando espejos.",
+    REXLOG_ERROR("AllocFixed: no se pudo confirmar 0x{:X} bytes en 0x{:016X}. Miss 0x{:08X}; "
+                 "fallback {} MB, mapped {} MB contando espejos.",
                  length, reinterpret_cast<uintptr_t>(base_address), RexGmLastResult(),
                  RexGmCommittedBytes() >> 20, RexGmMappedBytes() >> 20);
     return nullptr;
@@ -170,8 +170,8 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
   // the requested permission is applied on top. In the common case (read-write on
   // an unprotected range) this returns immediately.
   if (!RexGmProtect(static_cast<uint8_t*>(base_address), length, ToGm(access), nullptr)) {
-    REXLOG_ERROR("AllocFixed: confirmado pero no se pudo aplicar el permiso en 0x{:016X} "
-                 "(fallo 0x{:08X})",
+    REXLOG_ERROR("AllocFixed: confirmado pero no se pudo apply el permiso en 0x{:016X} "
+                 "(miss 0x{:08X})",
                  reinterpret_cast<uintptr_t>(base_address), RexGmLastResult());
     return nullptr;
   }
@@ -213,7 +213,7 @@ bool Protect(void* base_address, size_t length, PageAccess access, PageAccess* o
     *out_old_access = PageAccess::kNoAccess;
   }
   if (!InWindow(base_address, length)) {
-    REXLOG_ERROR("Protect en Switch fuera de la ventana del invitado: 0x{:016X} (0x{:X} bytes)",
+    REXLOG_ERROR("Protect en Switch outside de la window del guest: 0x{:016X} (0x{:X} bytes)",
                  reinterpret_cast<uintptr_t>(base_address), length);
     return false;
   }
@@ -224,7 +224,7 @@ bool Protect(void* base_address, size_t length, PageAccess access, PageAccess* o
     *out_old_access = FromGm(old);
   }
   if (!ok) {
-    REXLOG_ERROR("Protect: fallo 0x{:08X} en 0x{:016X} (0x{:X} bytes)", RexGmLastResult(),
+    REXLOG_ERROR("Protect: miss 0x{:08X} en 0x{:016X} (0x{:X} bytes)", RexGmLastResult(),
                  reinterpret_cast<uintptr_t>(base_address), length);
   }
   return ok;
@@ -259,8 +259,8 @@ FileMappingHandle CreateFileMappingHandle(const std::filesystem::path& path, siz
   // window of the guest memory core, and it is reserved here, empty. Real memory
   // arrives with AllocFixed(kCommit).
   if (!RexGmBase() && !RexGmInit(AlignUp(length))) {
-    REXLOG_ERROR("No se pudo reservar la ventana del invitado de 0x{:X} bytes. "
-                 "Hace falta title takeover: en modo applet no hay espacio.",
+    REXLOG_ERROR("No se pudo reserve la window del guest de 0x{:X} bytes. "
+                 "Does missing title takeover: en mode applet no there_is espacio.",
                  length);
     return kFileMappingHandleInvalid;
   }
@@ -284,8 +284,8 @@ void* MapFileView(FileMappingHandle handle, void* base_address, size_t length, P
     return nullptr;
   }
   if (!RexGmAddView(static_cast<uint8_t*>(base_address), file_offset, length)) {
-    REXLOG_ERROR("MapFileView: no se pudo registrar la vista 0x{:016X} (0x{:X} bytes desde 0x{:X}); "
-                 "fallo 0x{:08X}",
+    REXLOG_ERROR("MapFileView: no se pudo registrar la vista 0x{:016X} (0x{:X} bytes since 0x{:X}); "
+                 "miss 0x{:08X}",
                  reinterpret_cast<uintptr_t>(base_address), length, file_offset,
                  RexGmLastResult());
     return nullptr;

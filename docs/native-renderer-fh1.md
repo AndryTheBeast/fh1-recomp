@@ -8,11 +8,11 @@ design in `docs/native-renderer.md` and `docs/shaders.md`). Fix bugs once it dra
 
 | part | nfsmw files | size | game-specific? |
 | --- | --- | --- | --- |
-| own graphics system: presenter, MMIO range, vblank thread, command ring reader, the game's GPU waits | `nfsmw_nativo_sistema.*` | 4,900 lines | 15 NFS addresses |
-| draws: PM4 state, vertices/indices, textures, pipelines, constants | `nfsmw_nativo_dibujos.*`, `_texturas_pool`, `_vertices_dedupe` | 13,000 lines | none |
-| render targets as Vulkan images, resolves as copies, readbacks | `nfsmw_nativo_destinos.*` | 6,200 lines | 8 NFS addresses |
-| shader library lookup (pre-translated SPIR-V by microcode hash) | `nfsmw_nativo_shaders.*` | 600 lines | none |
-| which shader each draw uses (D3D shader constructors, Draw* records) | `nfsmw_nativo_ganchos.*` | 1,250 lines | all NFS addresses |
+| own graphics system: presenter, MMIO range, vblank thread, command ring reader, the game's GPU waits | `nfsc_native_system.*` | 4,900 lines | 15 NFS addresses |
+| draws: PM4 state, vertices/indices, textures, pipelines, constants | `nfsc_native_draws.*`, `_texturas_pool`, `_vertices_dedupe` | 13,000 lines | none |
+| render targets as Vulkan images, resolves as copies, readbacks | `nfsc_native_targets.*` | 6,200 lines | 8 NFS addresses |
+| shader library lookup (pre-translated SPIR-V by microcode hash) | `nfsc_native_shaders.*` | 600 lines | none |
+| which shader each draw uses (D3D shader constructors, Draw* records) | `nfsc_native_hooks.*` | 1,250 lines | all NFS addresses |
 | shader translation before playing (XenosRecomp -> HLSL -> DXC -> SPIR-V library) | `shaders/` | tools | NFS container layout (2005) |
 
 So most of the code is Xenos-level and can be ported; the game-specific parts are the hooks and
@@ -43,11 +43,11 @@ the addresses in the system part.
 - **N2 - shader identity hooks**: FH1's D3D shader constructors and Draw* functions
   (`fh1/src/fh1_d3d_census.cpp` already lists the D3D functions).
 - **N3 - draws and textures**: first frames - logos, title, menus. In nfsmw's order:
-  - N3a (nfsmw C2, `nfsmw_nativo_destinos.*`): render targets as Vulkan images, clears
+  - N3a (nfsmw C2, `nfsc_native_targets.*`): render targets as Vulkan images, clears
     (RB_COLOR_CLEAR), resolves as copies into the destination texture (rectangle and base like
     `draw_util::GetResolveInfo`), and presenting the texture the Swap's fetch constant 0 names,
     through the gamma ramp. Without draws this already shows the game's clear colours per frame;
-  - N3b (nfsmw C3-C6, `nfsmw_nativo_dibujos.*`): draws - pipelines from the library's SPIR-V
+  - N3b (nfsmw C3-C6, `nfsc_native_draws.*`): draws - pipelines from the library's SPIR-V
     (push constants with three buffer addresses, textures in sets 0-2, samplers in set 3, constant
     UBOs in set 4), vertex input from the patched fetches, indices, 2D textures by fetch constant,
     blend/depth/stencil/cull state, viewport and scissor; FH1 adds `g_GuestBase` /
@@ -67,7 +67,7 @@ pass) stay off by default and are paused.
   1,407 pixel, 1,511 vertex) from the loose `media/shaders/**/*.fxobj` files;
   `tools/build_shader_tools.ps1` builds the translator (`shaders/nfsmw_hlsl.cpp` + XenosRecomp,
   clang, no downloads) as `shaders/fh1_hlsl.exe`. Translation to HLSL: **2,463 of 2,918** - every
-  pixel shader; 455 vertex shaders rejected with "FETCH de vertices sin elemento declarado" (a
+  pixel shader; 455 vertex shaders rejected with "FETCH de vertices sin element declarado" (a
   vertex fetch at an instruction the declaration table does not list - probably FH1's mini
   fetches; next to fix). DXC is in the Windows SDK (Windows Kits 10, bin/10.0.26100.0/x64/dxc.exe).
   Output in build_logs/shaders/ (game data: never in git).
@@ -120,7 +120,7 @@ pass) stay off by default and are paused.
   game boots, takes the autoplay presses and reaches gameplay at its 30 fps cap (~3.6 million
   packets/s, mostly 0x60 / 0x22 / 0x61 / 0x27 / 0x2D / 0x2F), one startup WAIT_REG_MEM timeout,
   no crash. Default (emulated GPU) unchanged. Next: N2 (which shader each draw uses) and N3 (draws).
-- 2026-10-02 **N2 first stage** (fh1/src/fh1_native_shaders.*, from nfsmw's nfsmw_nativo_shaders.*
+- 2026-10-02 **N2 first stage** (fh1/src/fh1_native_shaders.*, from nfsmw's nfsc_native_shaders.*
   with a 2008 container reader): the ring's IM_LOAD / IM_LOAD_IMMEDIATE uploads are looked up in
   the library (`--fh1_shader_library=PATH`, default next to fh1.exe). Festival run: **354 of 386
   distinct shaders identified (92%)** - pixel 200/203, vertex 154/183. FH1's D3D patches vertex
@@ -142,8 +142,8 @@ pass) stay off by default and are paused.
   The user's friend (GoatHonks) ported the whole nfsmw-nx native renderer to Need for Speed: Carbon
   (nfsc-recomp, same 2008 shader containers as FH1, hookless vertex-shader identification, AMD
   barrier fix, positional interpolants, shaders rebuilt from microcode). With his permission it is
-  copied in and built next to our own N1-N3a code; run with `--nfsmw_renderizador=nativo` and the
-  library next to fh1.exe as `nfsmw_shaders.nfsp`. FH1 fixes on top: microcode located through the
+  copied in and built next to our own N1-N3a code; run with `--nfsc_renderer=native` and the
+  library next to fh1.exe as `nfsc_shaders.nfsp`. FH1 fixes on top: microcode located through the
   2008 shader header (FH1 puts data first in the physical part; without it only 3 of 9 shaders
   matched), our tolerant vertex-shader pass, k_2_10_10_10 resolves, 16/32-bit render-target
   formats, shared constants widened for fh1Fetch. **First native picture**: the FORZA HORIZON logo
@@ -166,7 +166,7 @@ pass) stay off by default and are paused.
   cause 316): raw bits through an R32_SFLOAT input broke the picture on AMD (`fh1_vertices_10_11_11`,
   off) - next idea: read them from guest memory (fh1Fetch) or convert on the CPU; (2) speckled edges:
   FH1 draws scene depth at 640 pitch 4x MSAA (surface 0A020280) and uses it as 1280x720 1x; sharing
-  one image with viewport x2 (`fh1_msaa_4x_como_1x`, off) turned the festival pink/black - needs a
+  one image with viewport x2 (`fh1_msaa_4x_as_1x`, off) turned the festival pink/black - needs a
   closer look at which passes write what; (3) white title/menus (composite PS n767); (4) 2x MSAA
   reflection resolves. Collect unknown shaders with `--nfsc_dump_ring_shaders`, rebuild with
   tools/nfsc_synth_containers.py (library 3,849).

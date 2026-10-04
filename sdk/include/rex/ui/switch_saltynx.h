@@ -16,51 +16,51 @@ namespace rex::ui::switch_saltynx {
 // Connects to SaltySD, reserves the block and locates the Reverse-NX one. Without SaltyNX it does
 // nothing. It can be called as many times as needed. Until there is a valid block it keeps trying,
 // and the cheap part (searching for the marker again in the already mapped page) goes before the IPC.
-void Iniciar();
+void Start();
 
 // Once per second, with the last second's FPS, their average, the resolution being presented and the
 // number of frames since startup. It publishes both things (FPS and resolution) and, if the block is
 // missing, hooks it up again. Calling it from the very start is what makes the overlay show data on
 // the Most Wanted logo and work when opened later.
-void Actualizar(double fps_segundo, double fps_media, uint32_t ancho, uint32_t alto, uint64_t fotogramas);
+void Update(double fps_second, double fps_media, uint32_t width, uint32_t height, uint64_t frames);
 
 // On every presentation: the overlay clears the "alive" and resolution markers and only waits
 // 100 ms for the game to set them again. It also fills in the frame time, from which the FPS
 // average is taken.
-void Latir(uint32_t ancho, uint32_t alto);
+void Beat(uint32_t width, uint32_t height);
 
 // Turns all of this on or off (the game passes it from its cvar, before the profile thread starts).
-void Habilitar(bool habilitado);
+void Enable(bool enabled);
 
 // The mode to obey: Reverse-NX's if it is active, otherwise the real one passed in.
-bool ModoBase(bool real);
+bool ModeBase(bool real);
 
-// What the Reverse-NX block says, as is, for the profile report. Mind the semantics: "por_defecto"
+// What the Reverse-NX block says, as is, for the profile report. Mind the semantics: "by_default"
 // is its "Controlled by system", and when it is true its "Mode" does not decide anything, it only
-// reflects the console's real state. Without a block (no SaltyNX or no plugin), hay = false and the
+// reflects the console's real state. Without a block (no SaltyNX or no plugin), there_is = false and the
 // rest means nothing.
-struct EstadoReverseNx {
-  bool hay;
+struct StateReverseNx {
+  bool there_is;
   bool en_base;
-  bool por_defecto;
-  bool plugin_activo;
+  bool by_default;
+  bool plugin_active;
 };
-EstadoReverseNx EstadoReverse();
+StateReverseNx StateReverse();
 
 #else
 
-inline void Iniciar() {}
-inline void Actualizar(double, double, uint32_t, uint32_t, uint64_t) {}
-inline void Latir(uint32_t, uint32_t) {}
-inline void Habilitar(bool) {}
-inline bool ModoBase(bool real) { return real; }
-struct EstadoReverseNx {
-  bool hay;
+inline void Start() {}
+inline void Update(double, double, uint32_t, uint32_t, uint64_t) {}
+inline void Beat(uint32_t, uint32_t) {}
+inline void Enable(bool) {}
+inline bool ModeBase(bool real) { return real; }
+struct StateReverseNx {
+  bool there_is;
   bool en_base;
-  bool por_defecto;
-  bool plugin_activo;
+  bool by_default;
+  bool plugin_active;
 };
-inline EstadoReverseNx EstadoReverse() { return {false, false, false, false}; }
+inline StateReverseNx StateReverse() { return {false, false, false, false}; }
 
 #endif  // REX_PLATFORM_SWITCH
 

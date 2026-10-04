@@ -1,4 +1,4 @@
-// fh1 - native renderer, step N2 (see fh1_native_shaders.h). From nfsmw-nx's nfsmw_nativo_shaders.cpp,
+// fh1 - native renderer, step N2 (see fh1_native_shaders.h). From nfsmw-nx's nfsc_native_shaders.cpp,
 // with the 2008 container reader (XenosRecomp shader.h).
 
 #include "fh1_native_shaders.h"
@@ -148,7 +148,7 @@ struct RawKeyHash {
 }  // namespace
 
 struct Shaders::Data {
-  BibliotecaShaders library;
+  LibraryShaders library;
   std::vector<ShaderEntry> entries;
   std::map<std::pair<bool, uint32_t>, std::vector<uint32_t>> candidates;  // (vertex, words) -> entries
   std::unordered_map<RawKey, const ShaderEntry*, RawKeyHash> cache;
@@ -167,7 +167,7 @@ ShaderStats Shaders::Stats() const { return data_->stats; }
 bool Shaders::Load(const std::filesystem::path& file) {
   Data& d = *data_;
   try {
-    d.library.Cargar(file);
+    d.library.Load(file);
   } catch (const std::exception& e) {
     REXLOG_WARN("[native] shader library not available ({}): {}", file.string(), e.what());
     return false;

@@ -65,7 +65,7 @@ extern "C" {
 typedef enum {
     REX_GM_NONE  = 0,
     REX_GM_READ  = 1 << 0,
-    REX_GM_WRITE = (1 << 0) | (1 << 1),  /* lectura + escritura */
+    REX_GM_WRITE = (1 << 0) | (1 << 1),  /* read + write */
 } RexGmAccess;
 
 /* Reserves the window. size is usually 0x120000000. Returns the base or NULL. */
@@ -138,7 +138,7 @@ bool RexGmFaultIn(uint64_t window_address);
  *   REX_GM_NONE   -> unmapped
  *
  * If the kernel accepts svcSetProcessMemoryPermission on the views, REX_GM_READ
- * pages are made read-only instead (see RexGmModoProteccion).
+ * pages are made read-only instead (see RexGmModeProtection).
  *
  * If out_old is not NULL, it receives the previous permissions.
  */
@@ -173,7 +173,7 @@ size_t RexGmMappedBytes(void);
  * of the two paths Horizon took. 0 = not tried yet, 1 = permissions,
  * 2 = unmapping.
  */
-int RexGmModoProteccion(void);
+int RexGmModeProtection(void);
 
 /**
  * Result of the last system call that failed, or one of the REX_GM_ERR_* codes.

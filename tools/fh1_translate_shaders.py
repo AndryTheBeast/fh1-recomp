@@ -4,7 +4,7 @@ translator; a crash only drops that container. Native renderer step N0.
 
     python tools/fh1_translate_shaders.py CONTAINERS_DIR HLSL_DIR
 
-Log: HLSL_DIR/../traduccion.log (UTF-8): one line per container that failed, then a summary.
+Log: HLSL_DIR/../translation.log (UTF-8): one line per container that failed, then a summary.
 """
 import concurrent.futures
 import os
@@ -57,6 +57,6 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 
             failed.append(f'{name}: {reason}')
 shutil.rmtree(work, ignore_errors=True)
 summary = f'{len(names)} shaders: {len(names) - len(failed)} translated, {len(failed)} skipped'
-with open(os.path.join(os.path.dirname(os.path.abspath(hlsl_dir)), 'traduccion.log'), 'w', encoding='utf-8') as f:
+with open(os.path.join(os.path.dirname(os.path.abspath(hlsl_dir)), 'translation.log'), 'w', encoding='utf-8') as f:
     f.write('\n'.join(failed + [summary]) + '\n')
 print(summary)

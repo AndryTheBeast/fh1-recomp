@@ -46,14 +46,14 @@ typedef enum {
 typedef struct {
     RexAccessKind kind;
     uint8_t  bytes;        /* 1, 2, 4, 8 o 16 */
-    uint8_t  rt;           /* registro transferido */
+    uint8_t  rt;           /* reg_entry transferido */
     uint8_t  rt2;          /* second register in LDP/STP, 0xFF if none */
     uint8_t  rn;           /* base register, in case of writeback */
     bool     is_simd;      /* transfers a NEON register instead of an integer one */
     bool     sign_extend;  /* sign-extending load */
     bool     extend_to_64; /* la extension va a 64 bits, si no a 32 */
     int64_t  writeback;    /* added to the base after the access, 0 if none */
-    uint64_t address;      /* direccion efectiva ya calculada */
+    uint64_t address;      /* address effective ya computed */
 } RexAccess;
 
 /* --- reading registers from the dump ---------------------------------- */
@@ -127,7 +127,7 @@ static inline bool RexDecodeAccess(const ThreadExceptionDump* ctx, uint32_t insn
 
     /* ---- LDP / STP -----------------------------------------------------
      * opc:2 101 V:1 0 idx:2 L:1 imm7 Rt2 Rn Rt
-     * idx: 01 post-incremento, 10 desplazamiento con signo, 11 pre-incremento
+     * idx: 01 post-incremento, 10 displacement con signo, 11 pre-incremento
      */
     if ((insn & 0x3A000000u) == 0x28000000u) {
         const unsigned opc = (insn >> 30) & 0x3;
@@ -137,7 +137,7 @@ static inline bool RexDecodeAccess(const ThreadExceptionDump* ctx, uint32_t insn
         const unsigned rt2 = (insn >> 10) & 0x1F;
         const int64_t imm7 = RexSignExtend((insn >> 15) & 0x7F, 7);
 
-        if (idx == 0) return false;  /* forma sin asignar */
+        if (idx == 0) return false;  /* shape sin asignar */
 
         unsigned bytes;
         if (v) {
@@ -145,7 +145,7 @@ static inline bool RexDecodeAccess(const ThreadExceptionDump* ctx, uint32_t insn
             if (opc > 2) return false;
             bytes = 4u << opc;
         } else {
-            /* enteros: opc 00 = 4 bytes, 10 = 8. opc 01 es LDPSW */
+            /* integers: opc 00 = 4 bytes, 10 = 8. opc 01 es LDPSW */
             if (opc == 0) bytes = 4;
             else if (opc == 2) bytes = 8;
             else if (opc == 1 && L) { bytes = 4; out->sign_extend = true; out->extend_to_64 = true; }
@@ -223,8 +223,8 @@ static inline bool RexDecodeAccess(const ThreadExceptionDump* ctx, uint32_t insn
             return true;
         }
 
-        const unsigned modo = (insn >> 10) & 0x3;
-        if (modo == 2) {
+        const unsigned mode = (insn >> 10) & 0x3;
+        if (mode == 2) {
             /* with index register */
             const unsigned rm     = (insn >> 16) & 0x1F;
             const unsigned option = (insn >> 13) & 0x7;
@@ -240,16 +240,16 @@ static inline bool RexDecodeAccess(const ThreadExceptionDump* ctx, uint32_t insn
 
         /* signed 9-bit immediate, unscaled */
         const int64_t imm9 = RexSignExtend((insn >> 12) & 0x1FF, 9);
-        if (modo == 0) {           /* LDUR / STUR */
+        if (mode == 0) {           /* LDUR / STUR */
             out->address = base + imm9;
             return true;
         }
-        if (modo == 1) {           /* post-incremento */
+        if (mode == 1) {           /* post-incremento */
             out->address = base;
             out->writeback = imm9;
             return true;
         }
-        if (modo == 3) {           /* pre-incremento */
+        if (mode == 3) {           /* pre-incremento */
             out->address = base + imm9;
             out->writeback = imm9;
             return true;
@@ -257,14 +257,14 @@ static inline bool RexDecodeAccess(const ThreadExceptionDump* ctx, uint32_t insn
         return false;
     }
 
-    return false;  /* no reconocido: atomicos, vectoriales con lista, etc. */
+    return false;  /* no reconocido: atomicos, vectoriales con list, etc. */
 }
 
 /*
  * --- emulation ---------------------------------------------------------
  *
  * shadow is the address in the shadow alias that corresponds to acc->address.
- * The caller computes it: sombra_base + (acc->address - ventana_base).
+ * The caller computes it: shadow_base + (acc->address - window_base).
  */
 static inline void RexEmulateAccess(ThreadExceptionDump* ctx, const RexAccess* acc,
                                     void* shadow) {

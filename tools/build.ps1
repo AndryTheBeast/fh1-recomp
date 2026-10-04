@@ -8,7 +8,7 @@
 # script. The output goes to app/out/sw8/configure.log, build.log and their .err files.
 param(
     [Parameter(Mandatory = $true)][string]$MesaSdk,
-    [ValidateSet('usar', 'generar', '')][string]$Pgo = 'usar',
+    [ValidateSet('use', 'generate', '')][string]$Pgo = 'use',
     [int]$Jobs = 4,
     [string]$CMake = 'cmake'
 )

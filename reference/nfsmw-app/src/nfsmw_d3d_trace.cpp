@@ -49,19 +49,19 @@
 #include <rex/filesystem.h>
 #include <rex/hook.h>
 #include <rex/logging.h>
-#include "nfsmw_nativo_ganchos.h"
+#include "nfsmw_native_hooks.h"
 #if defined(NFSMW_NATIVE_SHADER_LIBRARY)
 #include "nfsmw_video_bridge.h"
 #endif
 
-REXCVAR_DEFINE_BOOL(nfsmw_nativo_gotas_lluvia, true, "NFSMW",
-                    "Renderizador nativo (25/09, build 174): anotar los dibujos que el juego hace con la rutina "
-                    "interna del D3D sub_825932D8 (las gotas de lluvia en la pantalla y el cuadrilatero del "
-                    "VisualTreatment). Sin esto las gotas no salen. false = como antes")
+REXCVAR_DEFINE_BOOL(nfsmw_native_drops_rain, true, "NFSMW",
+                    "Renderer native (25/09, build 174): note los draws que el game does con la rutina "
+                    "resolution del D3D sub_825932D8 (the drops de rain en la pantalla y el cuadrilatero del "
+                    "VisualTreatment). Sin esto the drops no salen. false = as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 REXCVAR_DEFINE_BOOL(nfsmw_d3d_trace, false, "NFSMW",
-                    "Registrar las llamadas al Direct3D del juego en rex_d3d.log")
+                    "Registrar the calls al Direct3D del game en rex_d3d.log")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 namespace nfsmw::d3d_trace {
@@ -79,7 +79,7 @@ constexpr uint32_t kDeviceDumpEnd = 0x400;
 
 constexpr size_t kMaxDetail = 24;   // detailed calls per function
 constexpr size_t kMaxCallers = 12;  // distinct callers per function
-constexpr size_t kMaxShaders = 1024;  // objetos de shader recordados
+constexpr size_t kMaxShaders = 1024;  // objects de shader recordados
 
 /*
  * The driver separates the virtual part from the physical one: PS at object+0x34 and
@@ -88,12 +88,12 @@ constexpr size_t kMaxShaders = 1024;  // objetos de shader recordados
  * testing. The originals were recovered from ZZDATA0.BIN and the XEX.
  * See docs/shaders.md: accepting a signature other than the 2008 one is not enough.
  */
-constexpr uint32_t kContenedorFirma = 0x102A0E00;
-constexpr uint32_t kContenedorMaximo = 64 * 1024;  // no real one comes close
+constexpr uint32_t kContainerSignature = 0x102A0E00;
+constexpr uint32_t kContainerMaximum = 64 * 1024;  // no real one comes close
 // It stays off. New files go to a separate folder and do not overwrite
 // the earlier ones. An object can contain metadata modified by the driver;
 // to identify native shaders, the original from before its creation is used.
-constexpr bool kVolcarShaders = false;
+constexpr bool kDumpShaders = false;
 constexpr int kReportSeconds = 10;
 
 enum Fn : uint32_t {
@@ -220,8 +220,8 @@ struct ShaderSeen {
 };
 ShaderSeen g_shaders[kMaxShaders]{};
 size_t g_shader_count = 0;
-size_t g_shaders_volcados = 0;      // contenedores escritos a la SD
-size_t g_shaders_sin_contenedor = 0; // objects without a container inside
+size_t g_shaders_dumps = 0;      // containers written a la SD
+size_t g_shaders_without_container = 0; // objects without a container inside
 
 uint32_t LoadGuestU32(const uint8_t* base, uint32_t address) {
   uint32_t raw = 0;
@@ -242,16 +242,16 @@ void WriteReport() {
   }
 
   const uint64_t frames = g_frames.load(std::memory_order_relaxed);
-  std::fprintf(f, "==== fotogramas %llu\n", static_cast<unsigned long long>(frames));
+  std::fprintf(f, "==== frames %llu\n", static_cast<unsigned long long>(frames));
   for (uint32_t i = 0; i < kFnCount; ++i) {
     const uint64_t calls = g_slots[i].calls.load(std::memory_order_relaxed);
     if (calls == 0) {
       continue;
     }
-    std::fprintf(f, "  %-26s %10llu llamadas", kFns[i].name,
+    std::fprintf(f, "  %-26s %10llu calls", kFns[i].name,
                  static_cast<unsigned long long>(calls));
     if (frames) {
-      std::fprintf(f, "  (%.1f por fotograma)", double(calls) / double(frames));
+      std::fprintf(f, "  (%.1f por frame)", double(calls) / double(frames));
     }
     std::fputc('\n', f);
   }
@@ -261,7 +261,7 @@ void WriteReport() {
 
   if (g_device_pending.load(std::memory_order_acquire) &&
       !g_device_written.load(std::memory_order_relaxed)) {
-    std::fprintf(f, "\n-- dispositivo en 0x%08X, palabras 0x%X..0x%X\n", g_device_addr,
+    std::fprintf(f, "\n-- vulkan_device en 0x%08X, words 0x%X..0x%X\n", g_device_addr,
                  kDeviceDumpStart, kDeviceDumpEnd);
     for (uint32_t off = 0; off < kDeviceDumpEnd - kDeviceDumpStart; off += 32) {
       std::fprintf(f, "   +0x%04X:", kDeviceDumpStart + off);
@@ -283,7 +283,7 @@ void WriteReport() {
         continue;
       }
       if (!header) {
-        std::fprintf(f, "\n-- %s (0x%08X): primeras llamadas\n", kFns[i].name, kFns[i].address);
+        std::fprintf(f, "\n-- %s (0x%08X): primeras calls\n", kFns[i].name, kFns[i].address);
         header = true;
       }
       std::fprintf(f,
@@ -298,7 +298,7 @@ void WriteReport() {
         continue;
       }
       if (!header) {
-        std::fprintf(f, "   llamantes: ");
+        std::fprintf(f, "   callers: ");
         header = true;
       }
       std::fprintf(f, "%08X x%llu  ", static_cast<uint32_t>(s.callers[k].lr),
@@ -308,19 +308,19 @@ void WriteReport() {
       std::fputc('\n', f);
     }
   }
-  std::fprintf(f, "\nshaders: %llu vistos, %llu volcados a shaders/, %llu sin contenedor\n",
-               (unsigned long long)g_shader_count, (unsigned long long)g_shaders_volcados,
-               (unsigned long long)g_shaders_sin_contenedor);
+  std::fprintf(f, "\nshaders: %llu seen_2, %llu dumps a shaders/, %llu sin container\n",
+               (unsigned long long)g_shader_count, (unsigned long long)g_shaders_dumps,
+               (unsigned long long)g_shaders_without_container);
 
   for (size_t i = 0; i < g_shader_count; ++i) {
     ShaderSeen& sh = g_shaders[i];
     if (sh.written) {
       continue;
     }
-    std::fprintf(f, "\n-- shader %s objeto 0x%08X (enlazado desde %08X)\n",
-                 sh.pixel ? "de pixeles" : "de vertices", sh.object,
+    std::fprintf(f, "\n-- shader %s object 0x%08X (bound since %08X)\n",
+                 sh.pixel ? "de pixels" : "de vertices", sh.object,
                  static_cast<uint32_t>(sh.lr));
-    std::fprintf(f, "   cabecera:");
+    std::fprintf(f, "   header:");
     for (uint32_t w : sh.header) {
       std::fprintf(f, " %08X", w);
     }
@@ -356,7 +356,7 @@ void MaybeReport() {
 
 // Trace startup, out of line and cold. It is the usual StartOnce body, unchanged: only StartOnce (right
 // below) calls it, while g_started is still false.
-[[gnu::noinline, gnu::cold]] void StartOnceLento() {
+[[gnu::noinline, gnu::cold]] void StartOnceSlow() {
   bool expected = false;
   if (!g_started.compare_exchange_strong(expected, true)) {
     return;
@@ -366,10 +366,10 @@ void MaybeReport() {
     return;
   }
   if (FILE* f = std::fopen(ReportPath().c_str(), "w")) {
-    std::fprintf(f, "Trazas del Direct3D de NFSMW\n\n");
+    std::fprintf(f, "Traces del Direct3D de NFSMW\n\n");
     std::fclose(f);
   }
-  REXLOG_INFO("Trazas de D3D activas: {}", ReportPath());
+  REXLOG_INFO("Traces de D3D active: {}", ReportPath());
 }
 
 // Every hook in this file calls StartOnce on every call: in a race about 11,000-13,000 times per frame
@@ -386,7 +386,7 @@ void MaybeReport() {
   if (g_started.load(std::memory_order_relaxed)) [[likely]] {
     return;
   }
-  StartOnceLento();
+  StartOnceSlow();
 }
 
 void RecordCaller(Slot& s, uint64_t lr) {
@@ -405,25 +405,25 @@ void RecordCaller(Slot& s, uint64_t lr) {
 }
 
 // Template: that way there is no need to know which namespace PPCContext lives in.
-// vegetacion = the kVeg* flags from DecidirVegetacion for the Draw* record.
+// vegetation = the kVeg* flags from DecideVegetation for the Draw* record.
 template <typename Ctx>
-void NotificarVideo(uint32_t fn, const Ctx& ctx, const uint8_t* base, uint16_t vegetacion = 0) {
+void NotifyVideo(uint32_t fn, const Ctx& ctx, const uint8_t* base, uint16_t vegetation = 0) {
   // Native renderer (part C5b): each Draw* leaves its VS and PS in the queue
   // of the PM4 ring sink. When off, it costs one atomic read.
   if (fn == kDrawVertices || fn == kDrawIndexedVertices || fn == kDrawVerticesUP ||
       fn == kDrawIndexedVerticesUP) {
-    using nfsmw::nativo::FuncionDibujo;
-    const FuncionDibujo funcion = fn == kDrawVertices          ? FuncionDibujo::kVertices
-                                  : fn == kDrawIndexedVertices ? FuncionDibujo::kIndexados
-                                  : fn == kDrawVerticesUP      ? FuncionDibujo::kVerticesUP
-                                                               : FuncionDibujo::kIndexadosUP;
-    nfsmw::nativo::AnotarDibujo(funcion, base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32,
-                                ctx.r7.u32, vegetacion);
+    using nfsmw::native::FunctionDraw;
+    const FunctionDraw function = fn == kDrawVertices          ? FunctionDraw::kVertices
+                                  : fn == kDrawIndexedVertices ? FunctionDraw::kIndexed
+                                  : fn == kDrawVerticesUP      ? FunctionDraw::kVerticesUP
+                                                               : FunctionDraw::kIndexedUP;
+    nfsmw::native::NoteDraw(function, base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32,
+                                ctx.r7.u32, vegetation);
   }
 #if defined(NFSMW_NATIVE_SHADER_LIBRARY)
   if (fn == kDrawVertices || fn == kDrawIndexedVertices || fn == kDrawVerticesUP || fn == kDrawIndexedVerticesUP)
-    nfsmw::native::AnotarDibujoVideo(base, fn == kDrawVertices && ctx.lr == 0x826DB87C, ctx.r31.u32);
-  else if (fn == kClear || fn == kClearF) nfsmw::native::InvalidarVideo();
+    nfsmw::native::NoteDrawVideo(base, fn == kDrawVertices && ctx.lr == 0x826DB87C, ctx.r31.u32);
+  else if (fn == kClear || fn == kClearF) nfsmw::native::InvalidateVideo();
 #else
   (void)fn; (void)ctx; (void)base;
 #endif
@@ -463,26 +463,26 @@ void Leave(uint32_t fn, const Ctx& ctx) {
 }
 
 // Joins the two regions of the object without changing their byte order.
-void VolcarShader(ShaderSeen& sh, const uint8_t* base) {
-  if (!kVolcarShaders || sh.dumped) {
+void DumpShader(ShaderSeen& sh, const uint8_t* base) {
+  if (!kDumpShaders || sh.dumped) {
     return;
   }
   sh.dumped = true;
 
-  const uint64_t contenedor = uint64_t(sh.object) + (sh.pixel ? 0x34 : 0x250);
-  if (contenedor + 24 > (uint64_t(1) << 32)) return;
-  const uint32_t firma = LoadGuestU32(base, uint32_t(contenedor));
-  if (firma != (kContenedorFirma | (sh.pixel ? 0u : 1u))) {
-    ++g_shaders_sin_contenedor;
+  const uint64_t container = uint64_t(sh.object) + (sh.pixel ? 0x34 : 0x250);
+  if (container + 24 > (uint64_t(1) << 32)) return;
+  const uint32_t signature = LoadGuestU32(base, uint32_t(container));
+  if (signature != (kContainerSignature | (sh.pixel ? 0u : 1u))) {
+    ++g_shaders_without_container;
     return;  // it has no container inside: nothing to dump
   }
-  const uint32_t virtual_size = LoadGuestU32(base, uint32_t(contenedor + 4));
-  const uint32_t physical_size = LoadGuestU32(base, uint32_t(contenedor + 8));
-  const uint32_t fisica = LoadGuestU32(base, sh.object + (sh.pixel ? 0x0C : 0x28));
+  const uint32_t virtual_size = LoadGuestU32(base, uint32_t(container + 4));
+  const uint32_t physical_size = LoadGuestU32(base, uint32_t(container + 8));
+  const uint32_t physical = LoadGuestU32(base, sh.object + (sh.pixel ? 0x0C : 0x28));
   const uint64_t total = uint64_t(virtual_size) + physical_size;
-  if (virtual_size < 24 || !physical_size || physical_size % 12 || !fisica ||
-      total > kContenedorMaximo || contenedor + virtual_size > (uint64_t(1) << 32) ||
-      uint64_t(fisica) + physical_size > (uint64_t(1) << 32)) {
+  if (virtual_size < 24 || !physical_size || physical_size % 12 || !physical ||
+      total > kContainerMaximum || container + virtual_size > (uint64_t(1) << 32) ||
+      uint64_t(physical) + physical_size > (uint64_t(1) << 32)) {
     return;
   }
 
@@ -495,18 +495,18 @@ void VolcarShader(ShaderSeen& sh, const uint8_t* base) {
   std::filesystem::create_directories(dir, ec);
   if (ec) return;
 
-  char nombre[32];
-  std::snprintf(nombre, sizeof(nombre), "%c_%08X.bin", sh.pixel ? 'p' : 'v', sh.object);
-  const auto destino = dir / nombre;
-  if (std::filesystem::exists(destino, ec) || ec) return;
-  FILE* f = std::fopen(destino.string().c_str(), "wb");
+  char name[32];
+  std::snprintf(name, sizeof(name), "%c_%08X.bin", sh.pixel ? 'p' : 'v', sh.object);
+  const auto target = dir / name;
+  if (std::filesystem::exists(target, ec) || ec) return;
+  FILE* f = std::fopen(target.string().c_str(), "wb");
   if (!f) {
     return;
   }
-  const bool ok = std::fwrite(base + contenedor, 1, virtual_size, f) == virtual_size &&
-                  std::fwrite(base + fisica, 1, physical_size, f) == physical_size;
-  const int cierre = std::fclose(f);
-  if (ok && !cierre) ++g_shaders_volcados;
+  const bool ok = std::fwrite(base + container, 1, virtual_size, f) == virtual_size &&
+                  std::fwrite(base + physical, 1, physical_size, f) == physical_size;
+  const int close = std::fclose(f);
+  if (ok && !close) ++g_shaders_dumps;
 }
 
 void RememberShader(bool pixel, uint32_t object, uint64_t lr, const uint8_t* base) {
@@ -531,7 +531,7 @@ void RememberShader(bool pixel, uint32_t object, uint64_t lr, const uint8_t* bas
   for (uint32_t i = 0; i < 32; ++i) {
     sh.header[i] = LoadGuestU32(base, object + i * 4);
   }
-  VolcarShader(sh, base);
+  DumpShader(sh, base);
 }
 
 void CaptureDevice(const uint8_t* base) {
@@ -565,7 +565,7 @@ void CaptureDevice(const uint8_t* base) {
     if (on) {                                                          \
       Enter(id, ctx);                                                  \
     }                                                                  \
-    NotificarVideo(id, ctx, base);                                     \
+    NotifyVideo(id, ctx, base);                                     \
     __imp__sub_##addr(ctx, base);                                      \
     if (on) {                                                          \
       Leave(id, ctx);                                                  \
@@ -596,59 +596,59 @@ NFSMW_TRACE(8258DA60, nfsmw::d3d_trace::kSetIndices)
 NFSMW_TRACE(8259C470, nfsmw::d3d_trace::kCreateVertexDeclaration)
 NFSMW_TRACE(8259C3D0, nfsmw::d3d_trace::kSetVertexDeclaration)
 // Phase 2b of the Direct3D-level renderer: the four Draw* open the draw window before the original
-// (AnotarDibujo, in NotificarVideo) and close it afterwards (TerminarDibujo). Their FlushState, which runs
+// (NoteDraw, in NotifyVideo) and close it afterwards (FinishDraw). Their FlushState, which runs
 // inside (all four always call it, as seen in the recompiled code), takes the record to the marker; if it
-// did not, TerminarDibujo sends it to the usual queue. Otherwise, the same as NFSMW_TRACE.
+// did not, FinishDraw sends it to the usual queue. Otherwise, the same as NFSMW_TRACE.
 template <typename Ctx, typename Original>
-void GanchoDibujo(uint32_t id, Ctx& ctx, uint8_t* base, Original original) {
+void HookDraw(uint32_t id, Ctx& ctx, uint8_t* base, Original original) {
   using namespace nfsmw::d3d_trace;
   StartOnce();
-  // nfsmw_d3d_vegetacion_juego: a DrawVertices or DrawIndexedVertices that the PM4 ring would discard as
-  // shadow-map vegetation is skipped entirely here (DecidirVegetacion, nfsmw_nativo_ganchos.cpp); the others
+  // nfsmw_d3d_game_vegetation: a DrawVertices or DrawIndexedVertices that the PM4 ring would discard as
+  // shadow-map vegetation is skipped entirely here (DecideVegetation, nfsmw_native_hooks.cpp); the others
   // carry the game's verdict in their record so that the ring can check it.
-  bool saltar = false;
-  const uint16_t vegetacion =
+  bool skip = false;
+  const uint16_t vegetation =
       (id == kDrawVertices || id == kDrawIndexedVertices)
-          ? nfsmw::nativo::DecidirVegetacion(id == kDrawVertices ? nfsmw::nativo::FuncionDibujo::kVertices
-                                                                 : nfsmw::nativo::FuncionDibujo::kIndexados,
-                                             base, ctx.r3.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, saltar)
+          ? nfsmw::native::DecideVegetation(id == kDrawVertices ? nfsmw::native::FunctionDraw::kVertices
+                                                                 : nfsmw::native::FunctionDraw::kIndexed,
+                                             base, ctx.r3.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, skip)
           : uint16_t(0);
-  if (saltar) {
+  if (skip) {
     return;
   }
   const bool on = g_enabled.load(std::memory_order_relaxed);
   if (on) {
     Enter(id, ctx);
   }
-  NotificarVideo(id, ctx, base, vegetacion);
+  NotifyVideo(id, ctx, base, vegetation);
   original(ctx, base);
-  nfsmw::nativo::TerminarDibujo();
+  nfsmw::native::FinishDraw();
   if (on) {
     Leave(id, ctx);
   }
 }
 REX_EXTERN(__imp__sub_82593A10);
 REX_HOOK_RAW(sub_82593A10) {  // DrawVertices
-  GanchoDibujo(nfsmw::d3d_trace::kDrawVertices, ctx, base, [](auto& c, uint8_t* b) { __imp__sub_82593A10(c, b); });
+  HookDraw(nfsmw::d3d_trace::kDrawVertices, ctx, base, [](auto& c, uint8_t* b) { __imp__sub_82593A10(c, b); });
 }
 REX_EXTERN(__imp__sub_82593C50);
 REX_HOOK_RAW(sub_82593C50) {  // DrawIndexedVertices
-  GanchoDibujo(nfsmw::d3d_trace::kDrawIndexedVertices, ctx, base,
+  HookDraw(nfsmw::d3d_trace::kDrawIndexedVertices, ctx, base,
                [](auto& c, uint8_t* b) { __imp__sub_82593C50(c, b); });
 }
 REX_EXTERN(__imp__sub_82593588);
 REX_HOOK_RAW(sub_82593588) {  // DrawVerticesUP
-  GanchoDibujo(nfsmw::d3d_trace::kDrawVerticesUP, ctx, base, [](auto& c, uint8_t* b) { __imp__sub_82593588(c, b); });
+  HookDraw(nfsmw::d3d_trace::kDrawVerticesUP, ctx, base, [](auto& c, uint8_t* b) { __imp__sub_82593588(c, b); });
 }
 REX_EXTERN(__imp__sub_82593940);
 REX_HOOK_RAW(sub_82593940) {  // DrawIndexedVerticesUP
-  GanchoDibujo(nfsmw::d3d_trace::kDrawIndexedVerticesUP, ctx, base,
+  HookDraw(nfsmw::d3d_trace::kDrawIndexedVerticesUP, ctx, base,
                [](auto& c, uint8_t* b) { __imp__sub_82593940(c, b); });
 }
 // FlushState goes through the composite marker first (phase 2 of the Direct3D-level renderer, at the end
-// of nfsmw_d3d_registros_nativo.cpp). If that path declines it (off, or without the native renderer), the
-// original runs. NotificarVideo does nothing with FlushState, so it is not called.
-bool NfsmwFlushStateMarcador(PPCContext& ctx, uint8_t* base);
+// of nfsmw_d3d_registers_native.cpp). If that path declines it (off, or without the native renderer), the
+// original runs. NotifyVideo does nothing with FlushState, so it is not called.
+bool NfsmwFlushStateMarker(PPCContext& ctx, uint8_t* base);
 REX_EXTERN(__imp__sub_825A40C0);
 REX_HOOK_RAW(sub_825A40C0) {  // FlushState
   using namespace nfsmw::d3d_trace;
@@ -657,7 +657,7 @@ REX_HOOK_RAW(sub_825A40C0) {  // FlushState
   if (on) {
     Enter(kFlushState, ctx);
   }
-  if (!NfsmwFlushStateMarcador(ctx, base)) {
+  if (!NfsmwFlushStateMarker(ctx, base)) {
     __imp__sub_825A40C0(ctx, base);
   }
   if (on) {
@@ -678,21 +678,21 @@ REX_HOOK_RAW(sub_825A40C0) {  // FlushState
  * VS is recognized.
  *
  * sub_825932D8(r3 device, r4 type, r5 vertex count, r6 stride): type and count are in the same registers
- * as in DrawVerticesUP, which is all the ring uses from a kVerticesUP record (EmparejarDibujo and
- * CuentaDelRegistro). The call DrawVerticesUP makes internally (return address 0x825935D8) is already
+ * as in DrawVerticesUP, which is all the ring uses from a kVerticesUP record (MatchDraw and
+ * CountOfRegister). The call DrawVerticesUP makes internally (return address 0x825935D8) is already
  * recorded: it is skipped.
  */
 REX_EXTERN(__imp__sub_825932D8);
 REX_HOOK_RAW(sub_825932D8) {
-  static const bool gotas = REXCVAR_GET(nfsmw_nativo_gotas_lluvia);
-  const bool anotado = gotas && uint32_t(ctx.lr) != 0x825935D8u;
-  if (anotado) {
-    nfsmw::nativo::AnotarDibujo(nfsmw::nativo::FuncionDibujo::kVerticesUP, base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32,
+  static const bool drops = REXCVAR_GET(nfsmw_native_drops_rain);
+  const bool noted = drops && uint32_t(ctx.lr) != 0x825935D8u;
+  if (noted) {
+    nfsmw::native::NoteDraw(nfsmw::native::FunctionDraw::kVerticesUP, base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32,
                                 ctx.r6.u32, ctx.r7.u32);
   }
   __imp__sub_825932D8(ctx, base);
-  if (anotado) {
-    nfsmw::nativo::TerminarDibujo();  // phase 2b: if its FlushState did not take the record
+  if (noted) {
+    nfsmw::native::FinishDraw();  // phase 2b: if its FlushState did not take the record
   }
 }
 
@@ -701,14 +701,14 @@ NFSMW_TRACE(82597DA0, nfsmw::d3d_trace::kQueryBufferSpace)
 
 /*
  * IDirect3DQuery9::Issue (8258F810; r3 the query, r4 the flags: 2 = BEGIN, 1 = END). The vegetation
- * filtered in the game (nfsmw_d3d_vegetacion_juego) skips nothing while an occlusion query is open: there
+ * filtered in the game (nfsmw_d3d_game_vegetation) skips nothing while an occlusion query is open: there
  * the PM4 ring takes the long path. The original is always called and no PPC register is touched. Its
- * calls already go through sub_8258F810: the address appears in the sources, so tools/llamadas_directas.py
+ * calls already go through sub_8258F810: the address appears in the sources, so tools/direct_calls.py
  * does not change them.
  */
 REX_EXTERN(__imp__sub_8258F810);
 REX_HOOK_RAW(sub_8258F810) {
-  nfsmw::nativo::AnotarConsultaD3D(base, ctx.r3.u32, ctx.r4.u32);
+  nfsmw::native::NoteQueryD3D(base, ctx.r3.u32, ctx.r4.u32);
   __imp__sub_8258F810(ctx, base);
 }
 
@@ -731,13 +731,13 @@ REX_HOOK_RAW(sub_825A1658) {  // CreateDevice: afterwards there is a device to l
 }
 
 // Game frames, one per Swap, with or without tracing. Read by the
-// F3 overlay FPS counter (MuestreaFotograma in nfsmw_app.h).
-std::atomic<uint64_t> g_nfsmw_fotogramas_juego{0};
+// F3 overlay FPS counter (SamplesFrame in nfsmw_app.h).
+std::atomic<uint64_t> g_nfsmw_frames_game{0};
 
 REX_EXTERN(__imp__sub_825989D8);
 REX_HOOK_RAW(sub_825989D8) {  // Swap: marks the end of each frame
 #if defined(NFSMW_NATIVE_SHADER_LIBRARY)
-  nfsmw::native::AnotarSwapVideo();
+  nfsmw::native::NoteSwapVideo();
 #endif
   using namespace nfsmw::d3d_trace;
   StartOnce();
@@ -747,7 +747,7 @@ REX_HOOK_RAW(sub_825989D8) {  // Swap: marks the end of each frame
     CaptureDevice(base);  // in case CreateDevice was called before this started
   }
   __imp__sub_825989D8(ctx, base);
-  g_nfsmw_fotogramas_juego.fetch_add(1, std::memory_order_relaxed);
+  g_nfsmw_frames_game.fetch_add(1, std::memory_order_relaxed);
   if (on) {
     Leave(kSwap, ctx);
     g_frames.fetch_add(1, std::memory_order_relaxed);

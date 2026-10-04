@@ -37,8 +37,8 @@ class XmaDecoder;
 // can wait there until the game's audio server thread has its packet, instead of letting the frame go
 // out with that voice silent. Called by the Audio Worker thread right before the client callback, with
 // no game locks held. nullptr = none.
-using GanchoAntesDeTrama = void (*)(size_t client_index);
-void SetGanchoAntesDeTrama(GanchoAntesDeTrama gancho);
+using HookBeforeOfFrame = void (*)(size_t client_index);
+void SetHookBeforeOfFrame(HookBeforeOfFrame hook);
 
 class AudioSystem : public system::IAudioSystem {
  public:

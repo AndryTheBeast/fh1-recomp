@@ -82,9 +82,9 @@ struct ShaderRecompiler : StringBuffer
      *      the old p0: that would change the result),
      *   3. at every control flow boundary (EXEC, jump, loop, return).
      *
-     * predAbierto_: -1 none, 0 open with !p0, 1 open with p0.
+     * predOpen_: -1 none, 0 open with !p0, 1 open with p0.
      */
-    int predAbierto_ = -1;
+    int predOpen_ = -1;
 
     /*
      * The close is lazy, so merging also works across EXEC blocks.
@@ -104,7 +104,7 @@ struct ShaderRecompiler : StringBuffer
      * So the close is not decided on the spot: it is written, and if the next thing to be
      * emitted opens again with the same condition and nothing has been written in between,
      * the `}` is deleted and emission continues inside the same block. The check is on the
-     * text (`finCierre_ == out.size()`), which is exactly the condition needed: anything that
+     * text (`endClose_ == out.size()`), which is exactly the condition needed: anything that
      * could change p0 (or put control flow in between) emits text, and then there is no
      * merge. The only exception is the close caused by a p0 write (the text was emitted
      * before the `}`), and that one is marked by hand as not cancelable.
@@ -113,33 +113,33 @@ struct ShaderRecompiler : StringBuffer
      * and 20 of the 36 in the vertex shaders. The nine shadow map taps end up in a single
      * basic block, which is what the scheduler needed to issue them together.
      *
-     * Almost none of those blocks are opened by abrirPredicado(): they are opened by the
+     * Almost none of those blocks are opened by openPredicate(): they are opened by the
      * control flow's own CondExecPred, which in this game comes in runs of three or four in
      * a row with the same predicate. That is why the close that must be undoable is also
-     * the CondExecPred one, and why recompile() records its brace with anotarCierreCf().
+     * the CondExecPred one, and why recompile() records its brace with noteCloseCf().
      * There is one more condition there that is not needed here: if some instruction in the
      * block wrote p0, the next block has to test the new p0 and merging would leave it with
-     * the old one. That shows in predGarantizado_, which cerrarSiEscribePredicado() sets to
+     * the old one. That shows in predGuaranteed_, which closeSiWritesPredicate() sets to
      * -1 right when it happens.
      */
-    size_t marcaCierre_ = std::string::npos;  // where the just-written "}" starts (with its tabs)
-    size_t finCierre_ = std::string::npos;    // where it ends; only valid while it is still out.size()
-    int cierreCondicion_ = -1;                // the condition that block was open with
+    size_t markClose_ = std::string::npos;  // where the just-written "}" starts (with its tabs)
+    size_t endClose_ = std::string::npos;    // where it ends; only valid while it is still out.size()
+    int closeCondition_ = -1;                // the condition that block was open with
 
     /*
      * If the last thing written is the `}` of a predicate block with this condition and there is
      * nothing after it, it is deleted and we are back inside. The caller decides who owns the
-     * brace that will close it: predAbierto_ (abrirPredicado) or the control flow (CondExecPred).
+     * brace that will close it: predOpen_ (openPredicate) or the control flow (CondExecPred).
      */
-    bool reabrirCierre(int quiero)
+    bool reopenClose(int quiero)
     {
-        if (predAbierto_ >= 0 || cierreCondicion_ != quiero)
+        if (predOpen_ >= 0 || closeCondition_ != quiero)
             return false;
-        if (finCierre_ == std::string::npos || finCierre_ != out.size())
+        if (endClose_ == std::string::npos || endClose_ != out.size())
             return false;
-        out.resize(marcaCierre_);
+        out.resize(markClose_);
         ++indentation;
-        marcaCierre_ = finCierre_ = std::string::npos;
+        markClose_ = endClose_ = std::string::npos;
         return true;
     }
 
@@ -147,17 +147,17 @@ struct ShaderRecompiler : StringBuffer
      * The brace with which the control flow closes a CondExecPred `if (p0)`. It is recorded as
      * undoable only if the block does not end in `return` and nothing wrote p0 inside.
      */
-    void anotarCierreCf(size_t marcaLlave, int condicion)
+    void noteCloseCf(size_t markBrace, int condition)
     {
-        if (condicion >= 0 && predGarantizado_ == condicion)
+        if (condition >= 0 && predGuaranteed_ == condition)
         {
-            marcaCierre_ = marcaLlave;
-            finCierre_ = out.size();
-            cierreCondicion_ = condicion;
+            markClose_ = markBrace;
+            endClose_ = out.size();
+            closeCondition_ = condition;
         }
         else
         {
-            marcaCierre_ = finCierre_ = std::string::npos;
+            markClose_ = endClose_ = std::string::npos;
         }
     }
 
@@ -172,70 +172,70 @@ struct ShaderRecompiler : StringBuffer
      * That was 307 of the 641 `if (p0)` left after the first merge pass. The inner one decides
      * nothing: we are already inside the outer one.
      *
-     * predGarantizado_ says the control flow already guarantees that predicate, so
-     * abrirPredicado() emits nothing. And it is invalidated as soon as something writes p0:
+     * predGuaranteed_ says the control flow already guarantees that predicate, so
+     * openPredicate() emits nothing. And it is invalidated as soon as something writes p0:
      * from then on the guaranteed value is the old one and it has to be really tested again.
      * That is the only rule that can break this, and it is the same one as for block merging.
      */
-    int predGarantizado_ = -1;
+    int predGuaranteed_ = -1;
 
-    void abrirPredicado(bool condicion)
+    void openPredicate(bool condition)
     {
-        const int quiero = condicion ? 1 : 0;
-        if (predAbierto_ == quiero)
+        const int quiero = condition ? 1 : 0;
+        if (predOpen_ == quiero)
             return;  // already inside the right block: emit nothing
-        if (predAbierto_ < 0 && predGarantizado_ == quiero)
+        if (predOpen_ < 0 && predGuaranteed_ == quiero)
             return;  // the EXEC already guarantees it from outside: the inner `if` was redundant
         // The last thing written is the `}` of a block with this same condition and nothing came
-        // after it: the close is deleted and emission continues inside. See marcaCierre_.
-        if (reabrirCierre(quiero))
+        // after it: the close is deleted and emission continues inside. See markClose_.
+        if (reopenClose(quiero))
         {
-            predAbierto_ = quiero;  // now cerrarPredicado() closes the brace
+            predOpen_ = quiero;  // now closePredicate() closes the brace
             return;
         }
-        cerrarPredicado();
+        closePredicate();
         indent();
-        println("if ({}p0)", condicion ? "" : "!");
+        println("if ({}p0)", condition ? "" : "!");
         indent();
         out += "{\n";
         ++indentation;
-        predAbierto_ = quiero;
+        predOpen_ = quiero;
     }
 
-    void cerrarPredicado()
+    void closePredicate()
     {
-        if (predAbierto_ < 0)
+        if (predOpen_ < 0)
             return;
         --indentation;
-        const size_t marca = out.size();
+        const size_t mark = out.size();
         indent();
         out += "}\n";
         // Recorded in case the next instruction asks for the same predicate again.
-        marcaCierre_ = marca;
-        finCierre_ = out.size();
-        cierreCondicion_ = predAbierto_;
-        predAbierto_ = -1;
+        markClose_ = mark;
+        endClose_ = out.size();
+        closeCondition_ = predOpen_;
+        predOpen_ = -1;
     }
 
     /*
-     * Closes if the text emitted since `marca` writes the predicate. The text is checked rather
+     * Closes if the text emitted since `mark` writes the predicate. The text is checked rather
      * than the opcode on purpose: both places that write p0 (SetpEqPush..SetpGePush for vector
      * and SetpEq..SetpRstr for scalar) emit "p0 = ", and searching for it cannot go stale if a
      * third one is ever added.
      */
-    void cerrarSiEscribePredicado(size_t marca)
+    void closeSiWritesPredicate(size_t mark)
     {
-        if (out.find("p0 = ", marca) == std::string::npos)
+        if (out.find("p0 = ", mark) == std::string::npos)
             return;
-        cerrarPredicado();
+        closePredicate();
         // The predicate the EXEC guaranteed is no longer valid: it was just rewritten.
-        predGarantizado_ = -1;
+        predGuaranteed_ = -1;
         /*
          * And this close cannot be undone. It is the only case in which the text that changes p0
-         * was emitted before the `}`, so the `finCierre_ == out.size()` rule does not see it:
+         * was emitted before the `}`, so the `endClose_ == out.size()` rule does not see it:
          * merging here would put the next instruction in the block of the old p0.
          */
-        marcaCierre_ = finCierre_ = std::string::npos;
+        markClose_ = endClose_ = std::string::npos;
     }
 
     void printDstSwizzle(uint32_t dstSwizzle, bool operand);

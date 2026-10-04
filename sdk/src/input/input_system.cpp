@@ -38,9 +38,9 @@ REXCVAR_DEFINE_STRING(input_backend, "sdl", "Input", "Input backend: sdl, xinput
 #endif
 
 REXCVAR_DEFINE_BOOL(guide_button, false, "Input", "Enable guide button pass-through");
-REXCVAR_DEFINE_BOOL(input_vibracion, false, "Input",
-                    "Vibracion del mando (desactivada por defecto: a los mandos solo llega "
-                    "vibracion cero). true = la vibracion del juego");
+REXCVAR_DEFINE_BOOL(input_vibration, false, "Input",
+                    "Vibrance del controller (desactivada por default: a los mandos solo llega "
+                    "vibrance zero). true = la vibrance del game");
 namespace rex::input {
 
 namespace {
@@ -102,14 +102,14 @@ void InputSystem::RefreshDevices() {
    * anyone notices. The first call always enumerates.
    */
   {
-    const int64_t ahora = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    const int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
                               std::chrono::steady_clock::now().time_since_epoch())
                               .count();
-    const int64_t ultimo = ultimo_refresco_ns_.load(std::memory_order_relaxed);
-    if (ultimo != 0 && !devices_.empty() && ahora - ultimo < 50000000) {
+    const int64_t last = last_refresh_ns_.load(std::memory_order_relaxed);
+    if (last != 0 && !devices_.empty() && now - last < 50000000) {
       return;
     }
-    ultimo_refresco_ns_.store(ahora, std::memory_order_relaxed);
+    last_refresh_ns_.store(now, std::memory_order_relaxed);
   }
   std::vector<DeviceInfo> seen;
   std::vector<InputDriver*> owners;
@@ -300,11 +300,11 @@ X_RESULT InputSystem::SetState(uint32_t user_index, X_INPUT_VIBRATION* vibration
   bool any_synthetic = false;
   bool pad_rumbled = false;
   X_RESULT pad_error = X_ERROR_DEVICE_NOT_CONNECTED;
-  // input_vibracion = false: the game still sees its call serviced, but the controllers only
+  // input_vibration = false: the game still sees its call serviced, but the controllers only
   // receive zero vibration.
-  X_INPUT_VIBRATION sin_vibracion{};
-  if (!REXCVAR_GET(input_vibracion)) {
-    vibration = &sin_vibracion;
+  X_INPUT_VIBRATION without_vibrance{};
+  if (!REXCVAR_GET(input_vibration)) {
+    vibration = &without_vibrance;
   }
   for (DeviceId id : ids) {
     auto* driver = DriverForDevice(id);

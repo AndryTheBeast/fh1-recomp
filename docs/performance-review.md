@@ -76,7 +76,7 @@ Already cut from ~7 to ~3 ms today (shadow buffer alias, clear instead of transf
 carries real data (4x/1x aliasing, depth read as colour) and disappears with native render targets.
 
 ### 2.7 Audio (small job)
-XMA decoding runs on the calling thread (`[xma] reparto (modo 0)`). Fine on 8 Zen 4 cores; on the
+XMA decoding runs on the calling thread (`[xma] split (mode 0)`). Fine on 8 Zen 4 cores; on the
 Switch move it to a worker and keep the mixer thread light.
 
 ### 2.8 Texture uploads

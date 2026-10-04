@@ -5,39 +5,39 @@
 #include <mutex>
 
 namespace nfsmw::native {
-struct FotogramaVideo {
-  uint32_t objeto = 0;
-  uint32_t ancho = 0, alto = 0, variante = 0;
-  std::array<std::vector<uint8_t>, 3> planos;
-  std::array<VerticeVideo, 6> vertices{};
+struct FrameVideo {
+  uint32_t object = 0;
+  uint32_t width = 0, height = 0, variant = 0;
+  std::array<std::vector<uint8_t>, 3> planes;
+  std::array<VertexVideo, 6> vertices{};
   const Shader* vs = nullptr;
   const Shader* ps[2]{};
 };
 
 // One marker per guest Swap, even if that frame uses Xenos.
 // That way a race never consumes a cutscene's last frame by mistake.
-class ColaVideo {
+class QueueVideo {
  public:
-  bool Encolar(std::shared_ptr<const FotogramaVideo> fotograma) {
+  bool Enqueue(std::shared_ptr<const FrameVideo> frame) {
     std::lock_guard lock(mutex_);
-    if (cola_.size() >= 8) { cola_.clear(); return false; }
-    cola_.push_back(std::move(fotograma)); return true;
+    if (queue_.size() >= 8) { queue_.clear(); return false; }
+    queue_.push_back(std::move(frame)); return true;
   }
-  std::shared_ptr<const FotogramaVideo> Consumir() {
+  std::shared_ptr<const FrameVideo> Consume() {
     std::lock_guard lock(mutex_);
-    if (cola_.empty()) return {};
-    auto f = std::move(cola_.front()); cola_.pop_front(); return f;
+    if (queue_.empty()) return {};
+    auto f = std::move(queue_.front()); queue_.pop_front(); return f;
   }
-  void Vaciar() { std::lock_guard lock(mutex_); cola_.clear(); }
+  void Empty() { std::lock_guard lock(mutex_); queue_.clear(); }
  private:
   std::mutex mutex_;
-  std::deque<std::shared_ptr<const FotogramaVideo>> cola_;
+  std::deque<std::shared_ptr<const FrameVideo>> queue_;
 };
 
-void CapturarPlanosVideo(const uint8_t* base, uint32_t objeto, uint32_t datos);
-void AnotarDibujoVideo(const uint8_t* base, bool esVideo, uint32_t objeto);
-void InvalidarVideo();
-void AnotarSwapVideo();
-void DesactivarVideo(const char* motivo);
-std::shared_ptr<const FotogramaVideo> ConsumirVideo();
+void CapturePlanesVideo(const uint8_t* base, uint32_t object, uint32_t data);
+void NoteDrawVideo(const uint8_t* base, bool esVideo, uint32_t object);
+void InvalidateVideo();
+void NoteSwapVideo();
+void DisableVideo(const char* reason);
+std::shared_ptr<const FrameVideo> ConsumeVideo();
 }  // namespace nfsmw::native

@@ -11,7 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>  // present_esperar_adquisicion_en_cpu
+#include <chrono>  // present_wait_acquire_on_cpu
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
@@ -65,9 +65,9 @@ REXCVAR_DEFINE_BOOL(present_render_pass_clear, true, "UI/Presenter",
 // channel (GPFIFO), which stalls everything behind it until the compositor releases the buffer. With
 // this, acquisition uses a fence that is waited on the CPU, without the queue lock, and the paint
 // goes without a semaphore.
-REXCVAR_DEFINE_BOOL(present_esperar_adquisicion_en_cpu, false, "UI/Presenter",
-                    "Esperar la imagen de la cadena de intercambio en la CPU (fence) en vez de con un semaforo en el "
-                    "pintado, para no parar el canal de la GPU (prueba de FPS en la Switch)")
+REXCVAR_DEFINE_BOOL(present_wait_acquire_on_cpu, false, "UI/Presenter",
+                    "Wait la image de la cadena de swap_value en la CPU (fence) en time de con un semaphore en el "
+                    "painted, para no stop el canal de la GPU (test de FPS en la Switch)")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 #if REX_PLATFORM_SWITCH
@@ -98,7 +98,7 @@ REXCVAR_DEFINE_BOOL(present_esperar_adquisicion_en_cpu, false, "UI/Presenter",
  * With FIFO a frame lasts 33.3 or 50.0 or 66.7, there is nothing in between, and with the mean at
  * 38.8 we are just above the step: any variation jumps and shows as a stutter (8.20 % of frames
  * above 50 ms). Worse, the quantization feeds back into the producer: the thread stays 5.54-6.82 ms
- * inside presentation (measured as "RefreshGuestOutput despues") and is not recording meanwhile, so
+ * inside presentation (measured as "RefreshGuestOutput after") and is not recording meanwhile, so
  * the GPU runs dry. That is the gap.
  *
  * With interval 0 the producer does not block: the frame lasts as long as the work and the gap
@@ -120,22 +120,22 @@ REXCVAR_DEFINE_BOOL(vulkan_allow_present_mode_fifo_relaxed, true, "UI/Vulkan",
                     "Allow FIFO relaxed present mode");
 
 #if REX_PLATFORM_SWITCH
-#define REX_PRESENT_PERFIL_PINTADO_DEFAULT true
+#define REX_PRESENT_PROFILE_PAINTED_DEFAULT true
 #else
-#define REX_PRESENT_PERFIL_PINTADO_DEFAULT false
+#define REX_PRESENT_PROFILE_PAINTED_DEFAULT false
 #endif
 
 /*
  * Fine-grained breakdown of PaintAndPresent, piece by piece.
  *
  * What is known (measured in a race). The game profile measures the time the thread that feeds the
- * GPU spends inside Presenter::RefreshGuestOutput after the refresh call returns (the "despues"
+ * GPU spends inside Presenter::RefreshGuestOutput after the refresh call returns (the "after"
  * column): 5.13 / 6.80 / 7.59 / 13.15 / 12.61 / 12.19 / 12.93 / 13.92 / 9.31 / ... / 5.54 / 6.82 ms
  * in the reports over ten minutes of racing; mean ~8.6 ms. While the thread is there it is not
  * recording the next frame, and that is why the GPU sits idle for 7.81 ms (measured gap) even though
  * its work (32.62 ms real) does fit in 33.3.
  *
- * That "despues" is almost entirely PaintAndPresentImpl, and which piece takes the time was unknown.
+ * That "after" is almost entirely PaintAndPresentImpl, and which piece takes the time was unknown.
  * The only thing ruled out is acquisition: the anticipated one succeeds 5999 times out of 6000, so
  * vkAcquireNextImageKHR with a wait is practically never called, and even so the frame did not
  * improve (38.78 -> 39.08) and the gap grew (6.73 -> 7.81).
@@ -160,23 +160,23 @@ REXCVAR_DEFINE_BOOL(vulkan_allow_present_mode_fifo_relaxed, true, "UI/Vulkan",
  * once. When on it is 13 steady_clock reads per frame; on Horizon that is the system counter
  * (armGetSystemTick, no syscall): on the order of 1 us out of 39,000.
  */
-REXCVAR_DEFINE_BOOL(present_perfil_pintado, REX_PRESENT_PERFIL_PINTADO_DEFAULT, "UI/Presenter",
-                    "Medir trozo a trozo el tiempo que el hilo que pinta pasa dentro de "
-                    "PaintAndPresent (espera al envio antiguo, reset del pool, adquisicion, buzon, "
-                    "grabacion, candados de la cola, vkQueueSubmit y vkQueuePresentKHR) y volcarlo "
-                    "cada 600 fotogramas. Apagado no cuesta nada")
+REXCVAR_DEFINE_BOOL(present_paint_profile, REX_PRESENT_PROFILE_PAINTED_DEFAULT, "UI/Presenter",
+                    "Measure chunk a chunk el time que el thread_value que pinta pasa inside de "
+                    "PaintAndPresent (wait al submission old, reset del pool, adquisicion, mailbox, "
+                    "recording, candados de la queue, vkQueueSubmit y vkQueuePresentKHR) y volcarlo "
+                    "every 600 frames. Off no cuesta nothing")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 /*
- * Dropping the empty submission of every frame (present_refresco_sellado_perezoso).
+ * Dropping the empty submission of every frame (present_lazy_refresh_seal).
  *
  * What there was. At the end of every RefreshGuestOutputImpl a vkQueueSubmit without a single command
  * (0 command buffers, only a fence) sealed the refresh work: that way it was known at which point of
  * the queue the game's output image had been left. That is a whole submission per frame, on a single
  * queue (Maxwell: NVK only exposes one graphics queue), and on this machine every submission costs:
  * splitting the scene into two submissions made the gap 3.61 ms worse. On top of that it paid for the
- * queue lock (kTrozoRefrescoCandado) and a vkResetFences per frame inside
- * AcquireFenceToAdvanceSubmission, all of it inside the "despues" the game profile measures, with
+ * queue lock (kChunkRefreshLock) and a vkResetFences per frame inside
+ * AcquireFenceToAdvanceSubmission, all of it inside the "after" the game profile measures, with
  * the ring thread stopped instead of recording the next frame.
  *
  * What it was for. A single thing: not destroying the guest image while the GPU is still using it.
@@ -198,10 +198,10 @@ REXCVAR_DEFINE_BOOL(present_perfil_pintado, REX_PRESENT_PERFIL_PINTADO_DEFAULT, 
 // Off as a precaution. A build that broke the image also carried this change; the culprit identified
 // was the sky deferral, but this one touches output synchronization, so it was turned off to return
 // to known ground.
-REXCVAR_DEFINE_BOOL(present_refresco_sellado_perezoso, false, "UI/Presenter",
-                    "Quitar el vkQueueSubmit vacio que se hacia en cada refresco de la salida del "
-                    "juego y sellar solo cuando hay que destruir esa imagen (cambio de tamano o "
-                    "apagado). Apagado vuelve al envio por fotograma")
+REXCVAR_DEFINE_BOOL(present_lazy_refresh_seal, false, "UI/Presenter",
+                    "Remove el vkQueueSubmit empty que se hacia en every refresh de la output del "
+                    "game y seal solo cuando there_is que destroy esa image (change de size o "
+                    "off). Off vuelve al submission por frame")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 namespace rex {
@@ -269,74 +269,74 @@ namespace shaders {
 
 namespace {
 
-// Fine-grained breakdown of PaintAndPresentImpl. See the present_perfil_pintado comment.
+// Fine-grained breakdown of PaintAndPresentImpl. See the present_paint_profile comment.
 // The pieces are in execution order and chained, so their sum is the total.
-enum TrozoPintado : size_t {
-  kTrozoEsperaEnvioAntiguo,  // AwaitSubmissionCompletion(actual - kSubmissionCount)
-  kTrozoResetPool,           // vkResetCommandPool + vkBeginCommandBuffer
-  kTrozoAdquirir,            // the image: the anticipated one (free) or vkAcquireNextImageKHR with a wait
-  kTrozoBuzon,               // ConsumeGuestOutput: the lock of the game output mailbox
+enum ChunkPainted : size_t {
+  kChunkWaitSubmissionOld,  // AwaitSubmissionCompletion(actual - kSubmissionCount)
+  kChunkResetPool,           // vkResetCommandPool + vkBeginCommandBuffer
+  kChunkAcquire,            // the image: the anticipated one (free) or vkAcquireNextImageKHR with a wait
+  kChunkMailbox,               // ConsumeGuestOutput: the lock of the game output mailbox
   /*
-   * `grabar` takes 12.24 ms on average on the ring thread, which has CPU to spare, with peaks
+   * `record` takes 12.24 ms on average on the ring thread, which has CPU to spare, with peaks
    * of 78.67. It is about twenty Vulkan calls: they should take microseconds. Since it is not
    * preemption, there is a wait in there, and to find which one the stretch is split into four.
    */
-  kTrozoGrabarDescriptor,    // the vkUpdateDescriptorSets of the game image
-  kTrozoGrabarIntermedias,   // crear/recrear imagenes intermedias y sus framebuffers
+  kChunkRecordDescriptor,    // the vkUpdateDescriptorSets of the game image
+  kChunkRecordIntermediate,   // create/recrear images intermediate y sus framebuffers
   /*
-   * And `efectos` takes all of `grabar` (mean 5.9-38.5 ms, peaks of 103). It is split in two:
+   * And `effects` takes all of `record` (mean 5.9-38.5 ms, peaks of 103). It is split in two:
    * the composition pipeline (check / wait / destroy / create) and the actual recording. The
    * first should be zero except when the chain format changes.
    */
-  kTrozoGrabarTuberia,       // the final effect pipeline: wait + vkCreateGraphicsPipelines
-  kTrozoGrabarEfectos,       // the effect passes and the composition quad
-  kTrozoGrabar,              // the rest until vkEndCommandBuffer
-  kTrozoPrepararEnvio,       // closing the UI setup buffer and AcquireFenceToAdvance...
-  kTrozoCandadoEnvio,        // AcquireQueue before the paint vkQueueSubmit
-  kTrozoEnviar,              // the paint vkQueueSubmit calls and closing their fences
-  kTrozoCandadoPresentar,    // AcquireQueue before vkQueuePresentKHR
-  kTrozoPresentar,           // vkQueuePresentKHR
-  kTrozoAnticipar,           // vkAcquireNextImageKHR with timeout 0 for the next frame
-  kTrozoCierre,              // the rest until the function returns
-  kTrozosDePintar,           // up to here, and only up to here, they add up to the PaintAndPresent total
+  kChunkRecordPipeline,       // the final effect pipeline: wait + vkCreateGraphicsPipelines
+  kChunkRecordEffects,       // the effect passes and the composition quad
+  kChunkRecord,              // the rest until vkEndCommandBuffer
+  kChunkPrepareSubmission,       // closing the UI setup buffer and AcquireFenceToAdvance...
+  kChunkLockSubmission,        // AcquireQueue before the paint vkQueueSubmit
+  kChunkSend,              // the paint vkQueueSubmit calls and closing their fences
+  kChunkLockPresent,    // AcquireQueue before vkQueuePresentKHR
+  kChunkPresent,           // vkQueuePresentKHR
+  kChunkAnticipate,           // vkAcquireNextImageKHR with timeout 0 for the next frame
+  kChunkClose,              // the rest until the function returns
+  kChunksOfPaint,           // up to here, and only up to here, they add up to the PaintAndPresent total
 
   // And these two belong to RefreshGuestOutputImpl, which runs right before on the same thread and
-  // also falls inside the "despues" the game profile measures. Nothing else measures them.
-  // With present_refresco_sellado_perezoso on, these two must read 0.00 in the report (the empty
+  // also falls inside the "after" the game profile measures. Nothing else measures them.
+  // With present_lazy_refresh_seal on, these two must read 0.00 in the report (the empty
   // submission is no longer made per frame, only when the image is destroyed). If they show a value,
   // lazy sealing is off or something is dropping images every frame.
-  kTrozoRefrescoCandado = kTrozosDePintar,  // AcquireQueue for the refresh fence
-  kTrozoRefrescoEnviar,                     // empty vkQueueSubmit that signals that fence
-  kTrozosPintado,
+  kChunkRefreshLock = kChunksOfPaint,  // AcquireQueue for the refresh fence
+  kChunkRefreshSend,                     // empty vkQueueSubmit that signals that fence
+  kChunksPainted,
 };
 
 // Only the painting thread touches these, and there are never two at once (paint_mode_mutex_
 // guarantees it), so no atomics or locks are needed.
-uint64_t g_pintado_ns[kTrozosPintado] = {};
-uint64_t g_pintado_ns_peor[kTrozosPintado] = {};
-uint64_t g_pintado_fotogramas = 0;
+uint64_t g_painted_ns[kChunksPainted] = {};
+uint64_t g_painted_ns_worst[kChunksPainted] = {};
+uint64_t g_painted_frames = 0;
 /*
  * Times the final effect pipeline was created in these 600 frames. It must be 1 in the first
  * report and 0 in all the others. If it says 600, the swapchain_format bug is back.
  */
-uint64_t g_pintado_tuberias_rehechas = 0;
+uint64_t g_painted_pipelines_redone = 0;
 
 // The switch is read only once, on the first painted frame (with the configuration already
 // loaded). When off, not a single clock read.
-bool PerfilPintadoActivo() {
-  static const bool activo = REXCVAR_GET(present_perfil_pintado);
-  return activo;
+bool ProfilePaintedActive() {
+  static const bool active = REXCVAR_GET(present_paint_profile);
+  return active;
 }
 
 // Like the one above, read only once (on the first refresh, with the configuration already loaded)
-// so the hot path queries nothing. See present_refresco_sellado_perezoso.
-bool SelladoPerezosoActivo() {
-  static const bool activo = REXCVAR_GET(present_refresco_sellado_perezoso);
-  return activo;
+// so the hot path queries nothing. See present_lazy_refresh_seal.
+bool SealedLazyActive() {
+  static const bool active = REXCVAR_GET(present_lazy_refresh_seal);
+  return active;
 }
 
-uint64_t PintadoAhora() {
-  if (!PerfilPintadoActivo()) {
+uint64_t PaintedNow() {
+  if (!ProfilePaintedActive()) {
     return 0;
   }
   return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -345,61 +345,61 @@ uint64_t PintadoAhora() {
 }
 
 // Closes the piece that ends here and returns the mark the next one starts with.
-uint64_t PintadoTramo(size_t trozo, uint64_t desde) {
-  if (!PerfilPintadoActivo()) {
+uint64_t PaintedRange(size_t chunk, uint64_t since) {
+  if (!ProfilePaintedActive()) {
     return 0;
   }
-  const uint64_t ahora = PintadoAhora();
-  const uint64_t ns = ahora > desde ? ahora - desde : 0;
-  g_pintado_ns[trozo] += ns;
-  g_pintado_ns_peor[trozo] = std::max(g_pintado_ns_peor[trozo], ns);
-  return ahora;
+  const uint64_t now = PaintedNow();
+  const uint64_t ns = now > since ? now - since : 0;
+  g_painted_ns[chunk] += ns;
+  g_painted_ns_worst[chunk] = std::max(g_painted_ns_worst[chunk], ns);
+  return now;
 }
 
-void PintadoVolcarSiToca(uint32_t envios_en_vuelo) {
-  if (!PerfilPintadoActivo() || ++g_pintado_fotogramas % 600 != 0) {
+void PaintedDumpSiDue(uint32_t submissions_in_flight) {
+  if (!ProfilePaintedActive() || ++g_painted_frames % 600 != 0) {
     return;
   }
-  uint64_t suma = 0;
-  for (size_t i = 0; i < kTrozosDePintar; ++i) {
-    suma += g_pintado_ns[i];
+  uint64_t sum = 0;
+  for (size_t i = 0; i < kChunksOfPaint; ++i) {
+    sum += g_painted_ns[i];
   }
   const auto media = [](uint64_t ns) { return double(ns) / 1e6 / 600.0; };
-  const auto peor = [](uint64_t ns) { return double(ns) / 1e6; };
+  const auto worst = [](uint64_t ns) { return double(ns) / 1e6; };
   REXLOG_INFO(
-      "[presentador] reparto de PaintAndPresent, 600 fotogramas (media/peor en ms): "
-      "espera al envio de hace {} {:.2f}/{:.2f} | reset del pool {:.2f}/{:.2f} | "
-      "adquirir {:.2f}/{:.2f} | buzon {:.2f}/{:.2f} | descriptor {:.2f}/{:.2f} | intermedias {:.2f}/{:.2f} | tuberia {:.2f}/{:.2f} (rehecha {} veces) | efectos {:.2f}/{:.2f} | grabar {:.2f}/{:.2f} | "
-      "preparar el envio {:.2f}/{:.2f} | candado de la cola {:.2f}/{:.2f} | "
-      "vkQueueSubmit {:.2f}/{:.2f} | candado de presentar {:.2f}/{:.2f} | "
-      "vkQueuePresentKHR {:.2f}/{:.2f} | anticipar {:.2f}/{:.2f} | cierre {:.2f}/{:.2f} "
-      "|| TOTAL {:.2f} || y antes, en el refresco: candado {:.2f}/{:.2f}, "
-      "vkQueueSubmit vacio {:.2f}/{:.2f}",
-      envios_en_vuelo, media(g_pintado_ns[kTrozoEsperaEnvioAntiguo]),
-      peor(g_pintado_ns_peor[kTrozoEsperaEnvioAntiguo]), media(g_pintado_ns[kTrozoResetPool]),
-      peor(g_pintado_ns_peor[kTrozoResetPool]), media(g_pintado_ns[kTrozoAdquirir]),
-      peor(g_pintado_ns_peor[kTrozoAdquirir]), media(g_pintado_ns[kTrozoBuzon]),
-      peor(g_pintado_ns_peor[kTrozoBuzon]), media(g_pintado_ns[kTrozoGrabarDescriptor]),
-      peor(g_pintado_ns_peor[kTrozoGrabarDescriptor]), media(g_pintado_ns[kTrozoGrabarIntermedias]),
-      peor(g_pintado_ns_peor[kTrozoGrabarIntermedias]), media(g_pintado_ns[kTrozoGrabarTuberia]),
-      peor(g_pintado_ns_peor[kTrozoGrabarTuberia]), g_pintado_tuberias_rehechas,
-      media(g_pintado_ns[kTrozoGrabarEfectos]),
-      peor(g_pintado_ns_peor[kTrozoGrabarEfectos]), media(g_pintado_ns[kTrozoGrabar]),
-      peor(g_pintado_ns_peor[kTrozoGrabar]), media(g_pintado_ns[kTrozoPrepararEnvio]),
-      peor(g_pintado_ns_peor[kTrozoPrepararEnvio]), media(g_pintado_ns[kTrozoCandadoEnvio]),
-      peor(g_pintado_ns_peor[kTrozoCandadoEnvio]), media(g_pintado_ns[kTrozoEnviar]),
-      peor(g_pintado_ns_peor[kTrozoEnviar]), media(g_pintado_ns[kTrozoCandadoPresentar]),
-      peor(g_pintado_ns_peor[kTrozoCandadoPresentar]), media(g_pintado_ns[kTrozoPresentar]),
-      peor(g_pintado_ns_peor[kTrozoPresentar]), media(g_pintado_ns[kTrozoAnticipar]),
-      peor(g_pintado_ns_peor[kTrozoAnticipar]), media(g_pintado_ns[kTrozoCierre]),
-      peor(g_pintado_ns_peor[kTrozoCierre]), media(suma),
-      media(g_pintado_ns[kTrozoRefrescoCandado]), peor(g_pintado_ns_peor[kTrozoRefrescoCandado]),
-      media(g_pintado_ns[kTrozoRefrescoEnviar]), peor(g_pintado_ns_peor[kTrozoRefrescoEnviar]));
-  for (size_t i = 0; i < kTrozosPintado; ++i) {
-    g_pintado_ns[i] = 0;
-    g_pintado_ns_peor[i] = 0;
+      "[presenter] split de PaintAndPresent, 600 frames (media/worst en ms): "
+      "wait al submission de does {} {:.2f}/{:.2f} | reset del pool {:.2f}/{:.2f} | "
+      "acquire {:.2f}/{:.2f} | mailbox {:.2f}/{:.2f} | descriptor {:.2f}/{:.2f} | intermediate {:.2f}/{:.2f} | pipeline {:.2f}/{:.2f} (rehecha {} times) | effects {:.2f}/{:.2f} | record {:.2f}/{:.2f} | "
+      "prepare el submission {:.2f}/{:.2f} | lock de la queue {:.2f}/{:.2f} | "
+      "vkQueueSubmit {:.2f}/{:.2f} | lock de present {:.2f}/{:.2f} | "
+      "vkQueuePresentKHR {:.2f}/{:.2f} | anticipate {:.2f}/{:.2f} | close {:.2f}/{:.2f} "
+      "|| TOTAL {:.2f} || y before, en el refresh: lock {:.2f}/{:.2f}, "
+      "vkQueueSubmit empty {:.2f}/{:.2f}",
+      submissions_in_flight, media(g_painted_ns[kChunkWaitSubmissionOld]),
+      worst(g_painted_ns_worst[kChunkWaitSubmissionOld]), media(g_painted_ns[kChunkResetPool]),
+      worst(g_painted_ns_worst[kChunkResetPool]), media(g_painted_ns[kChunkAcquire]),
+      worst(g_painted_ns_worst[kChunkAcquire]), media(g_painted_ns[kChunkMailbox]),
+      worst(g_painted_ns_worst[kChunkMailbox]), media(g_painted_ns[kChunkRecordDescriptor]),
+      worst(g_painted_ns_worst[kChunkRecordDescriptor]), media(g_painted_ns[kChunkRecordIntermediate]),
+      worst(g_painted_ns_worst[kChunkRecordIntermediate]), media(g_painted_ns[kChunkRecordPipeline]),
+      worst(g_painted_ns_worst[kChunkRecordPipeline]), g_painted_pipelines_redone,
+      media(g_painted_ns[kChunkRecordEffects]),
+      worst(g_painted_ns_worst[kChunkRecordEffects]), media(g_painted_ns[kChunkRecord]),
+      worst(g_painted_ns_worst[kChunkRecord]), media(g_painted_ns[kChunkPrepareSubmission]),
+      worst(g_painted_ns_worst[kChunkPrepareSubmission]), media(g_painted_ns[kChunkLockSubmission]),
+      worst(g_painted_ns_worst[kChunkLockSubmission]), media(g_painted_ns[kChunkSend]),
+      worst(g_painted_ns_worst[kChunkSend]), media(g_painted_ns[kChunkLockPresent]),
+      worst(g_painted_ns_worst[kChunkLockPresent]), media(g_painted_ns[kChunkPresent]),
+      worst(g_painted_ns_worst[kChunkPresent]), media(g_painted_ns[kChunkAnticipate]),
+      worst(g_painted_ns_worst[kChunkAnticipate]), media(g_painted_ns[kChunkClose]),
+      worst(g_painted_ns_worst[kChunkClose]), media(sum),
+      media(g_painted_ns[kChunkRefreshLock]), worst(g_painted_ns_worst[kChunkRefreshLock]),
+      media(g_painted_ns[kChunkRefreshSend]), worst(g_painted_ns_worst[kChunkRefreshSend]));
+  for (size_t i = 0; i < kChunksPainted; ++i) {
+    g_painted_ns[i] = 0;
+    g_painted_ns_worst[i] = 0;
   }
-  g_pintado_tuberias_rehechas = 0;
+  g_painted_pipelines_redone = 0;
 }
 
 }  // namespace
@@ -445,13 +445,13 @@ bool VulkanPresenter::PaintContext::Submission::Initialize() {
         "semaphore");
     return false;
   }
-  // Acquire fence for present_esperar_adquisicion_en_cpu (unsignaled).
+  // Acquire fence for present_wait_acquire_on_cpu (unsignaled).
   VkFenceCreateInfo fence_create_info;
   fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
   fence_create_info.pNext = nullptr;
   fence_create_info.flags = 0;
   if (dfn.vkCreateFence(device, &fence_create_info, nullptr, &acquire_fence_) != VK_SUCCESS) {
-    REXLOG_ERROR("VulkanPresenter: no se pudo crear la fence de adquisicion");
+    REXLOG_ERROR("VulkanPresenter: no se pudo create la fence de adquisicion");
     return false;
   }
 
@@ -517,7 +517,7 @@ VulkanPresenter::~VulkanPresenter() {
    * (they are members of this class and go away right after this body). With the switch off this does
    * nothing: there is nothing unsealed.
    */
-  SellarRefrescosYEsperar();
+  SealRefreshesYWait();
   guest_output_image_refresher_submission_tracker_.Shutdown();
 #if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
   DestroyTemporalUpscalerContext();
@@ -1305,13 +1305,13 @@ VulkanPresenter::ConnectOrReconnectPaintingToSurfaceFromUIThread(Surface& new_su
   {
     VkSemaphoreCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    for (VkSemaphore& sem : paint_context_.semaforos_anticipados) {
+    for (VkSemaphore& sem : paint_context_.semaphores_early) {
       if (sem == VK_NULL_HANDLE && dfn.vkCreateSemaphore(device, &info, nullptr, &sem) != VK_SUCCESS) {
         sem = VK_NULL_HANDLE;  // without it, there is simply no anticipation
       }
     }
-    paint_context_.anticipada_valida = false;
-    paint_context_.anticipado_siguiente = 0;
+    paint_context_.early_valid = false;
+    paint_context_.early_next = 0;
   }
 
   // Get the swapchain images.
@@ -1397,8 +1397,8 @@ void VulkanPresenter::DisconnectPaintingFromSurfaceFromUIThreadImpl() {
   paint_context_.DestroySwapchainAndVulkanSurface();
 }
 
-void VulkanPresenter::SellarRefrescosYEsperar() {
-  if (!refrescos_sin_sellar_.exchange(false, std::memory_order_relaxed)) {
+void VulkanPresenter::SealRefreshesYWait() {
+  if (!refreshes_without_seal_.exchange(false, std::memory_order_relaxed)) {
     // Nothing is unsealed: either there has been no refresh since the last seal, or lazy sealing is
     // off and every refresh already carried its own fence.
     return;
@@ -1413,14 +1413,14 @@ void VulkanPresenter::SellarRefrescosYEsperar() {
    * the painting thread for no reason.
    */
   const VulkanDevice::Functions& dfn = vulkan_device_->functions();
-  uint64_t perfil = PintadoAhora();
+  uint64_t profile = PaintedNow();
   {
     VulkanSubmissionTracker::FenceAcquisition fence_acqusition(
         guest_output_image_refresher_submission_tracker_.AcquireFenceToAdvanceSubmission());
     {
       const VulkanDevice::Queue::Acquisition queue_acquisition =
           vulkan_device_->AcquireQueue(vulkan_device_->queue_family_graphics_compute(), 0);
-      perfil = PintadoTramo(kTrozoRefrescoCandado, perfil);
+      profile = PaintedRange(kChunkRefreshLock, profile);
       if (dfn.vkQueueSubmit(queue_acquisition.queue(), 0, nullptr, fence_acqusition.fence()) !=
           VK_SUCCESS) {
         // Same as before: the refresh commands will still run, but this fence stays
@@ -1430,7 +1430,7 @@ void VulkanPresenter::SellarRefrescosYEsperar() {
         fence_acqusition.SubmissionSucceededSignalFailed();
       }
     }
-    PintadoTramo(kTrozoRefrescoEnviar, perfil);
+    PaintedRange(kChunkRefreshSend, profile);
   }
   // Now outside the fence scope, which on closing left it in the tracker's pending list with this
   // submission's index: AwaitAll waits for exactly that one.
@@ -1453,14 +1453,14 @@ bool VulkanPresenter::RefreshGuestOutputImpl(
   GuestOutputImageInstance& image_instance = guest_output_images_[mailbox_index];
   if (image_instance.image && (image_instance.image->extent().width != frontbuffer_width ||
                                image_instance.image->extent().height != frontbuffer_height)) {
-    if (SelladoPerezosoActivo()) {
+    if (SealedLazyActive()) {
       /*
        * With lazy sealing, this is where the empty submission is paid: only when the frontbuffer
        * changes size and the image has to be dropped. It seals everything submitted to the queue up
        * to this point, which includes the refreshes of this image (the queue is unique), so it covers
        * the same as the per-image fence and more.
        */
-      SellarRefrescosYEsperar();
+      SealRefreshesYWait();
     } else {
       guest_output_image_refresher_submission_tracker_.AwaitSubmissionCompletion(
           image_instance.last_refresher_submission);
@@ -1487,15 +1487,15 @@ bool VulkanPresenter::RefreshGuestOutputImpl(
   // some commands referencing the image. It's better to put an excessive
   // signal and wait slightly longer, for nothing important, while shutting down
   // than to destroy the image while it's still in use.
-  if (SelladoPerezosoActivo()) {
+  if (SealedLazyActive()) {
     /*
      * Nothing is submitted per frame; it only records that there are unsealed refresh commands. It
      * is recorded also when the refresh returned false, which is exactly the case in the comment
      * above: even if it failed, it may have submitted commands that touch the image. The real seal
-     * (the same empty submission, plus its wait) is in SellarRefrescosYEsperar, which is called in
+     * (the same empty submission, plus its wait) is in SealRefreshesYWait, which is called in
      * the only two places where the image can be destroyed.
      */
-    refrescos_sin_sellar_.store(true, std::memory_order_relaxed);
+    refreshes_without_seal_.store(true, std::memory_order_relaxed);
   } else {
     image_instance.last_refresher_submission =
         guest_output_image_refresher_submission_tracker_.GetCurrentSubmission();
@@ -1505,20 +1505,20 @@ bool VulkanPresenter::RefreshGuestOutputImpl(
     //  include in the first synchronization scope all commands that occur earlier
     //  in submission order."
     const VulkanDevice::Functions& dfn = vulkan_device_->functions();
-    // This empty submit comes right after the refresh call and inside the "despues" the game
-    // profile measures, and nothing else measured it. See the present_perfil_pintado comment; off,
+    // This empty submit comes right after the refresh call and inside the "after" the game
+    // profile measures, and nothing else measured it. See the present_paint_profile comment; off,
     // it costs nothing.
-    uint64_t perfil = PintadoAhora();
+    uint64_t profile = PaintedNow();
     VulkanSubmissionTracker::FenceAcquisition fence_acqusition(
         guest_output_image_refresher_submission_tracker_.AcquireFenceToAdvanceSubmission());
     const VulkanDevice::Queue::Acquisition queue_acquisition =
         vulkan_device_->AcquireQueue(vulkan_device_->queue_family_graphics_compute(), 0);
-    perfil = PintadoTramo(kTrozoRefrescoCandado, perfil);
+    profile = PaintedRange(kChunkRefreshLock, profile);
     if (dfn.vkQueueSubmit(queue_acquisition.queue(), 0, nullptr, fence_acqusition.fence()) !=
         VK_SUCCESS) {
       fence_acqusition.SubmissionSucceededSignalFailed();
     }
-    PintadoTramo(kTrozoRefrescoEnviar, perfil);
+    PaintedRange(kChunkRefreshSend, profile);
   }
 
   return refresher_succeeded;
@@ -1855,19 +1855,19 @@ VkSwapchainKHR VulkanPresenter::PaintContext::CreateSwapchainForVulkanSurface(
   }
   // The mode with its name. The whole frame pacing depends on it, and a bare number in the log
   // (2 = FIFO) cannot be understood at a glance.
-  const char* nombre_modo = "desconocido";
+  const char* name_mode = "unknown";
   switch (swapchain_create_info.presentMode) {
     case VK_PRESENT_MODE_IMMEDIATE_KHR:
-      nombre_modo = "IMMEDIATE (intervalo 0)";
+      name_mode = "IMMEDIATE (interval 0)";
       break;
     case VK_PRESENT_MODE_MAILBOX_KHR:
-      nombre_modo = "MAILBOX";
+      name_mode = "MAILBOX";
       break;
     case VK_PRESENT_MODE_FIFO_KHR:
-      nombre_modo = "FIFO (vsync)";
+      name_mode = "FIFO (vsync)";
       break;
     case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
-      nombre_modo = "FIFO_RELAXED";
+      name_mode = "FIFO_RELAXED";
       break;
     default:
       break;
@@ -1877,7 +1877,7 @@ VkSwapchainKHR VulkanPresenter::PaintContext::CreateSwapchainForVulkanSurface(
       "{}, presentation mode {} ({}), {} images requested",
       swapchain_create_info.imageExtent.width, swapchain_create_info.imageExtent.height,
       uint32_t(swapchain_create_info.imageFormat), uint32_t(swapchain_create_info.imageColorSpace),
-      uint32_t(swapchain_create_info.presentMode), nombre_modo,
+      uint32_t(swapchain_create_info.presentMode), name_mode,
       swapchain_create_info.minImageCount);
 
   present_queue_family_out = queue_family_index_present;
@@ -1910,13 +1910,13 @@ VkSwapchainKHR VulkanPresenter::PaintContext::PrepareForSwapchainRetirement() {
 
 void VulkanPresenter::PaintContext::DestroySwapchainAndVulkanSurface() {
   // The anticipated acquisition semaphores. Nothing is in flight here anymore.
-  for (VkSemaphore& sem : semaforos_anticipados) {
+  for (VkSemaphore& sem : semaphores_early) {
     if (sem != VK_NULL_HANDLE) {
       vulkan_device->functions().vkDestroySemaphore(vulkan_device->device(), sem, nullptr);
       sem = VK_NULL_HANDLE;
     }
   }
-  anticipada_valida = false;
+  early_valid = false;
   VkSwapchainKHR old_swapchain = PrepareForSwapchainRetirement();
   if (old_swapchain != VK_NULL_HANDLE) {
     vulkan_device->functions().vkDestroySwapchainKHR(vulkan_device->device(), old_swapchain,
@@ -2001,7 +2001,7 @@ bool VulkanPresenter::GuestOutputImage::Initialize() {
 
 Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_drawers) {
   // First mark of the fine-grained breakdown. With the switch off this is just a bool.
-  uint64_t perfil = PintadoAhora();
+  uint64_t profile = PaintedNow();
 
   // Begin the submission in place of the one not currently potentially used on
   // the GPU.
@@ -2012,7 +2012,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     paint_context_.submission_tracker.AwaitSubmissionCompletion(current_paint_submission_index -
                                                                 paint_submission_count);
   }
-  perfil = PintadoTramo(kTrozoEsperaEnvioAntiguo, perfil);
+  profile = PaintedRange(kChunkWaitSubmissionOld, profile);
   const PaintContext::Submission& paint_submission =
       *paint_context_.submissions[current_paint_submission_index % paint_submission_count];
 
@@ -2041,35 +2041,35 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
   }
   // vkResetCommandPool resets from both initial and recording states, still
   // safe to return early from this function in case of an error.
-  perfil = PintadoTramo(kTrozoResetPool, perfil);
+  profile = PaintedRange(kChunkResetPool, profile);
 
   VkSemaphore acquire_semaphore = paint_submission.acquire_semaphore();
 #if REX_PLATFORM_SWITCH
-  const bool adquisicion_en_cpu = REXCVAR_GET(present_esperar_adquisicion_en_cpu);
+  const bool acquisition_in_cpu = REXCVAR_GET(present_wait_acquire_on_cpu);
 #else
-  const bool adquisicion_en_cpu = false;
+  const bool acquisition_in_cpu = false;
 #endif
   const VkFence acquire_fence = paint_submission.acquire_fence();
   {
-    static std::atomic<bool> anotado{false};
-    if (!anotado.exchange(true)) {  // every test switch logs its value
-      REXLOG_INFO("[presentador] adquisicion esperada en la CPU (present_esperar_adquisicion_en_cpu) = {}",
-                  adquisicion_en_cpu ? "SI" : "no");
+    static std::atomic<bool> noted{false};
+    if (!noted.exchange(true)) {  // every test switch logs its value
+      REXLOG_INFO("[presenter] adquisicion expected en la CPU (present_wait_acquire_on_cpu) = {}",
+                  acquisition_in_cpu ? "SI" : "no");
     }
   }
   uint32_t swapchain_image_index;
   VkResult acquire_result = VK_SUCCESS;
-  if (paint_context_.anticipada_valida && !adquisicion_en_cpu) {
+  if (paint_context_.early_valid && !acquisition_in_cpu) {
     // It was already requested when presenting the previous frame and it was ready. Zero wait.
-    swapchain_image_index = paint_context_.imagen_anticipada;
-    acquire_semaphore = paint_context_.semaforo_anticipado;
-    paint_context_.anticipada_valida = false;
-    ++paint_context_.anticipadas_aciertos;
+    swapchain_image_index = paint_context_.image_early;
+    acquire_semaphore = paint_context_.semaphore_early;
+    paint_context_.early_valid = false;
+    ++paint_context_.early_hits;
   } else {
-    ++paint_context_.anticipadas_fallos;
+    ++paint_context_.early_misses;
     acquire_result = dfn.vkAcquireNextImageKHR(
-        device, paint_context_.swapchain, UINT64_MAX, adquisicion_en_cpu ? VK_NULL_HANDLE : acquire_semaphore,
-        adquisicion_en_cpu ? acquire_fence : VK_NULL_HANDLE, &swapchain_image_index);
+        device, paint_context_.swapchain, UINT64_MAX, acquisition_in_cpu ? VK_NULL_HANDLE : acquire_semaphore,
+        acquisition_in_cpu ? acquire_fence : VK_NULL_HANDLE, &swapchain_image_index);
   }
   switch (acquire_result) {
     case VK_SUCCESS:
@@ -2093,24 +2093,24 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
       REXLOG_ERROR("VulkanPresenter: Failed to acquire the swapchain image");
       return PaintResult::kNotPresented;
   }
-  if (adquisicion_en_cpu) {
+  if (acquisition_in_cpu) {
     // Here, on the presenter thread and without the queue lock, instead of inside the GPU channel.
-    const auto antes = std::chrono::steady_clock::now();
+    const auto before = std::chrono::steady_clock::now();
     dfn.vkWaitForFences(device, 1, &acquire_fence, VK_TRUE, UINT64_MAX);
     dfn.vkResetFences(device, 1, &acquire_fence);
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - antes).count();
-    static uint64_t esperas = 0;
-    static double ms_total = 0.0, ms_maximo = 0.0;
-    ++esperas;
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - before).count();
+    static uint64_t waits = 0;
+    static double ms_total = 0.0, ms_maximum = 0.0;
+    ++waits;
     ms_total += ms;
-    ms_maximo = std::max(ms_maximo, ms);
-    if (esperas % 600 == 0) {
-      REXLOG_INFO("[presentador] espera de adquisicion en la CPU: {} esperas, media {:.2f} ms, maxima {:.2f} ms",
-                  esperas, ms_total / double(esperas), ms_maximo);
-      ms_maximo = 0.0;
+    ms_maximum = std::max(ms_maximum, ms);
+    if (waits % 600 == 0) {
+      REXLOG_INFO("[presenter] wait de adquisicion en la CPU: {} waits, media {:.2f} ms, maxima {:.2f} ms",
+                  waits, ms_total / double(waits), ms_maximum);
+      ms_maximum = 0.0;
     }
   }
-  perfil = PintadoTramo(kTrozoAdquirir, perfil);
+  profile = PaintedRange(kChunkAcquire, profile);
 
   // Non-zero extents needed for both the viewport (width must not be zero) and
   // the guest output rectangle.
@@ -2161,7 +2161,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     // the new reference or is exclusively owned by main target painting (and
     // multiple threads can't paint the main target at the same time).
   }
-  perfil = PintadoTramo(kTrozoBuzon, perfil);
+  profile = PaintedRange(kChunkMailbox, profile);
 
   if (guest_output_image) {
     VkExtent2D max_framebuffer_extent =
@@ -2235,7 +2235,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
         guest_output_image_descriptor_write.pTexelBufferView = nullptr;
         dfn.vkUpdateDescriptorSets(device, 1, &guest_output_image_descriptor_write, 0, nullptr);
       }
-      perfil = PintadoTramo(kTrozoGrabarDescriptor, perfil);
+      profile = PaintedRange(kChunkRecordDescriptor, profile);
 
       // Make sure intermediate textures of the needed size are available, and
       // unneeded intermediate textures are destroyed.
@@ -2326,7 +2326,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
           }
         }
       }
-      perfil = PintadoTramo(kTrozoGrabarIntermedias, perfil);
+      profile = PaintedRange(kChunkRecordIntermediate, profile);
 
       if (guest_output_flow.effect_count) {
         // Check if all the intermediate effects are supported by the
@@ -2362,7 +2362,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
               guest_output_flow.effect_count = 0;
             } else {
               /*
-               * The `efectos` hole. swapchain_format is declared in presenter.h as
+               * The `effects` hole. swapchain_format is declared in presenter.h as
                * VK_FORMAT_UNDEFINED and nothing in the whole tree wrote it (it was only read
                * here above). With the chain in format 37 (R8G8B8A8_UNORM), UNDEFINED != 37 was
                * always true, so from the second frame on every paint did:
@@ -2373,12 +2373,12 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
                */
               swapchain_effect_pipeline.swapchain_format =
                   paint_context_.swapchain_render_pass_format;
-              ++g_pintado_tuberias_rehechas;
+              ++g_painted_pipelines_redone;
             }
           }
         }
       }
-      perfil = PintadoTramo(kTrozoGrabarTuberia, perfil);
+      profile = PaintedRange(kChunkRecordPipeline, profile);
 
       if (guest_output_flow.effect_count) {
         // Actually draw the guest output.
@@ -2645,7 +2645,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
   // anymore (this is done after various potential guest-output-related main
   // target submission tracker waits so the completed submission value is the
   // most actual).
-  perfil = PintadoTramo(kTrozoGrabarEfectos, perfil);
+  profile = PaintedRange(kChunkRecordEffects, profile);
 
   uint64_t completed_paint_submission =
       paint_context_.submission_tracker.UpdateAndGetCompletedSubmission();
@@ -2691,7 +2691,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
   dfn.vkCmdEndRenderPass(draw_command_buffer);
 
   dfn.vkEndCommandBuffer(draw_command_buffer);
-  perfil = PintadoTramo(kTrozoGrabar, perfil);
+  profile = PaintedRange(kChunkRecord, profile);
 
   VkPipelineStageFlags acquire_semaphore_wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   VkCommandBuffer command_buffers[2];
@@ -2716,10 +2716,10 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
   VkSubmitInfo submit_info;
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submit_info.pNext = nullptr;
-  // With present_esperar_adquisicion_en_cpu the image is already available: no wait semaphore.
-  submit_info.waitSemaphoreCount = adquisicion_en_cpu ? 0 : 1;
-  submit_info.pWaitSemaphores = adquisicion_en_cpu ? nullptr : &acquire_semaphore;
-  submit_info.pWaitDstStageMask = adquisicion_en_cpu ? nullptr : &acquire_semaphore_wait_stage;
+  // With present_wait_acquire_on_cpu the image is already available: no wait semaphore.
+  submit_info.waitSemaphoreCount = acquisition_in_cpu ? 0 : 1;
+  submit_info.pWaitSemaphores = acquisition_in_cpu ? nullptr : &acquire_semaphore;
+  submit_info.pWaitDstStageMask = acquisition_in_cpu ? nullptr : &acquire_semaphore_wait_stage;
   submit_info.commandBufferCount = command_buffer_count;
   submit_info.pCommandBuffers = command_buffers;
   submit_info.signalSemaphoreCount = 1;
@@ -2733,12 +2733,12 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     if (execute_ui_drawers) {
       ui_fence_acquisition = ui_submission_tracker_.AcquireFenceToAdvanceSubmission();
     }
-    perfil = PintadoTramo(kTrozoPrepararEnvio, perfil);
+    profile = PaintedRange(kChunkPrepareSubmission, profile);
     VkResult submit_result;
     {
       const VulkanDevice::Queue::Acquisition queue_acquisition =
           vulkan_device_->AcquireQueue(vulkan_device_->queue_family_graphics_compute(), 0);
-      perfil = PintadoTramo(kTrozoCandadoEnvio, perfil);
+      profile = PaintedRange(kChunkLockSubmission, profile);
       submit_result =
           dfn.vkQueueSubmit(queue_acquisition.queue(), 1, &submit_info, fence_acqusition.fence());
       if (ui_fence_acquisition.fence() != VK_NULL_HANDLE && submit_result == VK_SUCCESS) {
@@ -2767,7 +2767,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
       return PaintResult::kNotPresentedConnectionOutdated;
     }
   }
-  perfil = PintadoTramo(kTrozoEnviar, perfil);
+  profile = PaintedRange(kChunkSend, profile);
 
   VkPresentInfoKHR present_info;
   present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -2782,9 +2782,9 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
   {
     const VulkanDevice::Queue::Acquisition queue_acquisition =
         vulkan_device_->AcquireQueue(paint_context_.present_queue_family, 0);
-    perfil = PintadoTramo(kTrozoCandadoPresentar, perfil);
+    profile = PaintedRange(kChunkLockPresent, profile);
     present_result = dfn.vkQueuePresentKHR(queue_acquisition.queue(), &present_info);
-    perfil = PintadoTramo(kTrozoPresentar, perfil);
+    profile = PaintedRange(kChunkPresent, profile);
   }
   /*
    * Request the next frame's image right now, with a zero timeout.
@@ -2797,38 +2797,38 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
    * The semaphore has to be one of ours and not the Submission's: that one is waited on by its
    * frame's submit and may still be in flight.
    */
-  if ((present_result == VK_SUCCESS || present_result == VK_SUBOPTIMAL_KHR) && !adquisicion_en_cpu &&
-      !paint_context_.anticipada_valida) {
-    const uint32_t ranura = paint_context_.anticipado_siguiente;
-    const VkSemaphore semaforo = paint_context_.semaforos_anticipados[ranura];
-    if (semaforo != VK_NULL_HANDLE) {
-      uint32_t indice_anticipado = 0;
-      const VkResult r = dfn.vkAcquireNextImageKHR(device, paint_context_.swapchain, 0, semaforo,
-                                                   VK_NULL_HANDLE, &indice_anticipado);
+  if ((present_result == VK_SUCCESS || present_result == VK_SUBOPTIMAL_KHR) && !acquisition_in_cpu &&
+      !paint_context_.early_valid) {
+    const uint32_t slot = paint_context_.early_next;
+    const VkSemaphore semaphore = paint_context_.semaphores_early[slot];
+    if (semaphore != VK_NULL_HANDLE) {
+      uint32_t index_early = 0;
+      const VkResult r = dfn.vkAcquireNextImageKHR(device, paint_context_.swapchain, 0, semaphore,
+                                                   VK_NULL_HANDLE, &index_early);
       if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) {
-        paint_context_.imagen_anticipada = indice_anticipado;
-        paint_context_.semaforo_anticipado = semaforo;
-        paint_context_.anticipada_valida = true;
-        paint_context_.anticipado_siguiente =
-            (ranura + 1) % uint32_t(paint_context_.semaforos_anticipados.size());
+        paint_context_.image_early = index_early;
+        paint_context_.semaphore_early = semaphore;
+        paint_context_.early_valid = true;
+        paint_context_.early_next =
+            (slot + 1) % uint32_t(paint_context_.semaphores_early.size());
       }
       // VK_NOT_READY or VK_TIMEOUT: there was no free image and the semaphore stays untouched. Nothing
       // to clean up; the next frame will request it with a wait.
     }
   }
-  perfil = PintadoTramo(kTrozoAnticipar, perfil);
+  profile = PaintedRange(kChunkAnticipate, profile);
   {
-    static uint64_t ultimo = 0;
-    const uint64_t total = paint_context_.anticipadas_aciertos + paint_context_.anticipadas_fallos;
-    if (total >= ultimo + 600) {
-      ultimo = total;
-      REXLOG_INFO("[presentador] adquisicion anticipada: {} de {} fotogramas sin esperar ({:.1f} %)",
-                  paint_context_.anticipadas_aciertos, total,
-                  100.0 * double(paint_context_.anticipadas_aciertos) / double(total));
+    static uint64_t last = 0;
+    const uint64_t total = paint_context_.early_hits + paint_context_.early_misses;
+    if (total >= last + 600) {
+      last = total;
+      REXLOG_INFO("[presenter] adquisicion early: {} de {} frames sin wait ({:.1f} %)",
+                  paint_context_.early_hits, total,
+                  100.0 * double(paint_context_.early_hits) / double(total));
     }
   }
-  PintadoTramo(kTrozoCierre, perfil);
-  PintadoVolcarSiToca(PaintContext::kSubmissionCount);
+  PaintedRange(kChunkClose, profile);
+  PaintedDumpSiDue(PaintContext::kSubmissionCount);
 
   switch (present_result) {
     case VK_SUCCESS:

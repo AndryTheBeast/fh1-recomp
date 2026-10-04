@@ -36,11 +36,11 @@ class SwitchAudioDriver final : public AudioDriver {
 
   // Output thread only. Folds the oldest queued frame to stereo and adds it to
   // stereo_out (kChannelSamples interleaved pairs), then releases the guest
-  // semaphore for it if release is set (sin audio_switch_bomba). Returns false,
+  // semaphore for it if release is set (sin audio_switch_pump). Returns false,
   // touching nothing, if no frame is queued.
   bool MixFrameInto(float* stereo_out, const StereoFold& fold, float gain, bool release);
 
-  // Output thread, with audio_switch_bomba: frames delivered by the game, not yet mixed, and one more
+  // Output thread, with audio_switch_pump: frames delivered by the game, not yet mixed, and one more
   // frame request (a semaphore release).
   size_t QueuedFrames();
   void RequestFrame();

@@ -284,12 +284,12 @@ class XmaContext {
   uint32_t id_ = 0;
   uint32_t guest_ptr_ = 0;
   std::mutex lock_;
-  // NFSMW: silence watchdog, measurement only (see AnotarProduccion in xma_context.cpp).
-  void AnotarProduccion(bool produjo, uint8_t motivo, const XMA_CONTEXT_DATA& data);
-  std::chrono::steady_clock::time_point silencio_desde_{};
-  bool en_silencio_ = false;
-  uint32_t silencio_pasadas_ = 0;
-  uint8_t silencio_motivo_ = 0;
+  // NFSMW: silence watchdog, measurement only (see NoteProduction in xma_context.cpp).
+  void NoteProduction(bool produced, uint8_t reason, const XMA_CONTEXT_DATA& data);
+  std::chrono::steady_clock::time_point silence_since_{};
+  bool in_silence_ = false;
+  uint32_t silence_passes_ = 0;
+  uint8_t silence_reason_ = 0;
   std::atomic<bool> is_allocated_ = false;
   std::atomic<bool> is_enabled_ = false;
 

@@ -7,7 +7,7 @@
 - So this port draws the game its own way. The game still believes it is talking to an Xbox 360 GPU; the port reads
   the game's GPU commands and draws the same frame with [Vulkan](glossary.md#vulkan).
 - This page explains why the imitation was replaced, how the new renderer works, and what made it fast.
-- The code is in `app/src/nfsmw_nativo_*` ("nativo" means native).
+- The code is in `app/src/nfsmw_nativo_*` ("native" means native).
 
 ## Why the imitated GPU was replaced
 
@@ -125,14 +125,14 @@ Lessons that shaped the code (each one cost time to find):
   on NVK took about 59 ms (82 ms for the ones created during the first race).
 - On top of that, the port saves **the list of pipelines the game uses** and creates them again on a background thread
   when the game starts, so the first race does not stutter: 113 of 113 pipelines ready in 0.3 s, and none created
-  slowly during the race. Both things live in one file, `cache/nfsmw_nativo_pipelines.bin`.
+  slowly during the race. Both things live in one file, `cache/nfsc_native_pipelines.bin`.
 - Tried and dropped: Vulkan's dynamic state extensions (`VK_EXT_extended_dynamic_state` 1, 2 and 3), to change
   pipelines less often. On NVK with this GPU each change got slower (from 2.95 to 4.36 µs) for only 13 % fewer
   changes: a loss.
 
 ### Textures and memory
 
-- The texture cache has a limit: 512 MB in the released version (setting `nfsmw_nativo_texturas_mb_max`). It was
+- The texture cache has a limit: 512 MB in the released version (setting `nfsc_native_texture_mb_max`). It was
   384 MB until the resolution became automatic, because larger resolutions need more room. Above the limit, textures
   not used for at least 120 frames are released until the cache is back under 75 %. Without a limit, the cache grew by
   about 20 MB every 40 s of racing, because the game streams new textures into new addresses as the car drives through
@@ -153,7 +153,7 @@ Every one is protected by the same [guard](glossary.md#guard):
 - for the first 50,000 to 200,000 calls, and then one in 4,096, the port runs both the native and the original
   function and compares everything they produce;
 - the original's result is the one used;
-- any difference turns the native version off until the game is closed, and writes `DIFERENCIA` in the log.
+- any difference turns the native version off until the game is closed, and writes `DIFFERENCE` in the log.
 
 Getting exactly the same results needs care:
 

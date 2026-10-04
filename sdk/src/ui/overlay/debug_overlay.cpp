@@ -30,7 +30,7 @@ namespace {
 std::atomic<int> g_debug_overlays{0};
 }  // namespace
 
-bool DebugOverlayAbierto() { return g_debug_overlays.load(std::memory_order_relaxed) > 0; }
+bool DebugOverlayOpen() { return g_debug_overlays.load(std::memory_order_relaxed) > 0; }
 
 DebugOverlayDialog::DebugOverlayDialog(ImGuiDrawer* imgui_drawer, FrameStatsProvider stats_provider)
     : ImGuiDialog(imgui_drawer), stats_provider_(std::move(stats_provider)) {
@@ -73,9 +73,9 @@ void DebugOverlayDialog::PositionBeforeBegin(ImGuiIO& io) {
   moved_by_stick_ = false;
   if (lr && position_known_ && (dx != 0.0f || dy != 0.0f)) {
     // At full tilt, 80 % of the screen height per second, on both axes.
-    const float paso = 0.8f * io.DisplaySize.y * io.DeltaTime;
-    position_x_ += dx * paso / io.DisplaySize.x;
-    position_y_ += dy * paso / io.DisplaySize.y;
+    const float step = 0.8f * io.DisplaySize.y * io.DeltaTime;
+    position_x_ += dx * step / io.DisplaySize.x;
+    position_y_ += dy * step / io.DisplaySize.y;
     position_apply_ = true;
     moved_by_stick_ = true;
     last_move_time_ = ImGui::GetTime();
@@ -98,26 +98,26 @@ void DebugOverlayDialog::PositionAfterBegin(ImGuiIO& io) {
   const ImVec2 size = ImGui::GetWindowSize();
   const float x = std::clamp(pos.x, 0.0f, std::max(0.0f, io.DisplaySize.x - size.x));
   const float y = std::clamp(pos.y, 0.0f, std::max(0.0f, io.DisplaySize.y - size.y));
-  const bool fuera = x != pos.x || y != pos.y;
+  const bool outside = x != pos.x || y != pos.y;
   if (!position_known_) {
     // First time without a saved position: take the current one, without writing anything.
     position_x_ = saved_x_ = x / io.DisplaySize.x;
     position_y_ = saved_y_ = y / io.DisplaySize.y;
     position_known_ = true;
-    position_apply_ = fuera;
+    position_apply_ = outside;
     return;
   }
   // ImGui rounds the position to the pixel: with the stick the fraction is kept, so that a gentle tilt
   // moves it too. Without the stick and more than one pixel from where it was placed, a finger has
   // dragged it.
-  const bool arrastrada = !moved_by_stick_ && (std::abs(x - position_x_ * io.DisplaySize.x) > 1.0f ||
+  const bool dragged = !moved_by_stick_ && (std::abs(x - position_x_ * io.DisplaySize.x) > 1.0f ||
                                                std::abs(y - position_y_ * io.DisplaySize.y) > 1.0f);
-  if (fuera || arrastrada) {
+  if (outside || dragged) {
     position_x_ = x / io.DisplaySize.x;
     position_y_ = y / io.DisplaySize.y;
-    position_apply_ = fuera;  // corrected on the next frame
+    position_apply_ = outside;  // corrected on the next frame
   }
-  if (arrastrada) {
+  if (dragged) {
     last_move_time_ = ImGui::GetTime();
   }
   if (!position_file_.empty() && ImGui::GetTime() - last_move_time_ > 1.0 &&

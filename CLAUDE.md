@@ -80,8 +80,8 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 | --- | --- |
 | `fh1/fh1_manifest.toml` | ReXGlue manifest: default.xex + two run-time modules (XMediaFacade, SpeechFacade) |
 | `fh1/overrides.toml` | Hand-made codegen declarations, each with its reason, plus `[rexcrt]` hooks |
-| `fh1/huecos.toml`, `fh1/*_huecos.toml` | Code gaps declared as functions (generated, then cleaned by tools) |
-| `fh1/*_huecos_excluir.txt` | Gaps that are data (never declare them) |
+| `fh1/gaps.toml`, `fh1/*_gaps.toml` | Code gaps declared as functions (generated, then cleaned by tools) |
+| `fh1/*_gaps_exclude.txt` | Gaps that are data (never declare them) |
 | `fh1/src/fh1_app.h` | App: GPU plugin default `xenos`, merged controllers, crash report install |
 | `fh1/src/fh1_crash_report.cpp` | Windows crash report: symbolized stack to `<log>.crash.txt` |
 | `sdk/` | ReXGlue SDK (nfsmw-nx fork). `sdk/thirdparty` only holds changed files; `tools/fetch_thirdparty.py` fetches the rest |
@@ -98,8 +98,8 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 4. Fix in `fh1/overrides.toml` / gap files / app code, run codegen, verify, commit, push.
 
 Codegen: `rexglue codegen fh1_manifest.toml` from `fh1/` (~3 min). After editing gap files,
-`tools/huecos_iterar.sh` repeats codegen + clean-up until stable. Always finish with
-`python tools/comprobar_simbolos.py fh1` (every registered function defined) and
+`tools/gaps_iterate.sh` repeats codegen + clean-up until stable. Always finish with
+`python tools/check_symbols.py fh1` (every registered function defined) and
 `grep REX_FATAL fh1/generated/*/*.cpp` (must be empty).
 
 ## Unattended testing (no one at the PC)
@@ -139,13 +139,13 @@ lists the actions and saves the render targets as PNG.
 
 - `tools/extract_xiso.ps1` — XDVDFS extractor (XGD2/XGD3), `-OnlyXex` for just default.xex.
 - `tools/build_windows.ps1` — full Windows build (VS dev shell, fetch, rexglue, codegen, fh1.exe).
-- `tools/huecos.py` (from nfsmw-nx) — lists code gaps.
-- `tools/huecos_pasada.py` — drops data / import-area gaps, splits thunk runs, `--restos` declares
+- `tools/gaps.py` (from nfsmw-nx) — lists code gaps.
+- `tools/gaps_pass.py` — drops data / import-area gaps, splits thunk runs, `--rests` declares
   the rest of partly covered gaps.
-- `tools/fusionar_continuaciones.py` — merges gaps that are tails of the previous function
-  (`{ end = ... }`) from codegen.log's unresolved-branch lines. Per module with `--gen/--huecos`.
-- `tools/huecos_iterar.sh` — loops the two tools above with codegen.
-- `tools/comprobar_simbolos.py` — registered-but-undefined check (catches link errors early).
+- `tools/merge_continuations.py` — merges gaps that are tails of the previous function
+  (`{ end = ... }`) from codegen.log's unresolved-branch lines. Per module with `--gen/--gaps`.
+- `tools/gaps_iterate.sh` — loops the two tools above with codegen.
+- `tools/check_symbols.py` — registered-but-undefined check (catches link errors early).
 
 ## Things learned the hard way
 

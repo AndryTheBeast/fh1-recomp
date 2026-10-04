@@ -1106,17 +1106,17 @@ uint32_t CommandProcessor::ExecutePrimaryBuffer(uint32_t read_index, uint32_t wr
    * later. The only one that might seem to, the one that loads shader
    * microcode, copies it to a std::vector before returning.
    */
-  const uint32_t palabras_anillo = primary_buffer_size_ / uint32_t(sizeof(uint32_t));
+  const uint32_t words_ring = primary_buffer_size_ / uint32_t(sizeof(uint32_t));
   /*
    * A small floor so as not to write after every packet: the guest is spinning
    * on that same word from another core, and every write invalidates its cache
    * line. With 0x20 words it is published about fifty times more often than
    * writing it only at the end of the batch, which is plenty.
    */
-  const uint32_t paso = read_ptr_update_freq_ ? (read_ptr_update_freq_ < 0x20u ? 0x20u
+  const uint32_t step = read_ptr_update_freq_ ? (read_ptr_update_freq_ < 0x20u ? 0x20u
                                                                               : read_ptr_update_freq_)
                                               : 0x100u;
-  uint32_t publicado = read_index;
+  uint32_t published = read_index;
 
   do {
     if (!ExecutePacket(&reader)) {
@@ -1127,13 +1127,13 @@ uint32_t CommandProcessor::ExecutePrimaryBuffer(uint32_t read_index, uint32_t wr
     }
 
     if (read_ptr_writeback_ptr_) {
-      const uint32_t ahora = uint32_t(reader.read_offset() / sizeof(uint32_t));
+      const uint32_t now = uint32_t(reader.read_offset() / sizeof(uint32_t));
       // The ring wraps around, so the subtraction is masked with the size.
-      const uint32_t avanzado = (ahora - publicado) & (palabras_anillo - 1);
-      if (avanzado >= paso) {
+      const uint32_t advanced = (now - published) & (words_ring - 1);
+      if (advanced >= step) {
         memory::store_and_swap<uint32_t>(memory_->TranslatePhysical(read_ptr_writeback_ptr_),
-                                         ahora);
-        publicado = ahora;
+                                         now);
+        published = now;
       }
     }
   } while (reader.read_count());

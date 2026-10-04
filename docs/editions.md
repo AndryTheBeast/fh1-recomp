@@ -46,24 +46,24 @@ Every [hook](glossary.md#hook), every override (the functions declared by hand f
 of the reference executable. In other editions the same functions are often at other addresses. The tools in
 [`tools/editions/`](../tools/editions) translate them, in this order:
 
-1. **Match the two executables.** `emparejar.py` ("match") finds where each address of the reference is in the other
+1. **Match the two executables.** `match_functions.py` ("match") finds where each address of the reference is in the other
    edition. It aligns the code of both executables using runs of 12 [PowerPC](glossary.md#powerpc) instructions
    (12-grams) as anchors. The instructions are normalised first, which means the parts that depend on where the code
    sits (such as branch offsets) are removed. Only anchors that come in a consistent order are kept (a longest
    increasing subsequence). `.rdata` is matched by content, with windows of 32 to 1,024 bytes. The result is a map
    from every address of the reference to the other edition: a table (`.tsv`) with the name you give as the third
-   argument (`emparejar.py <PAL image> <other image> <output.tsv>`).
-2. **Verify the hooked functions.** `verificar_ganchos.py` ("verify hooks") compares every hooked function in full
+   argument (`match_functions.py <PAL image> <other image> <output.tsv>`).
+2. **Verify the hooked functions.** `verify_hooks.py` ("verify hooks") compares every hooked function in full
    between the two executables. This is needed because step 1 only compares short pieces of code, and a hook depends
    on the whole function being the same.
 3. **Translate `.data` references.** `.data` normally stays at the same address, but in the Japanese edition it moves
    in pieces. PowerPC code builds a full address with a pair of instructions: `lis` loads the high part, and a second
-   instruction supplies the low part. `datos_por_referencias.py` ("data by references") follows those pairs in the
-   code to find where each referenced piece of data went. `verificar_parejas.py` ("verify pairs") then checks every
+   instruction supplies the low part. `data_by_references.py` ("data by references") follows those pairs in the
+   code to find where each referenced piece of data went. `verify_pairs.py` ("verify pairs") then checks every
    pair strictly (856 pairs for the Japanese edition, all consistent).
 4. **Create the edition tree.** An edition tree, `app_<edition>`, is a copy of the application with every address
-   translated. Create it with `crear_arbol.py <edition> <map> <xex> --parejas <json>` ("create tree"). `--parejas`
-   gives pairs fixed by hand (the ones used are in the `parejas_corregidas.json` files under `tools/editions/`). The
+   translated. Create it with `create_tree.py <edition> <map> <xex> --pairs <json>` ("create tree"). `--pairs`
+   gives pairs fixed by hand (the ones used are in the `corrected_pairs.json` files under `tools/editions/`). The
    script also does three more things:
    - It seeds the function partition of the code generator (how functions are split across the generated files) with
      the reference one, exact pairs first.
@@ -75,11 +75,11 @@ of the reference executable. In other editions the same functions are often at o
 5. **Generate the code** for the edition. The code generator skips its work when its inputs have not changed, and it
    keeps track of them in `codegen.stamp` (in the tree's `generated/default` folder). If only the partition changed,
    delete `codegen.stamp` to force a new generation. Then run the steps that follow every code generation:
-   `llamadas_directas.py` with the list of hooked addresses of that edition (see [toolchain.md](toolchain.md)).
+   `direct_calls.py` with the list of hooked addresses of that edition (see [toolchain.md](toolchain.md)).
    `tools/codegen.sh` does both for an edition tree; its usage is at the top of the script. To check the result,
-   `comparar_reparto.py` compares the partition with the reference, and `tools/huecos.py` shows the gaps (code left
+   `compare_split.py` compares the partition with the reference, and `tools/gaps.py` shows the gaps (code left
    without a function) that need pairs fixed by hand. The Japanese edition needed six.
-6. **Translate the PGO profile.** `tools/editions/pgo/traducir_perfil.py` renames each function's counters through
+6. **Translate the PGO profile.** `tools/editions/pgo/translate_profile.py` renames each function's counters through
    the address map. So the other edition gets the same optimisation without playing it again (see
    [toolchain.md](toolchain.md#pgo-with-gcc-16-on-horizon)). The translated profiles are in `pgo/<edition>/`.
 7. **Build from the reference paths.** In a GCC profile, the identifier of a local function (one that only exists
@@ -92,7 +92,7 @@ of the reference executable. In other editions the same functions are often at o
    ```
 
 Before shipping an edition build, run the same checks as for the reference (see [toolchain.md](toolchain.md)):
-`_start` at address 0, the texture key check (`tools/comprobar_clave_textura.py`), and the same number of installed
+`_start` at address 0, the texture key check (`tools/check_texture_key.py`), and the same number of installed
 hooks as the reference.
 
 ## Installer manifest

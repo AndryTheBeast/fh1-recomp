@@ -44,14 +44,14 @@ static void RexSwitchInitLogDir(void) {
         return;
     }
     const char* nro = __system_argv[0];
-    const char* barra = strrchr(nro, '/');
-    if (!barra) {
+    const char* bar = strrchr(nro, '/');
+    if (!bar) {
         return;
     }
     /* without a device ("/switch/..."), the SD one: the path must also work for fsdevTranslatePath */
-    const char* dispositivo = strchr(nro, ':') ? "" : "sdmc:";
+    const char* vulkan_device = strchr(nro, ':') ? "" : "sdmc:";
     char dir[FS_MAX_PATH];
-    int n = snprintf(dir, sizeof(dir), "%s%.*slogs", dispositivo, (int)(barra - nro + 1), nro);
+    int n = snprintf(dir, sizeof(dir), "%s%.*slogs", vulkan_device, (int)(bar - nro + 1), nro);
     if (n <= 0 || (size_t)n + sizeof("/rex/") > sizeof(dir)) {
         return;
     }
@@ -74,7 +74,7 @@ void abort(void) {
 }
 
 static void RexSwitchExitHook(void) {
-    RexSwitchCrashLog("exit() fuera del cierre ordenado", NULL, (u64)__builtin_frame_address(0),
+    RexSwitchCrashLog("exit() outside del close sorted", NULL, (u64)__builtin_frame_address(0),
                       (u64)__builtin_return_address(0));
     diagAbortWithResult(MAKERESULT(Module_Libnx, 103));
 }
@@ -87,9 +87,9 @@ static void RexSwitchExitHook(void) {
 __attribute__((constructor(101)))
 static void RexSwitchCrashHooksInit(void) {
     RexSwitchInitLogDir();
-    char ruta[FS_MAX_PATH];
-    snprintf(ruta, sizeof(ruta), "%srex_stderr.log", g_rex_log_dir);
-    if (freopen(ruta, "w", stderr)) {
+    char path[FS_MAX_PATH];
+    snprintf(path, sizeof(path), "%srex_stderr.log", g_rex_log_dir);
+    if (freopen(path, "w", stderr)) {
         setvbuf(stderr, NULL, _IONBF, 0);
     }
     atexit(RexSwitchExitHook);

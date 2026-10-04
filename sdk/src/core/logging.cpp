@@ -76,7 +76,7 @@ REXCVAR_DEFINE_INT32(log_max_files, 20, "Log", "Max number of rotated log files 
  * session are self-inflicted.
  *
  * With log_async, the logging thread only enqueues: pattern formatting and the trip to the SD are
- * done by a separate spdlog thread. The queue holds 8,192 messages (log_async_cola) and the policy is
+ * done by a separate spdlog thread. The queue holds 8,192 messages (log_async_queue) and the policy is
  * to block when it is full.
  *
  * ================================================================================================
@@ -89,7 +89,7 @@ REXCVAR_DEFINE_INT32(log_max_files, 20, "Log", "Max number of rotated log files 
  *      CPU total   266 %  ->  179-233 %
  *      ring       75.7 %  ->  50-72 %
  *      game       68.9 %  ->  25-48 %
- *  and the stutters come with `GPU 0.0 reales, grabar 0.4`: a whole second of frame with nobody
+ *  and the stutters come with `GPU 0.0 reales, record 0.4`: a whole second of frame with nobody
  *  working. That is a blocked thread, not work.
  *
  *  Two design mistakes:
@@ -102,11 +102,11 @@ REXCVAR_DEFINE_INT32(log_max_files, 20, "Log", "Max number of rotated log files 
  * ================================================================================================
  */
 REXCVAR_DEFINE_BOOL(log_async, false, "Log",
-                    "Escribir el log desde un hilo aparte (el hilo que llama solo encola). Quita los "
-                    "tirones del volcado periodico; false pierde los ultimos mensajes si hay cuelgue")
+                    "Write el log since un thread_value separate (el thread_value que llama solo encola). Quita los "
+                    "hitches del dump periodico; false pierde los last mensajes si there_is cuelgue")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
-REXCVAR_DEFINE_INT32(log_async_cola, 8192, "Log", "Mensajes que caben en la cola del log asincrono")
+REXCVAR_DEFINE_INT32(log_async_queue, 8192, "Log", "Mensajes que caben en la queue del log asincrono")
     .range(256, 65536)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
@@ -186,13 +186,13 @@ spdlog::level::level_enum ResolveCategoryLevel(const std::string& name) {
 }
 
 // true once the spdlog thread pool is up (see log_async).
-bool g_async_listo = false;
+bool g_async_ready = false;
 
 // Create a logger and register it
 std::shared_ptr<spdlog::logger> CreateCategoryLogger(const std::string& name) {
   auto sinks = BuildCategorySinks(name);
   std::shared_ptr<spdlog::logger> logger;
-  if (g_async_listo) {
+  if (g_async_ready) {
     // The logging thread only enqueues; formatting and writing are done by the spdlog thread.
     logger = std::make_shared<spdlog::async_logger>(name, sinks.begin(), sinks.end(),
                                                     spdlog::thread_pool(),
@@ -303,9 +303,9 @@ void InitLogging(const LogConfig& config) {
 
   // The spdlog pool, before the loggers are rebuilt (see log_async). A single thread: log lines have to
   // keep their usual order.
-  if (REXCVAR_GET(log_async) && !g_async_listo) {
-    spdlog::init_thread_pool(static_cast<size_t>(REXCVAR_GET(log_async_cola)), 1);
-    g_async_listo = true;
+  if (REXCVAR_GET(log_async) && !g_async_ready) {
+    spdlog::init_thread_pool(static_cast<size_t>(REXCVAR_GET(log_async_queue)), 1);
+    g_async_ready = true;
   }
 
   // Rebuild all loggers with new sinks
@@ -351,7 +351,7 @@ void ShutdownLogging() {
       entry.logger->flush();
 
   spdlog::shutdown();  // also joins the async pool thread
-  g_async_listo = false;
+  g_async_ready = false;
   g_registry.clear();
   g_console_sink.reset();
   g_file_sink.reset();

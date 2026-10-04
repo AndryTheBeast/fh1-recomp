@@ -1,7 +1,7 @@
 // fh1 - native renderer, step N1: the app's own graphics system (docs/native-renderer-fh1.md).
 //
 // Replaces the xenos GPU emulation plugin with --fh1_renderer=native. Modelled on nfsmw-nx's
-// nfsmw_nativo_sistema.cpp, stage C1 (reference/nfsmw-app/src): the game's Direct3D keeps running
+// nfsc_native_system.cpp, stage C1 (reference/nfsmw-app/src): the game's Direct3D keeps running
 // unchanged and fills its command ring; a ring thread consumes it right away and answers what the
 // game expects from the GPU:
 //   1. MMIO registers at 0x7FC80000 (fixed values, as the emulation's graphics_system.cpp);

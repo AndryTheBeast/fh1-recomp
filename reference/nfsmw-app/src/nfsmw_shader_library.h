@@ -12,17 +12,17 @@ namespace nfsmw::native {
 struct Shader {
   std::vector<uint8_t> original;
   std::vector<uint32_t> spirv;
-  uint64_t huella = 0;
+  uint64_t fingerprint = 0;
   bool vertices = false;
 };
 
-class BibliotecaShaders {
+class LibraryShaders {
  public:
   // Transactional load: an invalid file does not replace the library.
-  // Pointers returned by Buscar last until the next successful load.
-  void Cargar(std::span<const uint8_t> archivo);
-  void Cargar(const std::filesystem::path& archivo);
-  const Shader* Buscar(std::span<const uint8_t> original) const;
+  // Pointers returned by Find last until the next successful load.
+  void Load(std::span<const uint8_t> file);
+  void Load(const std::filesystem::path& file);
+  const Shader* Find(std::span<const uint8_t> original) const;
   const std::vector<Shader>& shaders() const { return shaders_; }
 
  private:
@@ -31,6 +31,6 @@ class BibliotecaShaders {
 
 // Versioned local format, little-endian, with integrity checks.
 // It contains private data derived from the game; it is not embedded in the executable.
-std::vector<uint8_t> EmpaquetarShaders(std::vector<Shader> shaders);
+std::vector<uint8_t> PackShaders(std::vector<Shader> shaders);
 
 }  // namespace nfsmw::native

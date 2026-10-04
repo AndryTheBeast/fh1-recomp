@@ -54,16 +54,16 @@ REXCVAR_DEFINE_BOOL(host_present_from_non_ui_thread, true, "UI/Presenter",
  * when this was measured, so it never waits for a vblank.
  */
 REXCVAR_DEFINE_BOOL(host_present_ignore_implicit_vsync, true, "UI/Presenter",
-                    "Presentar desde el hilo del juego aunque la superficie tenga vsync implicito "
-                    "(FIFO). Sin esto, con FIFO se pinta en el hilo de la interfaz y el buzon tira "
-                    "la mitad de los fotogramas");
+                    "Present since el thread_value del game aunque la surface tenga vsync implicito "
+                    "(FIFO). Sin esto, con FIFO se pinta en el thread_value de la interfaz y el mailbox tira "
+                    "la mitad de los frames");
 
 #if REX_PLATFORM_SWITCH
 // Off by default. See the long comment below: it lowers the mean and blows up the variance, and
 // the variance is what the player feels.
-#define REX_PRESENT_HILO_PROPIO_DEFAULT false
+#define REX_PRESENT_THREAD_OWN_DEFAULT false
 #else
-#define REX_PRESENT_HILO_PROPIO_DEFAULT false
+#define REX_PRESENT_THREAD_OWN_DEFAULT false
 #endif
 
 /*
@@ -76,7 +76,7 @@ REXCVAR_DEFINE_BOOL(host_present_ignore_implicit_vsync, true, "UI/Presenter",
  * Measured in a session that switched modes halfway, which allows comparing both halves with the same
  * race and the same console:
  *
- *     "RefreshGuestOutput: despues"
+ *     "RefreshGuestOutput: after"
  *         with own thread:    mean 6.88 ms, range 0.55 - 17.59
  *         without own thread: mean 8.05 ms, range 5.42 - 10.09
  *
@@ -93,45 +93,45 @@ REXCVAR_DEFINE_BOOL(host_present_ignore_implicit_vsync, true, "UI/Presenter",
  * priority tweak (the priority is already applied: "aceptada por el kernel"). The device has a single
  * queue (see docs/platform-notes.md, Presentation).
  */
-REXCVAR_DEFINE_BOOL(present_hilo_propio, REX_PRESENT_HILO_PROPIO_DEFAULT, "UI/Presenter",
-                    "Presentar en un hilo propio del presentador en vez de dentro del hilo que "
-                    "genera la imagen. El hilo del juego solo marca que hay imagen nueva y sigue "
-                    "grabando, asi que la GPU no se queda sin trabajo mientras se presenta")
+REXCVAR_DEFINE_BOOL(present_own_thread, REX_PRESENT_THREAD_OWN_DEFAULT, "UI/Presenter",
+                    "Present en un thread_value own del presenter en time de inside del thread_value que "
+                    "genera la image. El thread_value del game solo mark que there_is image new_entry y sigue "
+                    "recording, asi que la GPU no se queda sin work mientras se presenta")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 /*
  * See RequestPaintFromPaintThread. Discarding threw away half of the frames, and the share of frames
  * over 50 ms went from 8.20 % to 47.52 %. Steady beats fast.
  */
-REXCVAR_DEFINE_BOOL(present_hilo_sin_descartes, true, "UI/Presenter",
-                    "El hilo que genera la imagen espera a que el presentador coja el fotograma "
-                    "anterior en vez de tirarlo. Con el presentador sobrado no espera nunca; si va "
-                    "justo, frena el juego a su ritmo, que es REGULAR. En false se vuelve al "
+REXCVAR_DEFINE_BOOL(present_thread_without_discards, true, "UI/Presenter",
+                    "El thread_value que genera la image wait a que el presenter coja el frame "
+                    "previous en time de tirarlo. Con el presenter sobrado no wait never; si va "
+                    "justo, frena el game a su ritmo, que es REGULAR. En false se vuelve al "
                     "comportamiento de la 113: mas FPS nominales y muchisimo mas stuttering");
 
-REXCVAR_DEFINE_INT32(present_hilo_espera_max_ms, 50, "UI/Presenter",
-                     "Plazo maximo de esa espera, en ms. Es una red de seguridad por si el "
-                     "presentador se colgara, no un mecanismo: al agotarse se descarta como antes. "
-                     "0 = esperar sin plazo");
+REXCVAR_DEFINE_INT32(present_thread_wait_max_ms, 50, "UI/Presenter",
+                     "Deadline maximum de esa wait, en ms. Es one red de seguridad por si el "
+                     "presenter se colgara, no un mecanismo: al agotarse se discards as before. "
+                     "0 = wait sin term");
 
-REXCVAR_DEFINE_INT32(present_hilo_ventana, 600, "UI/Presenter",
-                     "Fotogramas de la ventana con la que se juzga si el hilo de presentacion da "
-                     "abasto. Se mira la espera MEDIA, no las rachas: en la compilacion 115 el juego "
-                     "esperaba el 43 % de los fotogramas pero nunca 90 seguidos, asi que el seguro "
-                     "por rachas no salto y el stuttering subio del 4,93 % al 6,61 %");
+REXCVAR_DEFINE_INT32(present_thread_window, 600, "UI/Presenter",
+                     "Frames de la window con la que se juzga si el thread_value de presentacion da "
+                     "abasto. Se looks la wait MEDIA, no the rachas: en la compilacion 115 el game "
+                     "esperaba el 43 % de los frames pero never 90 consecutive, asi que el safe "
+                     "por rachas no jump y el stuttering uploaded del 4,93 % al 6,61 %");
 
-REXCVAR_DEFINE_INT32(present_hilo_espera_media_max_us, 1500, "UI/Presenter",
-                     "Microsegundos que puede costarle de media el presentador al juego, por "
-                     "fotograma, antes de apagar el hilo propio. 1500 = 1,5 ms sobre un fotograma de "
-                     "~38: por encima de eso el hilo propio quita menos de lo que mete. En la 115 "
-                     "iban 5,2 ms de media por fotograma (12,07 ms en el 43 % de ellos)");
+REXCVAR_DEFINE_INT32(present_thread_wait_avg_max_us, 1500, "UI/Presenter",
+                     "Microseconds que can costarle de media el presenter al game, por "
+                     "frame, before de apagar el thread_value own. 1500 = 1,5 ms over un frame de "
+                     "~38: por encima de eso el thread_value own quita minus de lo que mete. En la 115 "
+                     "iban 5,2 ms de media por frame (12,07 ms en el 43 % de ellos)");
 
 
-REXCVAR_DEFINE_INT32(present_hilo_gracia_fotogramas, 3000, "UI/Presenter",
-                     "Fotogramas de gracia antes de que la rendicion pueda dispararse. Durante el "
-                     "arranque y las cargas los tres nucleos estan saturados y el presentador llega "
-                     "tarde por motivos que no se repiten en carrera; en la compilacion 114 se rindio "
-                     "a los 34 segundos por eso y la carrera entera fue por el camino viejo");
+REXCVAR_DEFINE_INT32(present_thread_grace_frames, 3000, "UI/Presenter",
+                     "Frames de grace before de que la rendicion pueda dispararse. During el "
+                     "arranque y the loads los tres cores estan saturados y el presenter llega "
+                     "late_2 por reasons que no se repiten en race; en la compilacion 114 se rindio "
+                     "a los 34 seconds por eso y la race whole fue por el path old");
 
 /*
  * Horizon priority of the new thread. 0x2C is REX_SWITCH_PRIO_PRESENT, the band the SDK itself reserves
@@ -146,9 +146,9 @@ REXCVAR_DEFINE_INT32(present_hilo_gracia_fotogramas, 3000, "UI/Presenter",
  *     it starved (see docs/platform-notes.md, Threads). The thread spends almost all its time blocked
  *     on fences, not using CPU.
  */
-REXCVAR_DEFINE_INT32(present_hilo_prioridad, 0x2C, "UI/Presenter",
-                     "Prioridad de Horizon del hilo de presentacion (0x1C-0x3B). 0x2C por defecto "
-                     "(REX_SWITCH_PRIO_PRESENT). Sin efecto fuera de la Switch");
+REXCVAR_DEFINE_INT32(present_thread_priority, 0x2C, "UI/Presenter",
+                     "Priority de Horizon del thread_value de presentacion (0x1C-0x3B). 0x2C por default "
+                     "(REX_SWITCH_PRIO_PRESENT). Sin effect outside de la Switch");
 
 REXCVAR_DEFINE_BOOL(present_letterbox, true, "UI/Presenter",
                     "Enable letterboxing for non-native aspect ratios");
@@ -745,14 +745,14 @@ bool Presenter::RefreshGuestOutput(
    * With its own presenter thread, this only signals and moves on.
    *
    * This is the exact point where the thread that feeds the GPU stayed blocked for 6.82 ms presenting
-   * (measured as "RefreshGuestOutput: despues") and, meanwhile, consumed no packets, so the GPU ran
+   * (measured as "RefreshGuestOutput: after") and, meanwhile, consumed no packets, so the GPU ran
    * dry for 6.29 ms. With the own thread it marks the frame and leaves.
    *
    * The atomic copy of the mode is read so as not to take paint_mode_mutex_, which is exactly the lock
    * the paint thread holds the whole time it paints (see presenter.h). Taking it here would block for
    * the same milliseconds again and achieve nothing.
    */
-  if (paint_thread_activo_.load(std::memory_order_acquire) &&
+  if (paint_thread_active_.load(std::memory_order_acquire) &&
       paint_mode_fast_.load(std::memory_order_acquire) ==
           PaintMode::kGuestOutputThreadImmediately) {
     RequestPaintFromPaintThread();
@@ -1438,10 +1438,10 @@ void Presenter::SetPaintModeFromUIThread(PaintMode new_mode) {
     return;
   }
   // Say it in the log. Whether every rendered frame reaches the screen depends on this.
-  REXLOG_INFO("Presenter: modo de pintado -> {} (vsync implicito {}, dibujantes de interfaz {})",
+  REXLOG_INFO("Presenter: mode de painted -> {} (vsync implicito {}, dibujantes de interfaz {})",
               new_mode == PaintMode::kGuestOutputThreadImmediately
-                  ? "desde el hilo del juego, presentando en el acto"
-                  : (new_mode == PaintMode::kUIThreadOnRequest ? "en el hilo de la interfaz, a peticion"
+                  ? "since el thread_value del game, presentando en el acto"
+                  : (new_mode == PaintMode::kUIThreadOnRequest ? "en el thread_value de la interfaz, a request"
                                                                : "ninguno"),
               surface_paint_connection_has_implicit_vsync_ ? "si" : "no", ui_drawers_.size());
   // The own thread is started before the mode is announced, so the game thread never sees
@@ -1679,7 +1679,7 @@ Presenter::PaintResult Presenter::PaintAndPresent(bool execute_ui_drawers) {
 // The presenter's own thread. See the long comment in presenter.h.
 
 void Presenter::StartPaintThreadFromUIThread() {
-  if (paint_thread_ || !REXCVAR_GET(present_hilo_propio)) {
+  if (paint_thread_ || !REXCVAR_GET(present_own_thread)) {
     return;
   }
   {
@@ -1691,15 +1691,15 @@ void Presenter::StartPaintThreadFromUIThread() {
   if (!paint_thread_) {
     // Not fatal: without the thread, painting keeps happening inside the game thread, as always.
     REXLOG_WARN(
-        "Presenter: no se pudo crear el hilo de presentacion; se presenta en el hilo del juego");
+        "Presenter: no se pudo create el thread_value de presentacion; se presenta en el thread_value del game");
     return;
   }
   paint_thread_->set_name("Presenter Paint");
-  paint_thread_activo_.store(true, std::memory_order_release);
+  paint_thread_active_.store(true, std::memory_order_release);
   REXLOG_INFO(
-      "Presenter: hilo de presentacion propio en marcha (prioridad de Horizon {:#x}). El hilo que "
-      "genera la imagen ya no se bloquea presentando",
-      uint32_t(REXCVAR_GET(present_hilo_prioridad)));
+      "Presenter: thread_value de presentacion own en marcha (priority de Horizon {:#x}). El thread_value que "
+      "genera la image ya no se bloquea presentando",
+      uint32_t(REXCVAR_GET(present_thread_priority)));
 }
 
 void Presenter::ShutdownPaintThread() {
@@ -1707,19 +1707,19 @@ void Presenter::ShutdownPaintThread() {
     return;
   }
   // First stop receiving new signals, then wake it up so it sees the exit flag.
-  paint_thread_activo_.store(false, std::memory_order_release);
+  paint_thread_active_.store(false, std::memory_order_release);
   {
     std::lock_guard<std::mutex> lock(paint_thread_mutex_);
     paint_thread_shutdown_ = true;
-    paint_thread_libre_.notify_all();  // nobody may be left waiting when it stops
+    paint_thread_free_.notify_all();  // nobody may be left waiting when it stops
     // Always signal with the lock held: deciding to sleep and signaling without the lock is what
     // hung the vertex copy thread (see docs/platform-notes.md, Threads).
     paint_thread_signal_.notify_all();
   }
   rex::thread::Wait(paint_thread_.get(), false);
   paint_thread_.reset();
-  REXLOG_INFO("Presenter: hilo de presentacion parado ({} avisos, {} pintados, {} descartados)",
-              paint_thread_avisos_, paint_thread_pintados_, paint_thread_descartados_);
+  REXLOG_INFO("Presenter: thread_value de presentacion stopped ({} warnings, {} painted, {} discarded)",
+              paint_thread_warnings_, paint_thread_painted_, paint_thread_discarded_);
 }
 
 /*
@@ -1740,26 +1740,26 @@ void Presenter::ShutdownPaintThread() {
  * When it expires, the frame is discarded as before and counted.
  */
 void Presenter::RequestPaintFromPaintThread() {
-  uint64_t avisos, pintados, descartados, esperas, espera_ns;
-  bool rendirse = false;
+  uint64_t warnings, painted, discarded, waits, wait_ns;
+  bool give_up = false;
   {
     std::unique_lock<std::mutex> lock(paint_thread_mutex_);
     if (paint_thread_pending_) {
-      if (REXCVAR_GET(present_hilo_sin_descartes)) {
-        const int32_t plazo_ms = REXCVAR_GET(present_hilo_espera_max_ms);
+      if (REXCVAR_GET(present_thread_without_discards)) {
+        const int32_t term_ms = REXCVAR_GET(present_thread_wait_max_ms);
         const auto t0 = std::chrono::steady_clock::now();
-        if (plazo_ms > 0) {
-          paint_thread_libre_.wait_for(lock, std::chrono::milliseconds(plazo_ms),
+        if (term_ms > 0) {
+          paint_thread_free_.wait_for(lock, std::chrono::milliseconds(term_ms),
                                        [this] { return !paint_thread_pending_ || paint_thread_shutdown_; });
         } else {
-          paint_thread_libre_.wait(lock,
+          paint_thread_free_.wait(lock,
                                    [this] { return !paint_thread_pending_ || paint_thread_shutdown_; });
         }
-        ++paint_thread_esperas_;
+        ++paint_thread_waits_;
         const uint64_t ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                          std::chrono::steady_clock::now() - t0)
                                          .count());
-        paint_thread_espera_ns_ += ns;
+        paint_thread_wait_ns_ += ns;
         /*
          * Safety net: never worse than without the own thread.
          *
@@ -1784,67 +1784,67 @@ void Presenter::RequestPaintFromPaintThread() {
          * over the last window exceeds the threshold, the presenter cannot keep up and the usual path is
          * used again, which is measured and better.
          */
-        paint_thread_ventana_ns_ += ns;
-        ++paint_thread_ventana_n_;
+        paint_thread_window_ns_ += ns;
+        ++paint_thread_window_n_;
         /*
          * Do not give up during startup.
          *
          * This once fired at 34 seconds, that is, while loading, when the three cores are saturated
          * decompressing and presentation is nowhere near what it will be in a race. Since giving up was
          * permanent, the whole race ran on the old path and the own thread was never tested where it
-         * matters. A design mistake, not a fault of the fix: in that same log, the `grabar` stage had
+         * matters. A design mistake, not a fault of the fix: in that same log, the `record` stage had
          * dropped from 53.38 ms to 8.59 thanks to the priority.
          *
          * So giving up only counts once the game has been delivering real frames for a while. Before that,
          * long waits are ignored for the purpose of giving up (they are still counted for the report, which
          * is what tells whether it was needed).
          */
-        const int32_t gracia = REXCVAR_GET(present_hilo_gracia_fotogramas);
-        const int32_t ventana = REXCVAR_GET(present_hilo_ventana);
-        const int32_t umbral_us = REXCVAR_GET(present_hilo_espera_media_max_us);
-        if (paint_thread_avisos_ < uint64_t(gracia > 0 ? gracia : 0)) {
-          paint_thread_ventana_ns_ = 0;
-          paint_thread_ventana_n_ = 0;
-        } else if (ventana > 0 && paint_thread_ventana_n_ >= uint64_t(ventana)) {
+        const int32_t grace = REXCVAR_GET(present_thread_grace_frames);
+        const int32_t window = REXCVAR_GET(present_thread_window);
+        const int32_t threshold_us = REXCVAR_GET(present_thread_wait_avg_max_us);
+        if (paint_thread_warnings_ < uint64_t(grace > 0 ? grace : 0)) {
+          paint_thread_window_ns_ = 0;
+          paint_thread_window_n_ = 0;
+        } else if (window > 0 && paint_thread_window_n_ >= uint64_t(window)) {
           // Average over all frames of the window, not only those that waited: what is
           // compared is how much the presenter costs the game per frame.
-          const double media_us = double(paint_thread_ventana_ns_) / 1000.0 / double(ventana);
-          paint_thread_espera_media_us_ = media_us;
-          if (umbral_us > 0 && media_us > double(umbral_us)) {
-            rendirse = true;
+          const double media_us = double(paint_thread_window_ns_) / 1000.0 / double(window);
+          paint_thread_wait_average_us_ = media_us;
+          if (threshold_us > 0 && media_us > double(threshold_us)) {
+            give_up = true;
           }
-          paint_thread_ventana_ns_ = 0;
-          paint_thread_ventana_n_ = 0;
+          paint_thread_window_ns_ = 0;
+          paint_thread_window_n_ = 0;
         }
       }
       // If it is still marked (timeout expired, or discards allowed), then the previous frame is thrown away.
       if (paint_thread_pending_) {
-        ++paint_thread_descartados_;
+        ++paint_thread_discarded_;
       }
     }
     paint_thread_pending_ = true;
-    ++paint_thread_avisos_;
-    avisos = paint_thread_avisos_;
-    pintados = paint_thread_pintados_;
-    descartados = paint_thread_descartados_;
-    esperas = paint_thread_esperas_;
-    espera_ns = paint_thread_espera_ns_;
+    ++paint_thread_warnings_;
+    warnings = paint_thread_warnings_;
+    painted = paint_thread_painted_;
+    discarded = paint_thread_discarded_;
+    waits = paint_thread_waits_;
+    wait_ns = paint_thread_wait_ns_;
     paint_thread_signal_.notify_one();
   }
   // The log, outside the lock.
-  if (rendirse && paint_thread_activo_.exchange(false)) {
+  if (give_up && paint_thread_active_.exchange(false)) {
     REXLOG_WARN(
-        "[presentador] el hilo propio no da abasto: el juego lleva esperandole {:.2f} ms de media por "
-        "fotograma, por encima del limite. Se apaga y se vuelve a presentar desde el hilo del juego, "
-        "que es lo que hacia la compilacion 114: menos FPS, pero mas liso",
-        paint_thread_espera_media_us_ / 1000.0);
+        "[presenter] el thread_value own no da abasto: el game lleva esperandole {:.2f} ms de media por "
+        "frame, por encima del limit. Se apaga y se vuelve a present since el thread_value del game, "
+        "que es lo que hacia la compilacion 114: minus FPS, pero mas liso",
+        paint_thread_wait_average_us_ / 1000.0);
   }
-  if (avisos % 600 == 0) {
+  if (warnings % 600 == 0) {
     REXLOG_INFO(
-        "[presentador] hilo propio: {} fotogramas avisados, {} presentados, {} descartados ({:.1f} %); "
-        "el juego espero al presentador {} veces, {:.2f} ms de media",
-        avisos, pintados, descartados, 100.0 * double(descartados) / double(avisos), esperas,
-        esperas ? double(espera_ns) / 1e6 / double(esperas) : 0.0);
+        "[presenter] thread_value own: {} frames warned, {} presented, {} discarded ({:.1f} %); "
+        "el game espero al presenter {} times, {:.2f} ms de media",
+        warnings, painted, discarded, 100.0 * double(discarded) / double(warnings), waits,
+        waits ? double(wait_ns) / 1e6 / double(waits) : 0.0);
   }
 }
 
@@ -1886,20 +1886,20 @@ void Presenter::PaintFromPaintThread() {
 
 void Presenter::PaintThreadMain() {
 #if REX_PLATFORM_SWITCH
-  const int32_t prioridad = REXCVAR_GET(present_hilo_prioridad);
-  if (prioridad >= 0x1C && prioridad <= 0x3B) {
+  const int32_t priority = REXCVAR_GET(present_thread_priority);
+  if (priority >= 0x1C && priority <= 0x3B) {
     /*
      * Checked, not assumed. The log used to print the cvar value and take for granted that the kernel
      * had accepted it; if threadGetSelf() returned null (our threads come from pthread_create), the call
      * was a silent no-op and the presenter was left competing head-to-head with the ring. That would
      * explain the 18-22 ms it took to record a quad.
      */
-    const bool ok = RexSwitchSetCurrentThreadPriorityOk(prioridad);
-    REXLOG_INFO("[presentador] prioridad de Horizon {:#x}: {}", uint32_t(prioridad),
-                ok ? "aceptada por el kernel" : "*** RECHAZADA: el hilo se queda con la de serie ***");
+    const bool ok = RexSwitchSetCurrentThreadPriorityOk(priority);
+    REXLOG_INFO("[presenter] priority de Horizon {:#x}: {}", uint32_t(priority),
+                ok ? "aceptada por el kernel" : "*** RECHAZADA: el thread_value se queda con la de serie ***");
   } else {
-    REXLOG_WARN("Presenter: present_hilo_prioridad = {} fuera de 0x1C-0x3B: se deja la de serie",
-                prioridad);
+    REXLOG_WARN("Presenter: present_thread_priority = {} outside de 0x1C-0x3B: se leaves la de serie",
+                priority);
   }
 #endif
   for (;;) {
@@ -1914,10 +1914,10 @@ void Presenter::PaintThreadMain() {
       // Clear the mark before painting: if a new image arrives while we paint, it is marked again and we
       // go around once more. Clearing it afterwards would lose that signal.
       paint_thread_pending_ = false;
-      ++paint_thread_pintados_;
+      ++paint_thread_painted_;
       // And signal the game thread in case it was waiting for us to take this one. Inside the lock, as
       // the lost wake-up rule requires (see docs/platform-notes.md, Threads).
-      paint_thread_libre_.notify_one();
+      paint_thread_free_.notify_one();
     }
     PaintFromPaintThread();
   }

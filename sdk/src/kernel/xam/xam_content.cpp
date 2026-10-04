@@ -227,11 +227,11 @@ u32 xeXamContentCreate(u32 user_index, mapped_string root_name, mapped_void cont
     // What the game asks for and what we answer, in one line. It is the only place where both paths
     // are visible: the one that gets to create or open (which also leaves its own trace) and the one
     // cut short because the content "does not exist", which used to be silent.
-    REXKRNL_INFO("[guardado] XamContentCreate raiz «{}» contenido «{}» tipo {:08X} modo {} -> {} (resultado {:08X})",
+    REXKRNL_INFO("[guardado] XamContentCreate root_value «{}» content «{}» type {:08X} mode {} -> {} (result {:08X})",
                  root_name, content_data.file_name(), static_cast<uint32_t>(content_data.content_type.get()), flags & 0xF,
-                 disposition == kDispositionState::Create  ? "crear"
-                 : disposition == kDispositionState::Open  ? "abrir"
-                                                           : "nada",
+                 disposition == kDispositionState::Create  ? "create"
+                 : disposition == kDispositionState::Open  ? "open"
+                                                           : "nothing",
                  uint32_t(result));
 
     extended_error = X_HRESULT_FROM_WIN32(result);
@@ -292,7 +292,7 @@ u32 XamContentClose_entry(mapped_string root_name, mapped_void overlapped_ptr) {
   // Closes a previously opened root from XamContentCreate*.
   auto result = REX_KERNEL_STATE()->content_manager()->CloseContent(root_name.value());
   if (result != X_ERROR_SUCCESS) {
-    REXKRNL_WARN("[guardado] XamContentClose raiz «{}»: no estaba abierta (resultado {:08X})",
+    REXKRNL_WARN("[guardado] XamContentClose root_value «{}»: no was_writable open (result {:08X})",
                  root_name.value(), uint32_t(result));
   }
 

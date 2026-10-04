@@ -47,7 +47,7 @@ class SwitchInputDriver final : public InputDriver {
    * It is kept to send the menu shortcuts to the UI thread.
    */
   void OnWindowAvailable(rex::ui::Window* window) override {
-    ventana_ui_.store(window, std::memory_order_release);
+    window_ui_.store(window, std::memory_order_release);
   }
 
  private:
@@ -65,7 +65,7 @@ class SwitchInputDriver final : public InputDriver {
   std::array<std::unique_ptr<Slot>, kSlotCount> slots_;
   uint32_t connection_counter_ = 0;
   bool initialized_ = false;
-  std::atomic<rex::ui::Window*> ventana_ui_{nullptr};
+  std::atomic<rex::ui::Window*> window_ui_{nullptr};
 };
 
 }  // namespace rex::input::nx

@@ -67,12 +67,12 @@ _Static_assert(offsetof(ThreadExceptionDump, fpu_gprs) == 288, "NEON movidos");
 _Static_assert(sizeof(FpuRegister) == 16, "FpuRegister ya no son 16 bytes");
 _Static_assert(offsetof(ThreadExceptionDump, pstate) == 800, "pstate movido");
 _Static_assert(offsetof(ThreadExceptionDump, far) == 816, "far movido");
-_Static_assert(sizeof(ThreadExceptionDump) <= 0x340, "el volcado ya no cabe en la copia");
+_Static_assert(sizeof(ThreadExceptionDump) <= 0x340, "el dump ya no fits en la copy");
 /* The frame the kernel restores, the one the exception entry writes. */
-_Static_assert(offsetof(ThreadExceptionFrameA64, lr) == 72, "lr del marco movido");
-_Static_assert(offsetof(ThreadExceptionFrameA64, sp) == 80, "sp del marco movido");
-_Static_assert(offsetof(ThreadExceptionFrameA64, elr_el1) == 88, "pc del marco movido");
-_Static_assert(offsetof(ThreadExceptionFrameA64, pstate) == 96, "pstate del marco movido");
+_Static_assert(offsetof(ThreadExceptionFrameA64, lr) == 72, "lr del frame movido");
+_Static_assert(offsetof(ThreadExceptionFrameA64, sp) == 80, "sp del frame movido");
+_Static_assert(offsetof(ThreadExceptionFrameA64, elr_el1) == 88, "pc del frame movido");
+_Static_assert(offsetof(ThreadExceptionFrameA64, pstate) == 96, "pstate del frame movido");
 
 __asm__(
     ".text\n"

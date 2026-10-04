@@ -9,7 +9,7 @@
 // same sample by sample, so the result is bit-identical even if the source and the destination overlap. Only
 // volatile registers change (r4, r7-r11, f0, f2-f13, cr6); r3 and f1 stay the same.
 //
-// nfsmw_audio_suma_nativa: 0 = recompiled; 1 = native (default); 2 = validate: runs the recompiled code, saves
+// nfsmw_audio_sum_native: 0 = recompiled; 1 = native (default); 2 = validate: runs the recompiled code, saves
 // the destination, undoes it, runs the native code, compares and keeps the recompiled result. A summary is
 // logged every 10 s.
 
@@ -25,59 +25,59 @@
 #include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/logging.h>
-#include "nfsmw_informe_diferido.h"  // deferred reports
+#include "nfsmw_deferred_report.h"  // deferred reports
 
-#include "nfsmw_audio_nativo.h"
+#include "nfsmw_audio_native.h"
 
-REXCVAR_DEFINE_INT32(nfsmw_audio_suma_nativa, 1, "NFSMW",
-                     "Suma con ganancia del motor de sonido (sub_825FDFB0): 0 = codigo recompilado, 1 = nativo (mismo "
-                     "resultado bit a bit; por defecto), 2 = validar el nativo contra el recompilado");
+REXCVAR_DEFINE_INT32(nfsmw_audio_sum_native, 1, "NFSMW",
+                     "Sum con gain del motor de sonido (sub_825FDFB0): 0 = code recompiled, 1 = native (same "
+                     "result bit a bit; por default), 2 = validate el native contra el recompiled");
 
 REX_EXTERN(__imp__sub_825FDFB0);
 
-namespace nfsmw::audio_suma {
+namespace nfsmw::audio_sum {
 namespace {
 
-using namespace nfsmw::audio_nativo;
+using namespace nfsmw::audio_native;
 
-constexpr int32_t kMaxValidar = 1 << 20;
+constexpr int32_t kMaxValidate = 1 << 20;
 
-std::atomic<uint64_t> g_llamadas{0};
-std::atomic<uint64_t> g_muestras{0};
-std::atomic<uint64_t> g_diferencias{0};
-std::atomic<int64_t> g_ultimo_informe_ms{0};
-std::atomic<bool> g_diferencia_anotada{false};
+std::atomic<uint64_t> g_calls{0};
+std::atomic<uint64_t> g_samples{0};
+std::atomic<uint64_t> g_differences{0};
+std::atomic<int64_t> g_last_report_ms{0};
+std::atomic<bool> g_difference_noted{false};
 
-int64_t AhoraMs() {
+int64_t NowMs() {
   using namespace std::chrono;
   return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
-void Informar(int32_t modo) {
-  const int64_t ahora = AhoraMs();
-  int64_t ultimo = g_ultimo_informe_ms.load(std::memory_order_relaxed);
-  if (ultimo == 0) {
-    g_ultimo_informe_ms.compare_exchange_strong(ultimo, ahora, std::memory_order_relaxed);
+void Report(int32_t mode) {
+  const int64_t now = NowMs();
+  int64_t last = g_last_report_ms.load(std::memory_order_relaxed);
+  if (last == 0) {
+    g_last_report_ms.compare_exchange_strong(last, now, std::memory_order_relaxed);
     return;
   }
-  if (ahora - ultimo < 10000 || !g_ultimo_informe_ms.compare_exchange_strong(ultimo, ahora, std::memory_order_relaxed)) {
+  if (now - last < 10000 || !g_last_report_ms.compare_exchange_strong(last, now, std::memory_order_relaxed)) {
     return;
   }
-  NFSMW_INFORME_DIFERIDO("[audio] suma con ganancia (modo {}): sub_825FDFB0 {} llamadas y {} muestras, diferencias con el "
-              "recompilado {}",
-              modo, g_llamadas.exchange(0), g_muestras.exchange(0), g_diferencias.exchange(0));
+  NFSMW_REPORT_DEFERRED("[audio] sum con gain (mode {}): sub_825FDFB0 {} calls y {} sample_total, differences con el "
+              "recompiled {}",
+              mode, g_calls.exchange(0), g_samples.exchange(0), g_differences.exchange(0));
 }
 
 // The sum in native code, sample by sample and in the same order as the recompiled code.
-void Nativo(uint8_t* base, int32_t n, uint32_t origen, uint32_t destino, double g) {
+void Native(uint8_t* base, int32_t n, uint32_t source, uint32_t target, double g) {
   if (n <= 0) {
     return;
   }
   const uint64_t bytes = uint64_t(n) * 4;
   // Below 0xE0000000 the host address is base + address on both platforms: it advances 4 bytes at a time.
-  if (uint64_t(origen) + bytes <= 0xE0000000ull && uint64_t(destino) + bytes <= 0xE0000000ull) {
-    const uint8_t* po = Dir(base, origen);
-    uint8_t* pd = Dir(base, destino);
+  if (uint64_t(source) + bytes <= 0xE0000000ull && uint64_t(target) + bytes <= 0xE0000000ull) {
+    const uint8_t* po = Dir(base, source);
+    uint8_t* pd = Dir(base, target);
     for (int32_t i = 0; i < n; ++i) {
       uint32_t o;
       uint32_t d;
@@ -91,65 +91,65 @@ void Nativo(uint8_t* base, int32_t n, uint32_t origen, uint32_t destino, double 
     return;
   }
   for (int32_t i = 0; i < n; ++i) {
-    const float fo = LeerFloat(base, origen + uint32_t(i) * 4);
-    const uint32_t dir_d = destino + uint32_t(i) * 4;
-    const float fd = LeerFloat(base, dir_d);
-    EscribirFloat(base, dir_d, float(std::fma(double(fo), g, double(fd))));
+    const float fo = ReadFloat(base, source + uint32_t(i) * 4);
+    const uint32_t dir_d = target + uint32_t(i) * 4;
+    const float fd = ReadFloat(base, dir_d);
+    WriteFloat(base, dir_d, float(std::fma(double(fo), g, double(fd))));
   }
 }
 
 // Mode 2: compares the destination left by the recompiled and the native code, as 4-byte words.
-void Validar(PPCContext& ctx, uint8_t* base) {
+void Validate(PPCContext& ctx, uint8_t* base) {
   const int32_t n = ctx.r3.s32;
-  const uint32_t origen = ctx.r5.u32;
-  const uint32_t destino = ctx.r6.u32;
+  const uint32_t source = ctx.r5.u32;
+  const uint32_t target = ctx.r6.u32;
   const double g = ctx.f1.f64;
-  if (n <= 0 || n > kMaxValidar || uint64_t(destino) + uint64_t(n) * 4 > 0xE0000000ull) {
+  if (n <= 0 || n > kMaxValidate || uint64_t(target) + uint64_t(n) * 4 > 0xE0000000ull) {
     __imp__sub_825FDFB0(ctx, base);
     return;
   }
   const size_t bytes = size_t(n) * 4;
-  thread_local std::vector<uint8_t> antes;
-  thread_local std::vector<uint8_t> recompilado;
-  uint8_t* p = Dir(base, destino);
-  antes.assign(p, p + bytes);
+  thread_local std::vector<uint8_t> before;
+  thread_local std::vector<uint8_t> recompiled;
+  uint8_t* p = Dir(base, target);
+  before.assign(p, p + bytes);
   __imp__sub_825FDFB0(ctx, base);
-  recompilado.assign(p, p + bytes);
-  std::memcpy(p, antes.data(), bytes);
-  Nativo(base, n, origen, destino, g);
-  if (std::memcmp(p, recompilado.data(), bytes) != 0) {
-    g_diferencias.fetch_add(1, std::memory_order_relaxed);
-    if (!g_diferencia_anotada.exchange(true, std::memory_order_relaxed)) {
+  recompiled.assign(p, p + bytes);
+  std::memcpy(p, before.data(), bytes);
+  Native(base, n, source, target, g);
+  if (std::memcmp(p, recompiled.data(), bytes) != 0) {
+    g_differences.fetch_add(1, std::memory_order_relaxed);
+    if (!g_difference_noted.exchange(true, std::memory_order_relaxed)) {
       size_t i = 0;
-      while (i + 4 <= bytes && std::memcmp(p + i, recompilado.data() + i, 4) == 0) {
+      while (i + 4 <= bytes && std::memcmp(p + i, recompiled.data() + i, 4) == 0) {
         i += 4;
       }
-      REXLOG_WARN("[audio] suma con ganancia: primera diferencia en la muestra {} de {} (destino 0x{:08X}, origen "
+      REXLOG_WARN("[audio] sum con gain: first difference en la sample {} de {} (target 0x{:08X}, source "
                   "0x{:08X}, g {})",
-                  i / 4, n, destino, origen, g);
+                  i / 4, n, target, source, g);
     }
   }
-  std::memcpy(p, recompilado.data(), bytes);  // the game continues with the recompiled result
+  std::memcpy(p, recompiled.data(), bytes);  // the game continues with the recompiled result
 }
 
 }  // namespace
 
-void Suma825FDFB0(PPCContext& ctx, uint8_t* base) {
-  const int32_t modo = REXCVAR_GET(nfsmw_audio_suma_nativa);
-  if (modo != 1 && modo != 2) {
+void Sum825FDFB0(PPCContext& ctx, uint8_t* base) {
+  const int32_t mode = REXCVAR_GET(nfsmw_audio_sum_native);
+  if (mode != 1 && mode != 2) {
     __imp__sub_825FDFB0(ctx, base);
     return;
   }
   const int32_t n = ctx.r3.s32;
-  g_llamadas.fetch_add(1, std::memory_order_relaxed);
-  g_muestras.fetch_add(uint64_t(std::max(n, 0)), std::memory_order_relaxed);
-  Informar(modo);
-  if (modo == 2) {
-    Validar(ctx, base);
+  g_calls.fetch_add(1, std::memory_order_relaxed);
+  g_samples.fetch_add(uint64_t(std::max(n, 0)), std::memory_order_relaxed);
+  Report(mode);
+  if (mode == 2) {
+    Validate(ctx, base);
     return;
   }
   ctx.fpscr.disableFlushMode();
-  Nativo(base, n, ctx.r5.u32, ctx.r6.u32, ctx.f1.f64);
+  Native(base, n, ctx.r5.u32, ctx.r6.u32, ctx.f1.f64);
 }
 
-}  // namespace nfsmw::audio_suma
+}  // namespace nfsmw::audio_sum

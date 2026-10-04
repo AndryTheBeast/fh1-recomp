@@ -15,8 +15,8 @@ assets/
 # --- Generated from the game --------------------------------------------------
 generated/
 app*/generated/
-app*/src/copias_literales/
-app*/src/nfsmw_nativo_resplandor_*_spirv.h
+app*/src/copies_literal/
+app*/src/nfsc_native_glow_*_spirv.h
 app_*/
 
 # --- Build output -------------------------------------------------------------
@@ -45,6 +45,6 @@ fh1/out/
 *.stfs
 *.god
 shaders/fh1_hlsl.exe
-shaders/fh1_empaquetar.exe
+shaders/fh1_pack_library.exe
 shaders/fh1_lzx_decode.exe
 shaders/lzxd.o

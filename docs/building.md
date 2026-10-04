@@ -48,10 +48,10 @@ It downloads the rest, and it never overwrites a file that is already there, so 
 **Why:** the code generator needs the game's program, `default.xex`, and the port needs the game files.
 
 ```sh
-python tools/fase1_extraer.py path/to/NFSMW.iso -o assets/game_root
+python tools/phase1_extract.py path/to/NFSMW.iso -o assets/game_root
 ```
 
-This extracts the disc into `assets/game_root` ("fase1_extraer" means "phase 1: extract"). Git ignores the `assets/`
+This extracts the disc into `assets/game_root` ("phase1_extract" means "phase 1: extract"). Git ignores the `assets/`
 folder, so the game never ends up in the repository.
 
 Each [edition](glossary.md#edition) of the game has a different `default.xex` and needs its own build. The main
@@ -88,9 +88,9 @@ This does three things:
 
 1. It runs the code generator with the settings in `app/nfsmw_manifest.toml`. The C++ goes to `app/generated/default`,
    which git ignores because it is made from the game.
-2. It runs `tools/llamadas_directas.py` ("direct calls"). It turns calls between translated functions into direct C++
+2. It runs `tools/direct_calls.py` ("direct calls"). It turns calls between translated functions into direct C++
    calls, so that LTO can optimize across files.
-3. It runs `tools/copia_literal.py` ("literal copy"). It writes `app/src/copias_literales/`: exact copies of five game
+3. It runs `tools/literal_copy.py` ("literal copy"). It writes `app/src/copies_literal/`: exact copies of five game
    functions. The [guards](glossary.md#guard) of their native replacements compare against them (see
    [native-renderer.md](native-renderer.md)).
 
@@ -109,7 +109,7 @@ cmake -S app -B app/out/sw8 -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE=tools/switch/cmake/switch-devkitA64.cmake \
   -DREXSDK_DIR=$PWD/sdk \
   -DREXGLUE_SWITCH_NVK_SDK=/path/to/mesa-sdk/opt/devkitpro/portlibs/switch \
-  -DNFSMW_PGO=usar -DNFSMW_BUILD_LAUNCHER=OFF
+  -DNFSMW_PGO=use -DNFSMW_BUILD_LAUNCHER=OFF
 cmake --build app/out/sw8 -j 4
 ```
 
@@ -120,8 +120,8 @@ Build options, in `app/CMakeLists.txt`:
 | Option | Normally | What it does |
 |---|---|---|
 | `NFSMW_LTO` | ON | Optimizes the translated code and the app as a whole at the end of the build ([LTO](glossary.md#lto)). It uses 2 jobs (`-flto=2`), because more do not fit in 16 GB of RAM. |
-| `NFSMW_PGO` | empty | `usar` ("use") builds with the recorded profile in `pgo/pal_es`. `generar` ("generate") builds a special NRO that records a new profile. |
-| `NFSMW_ORDEN_FUNCIONES` | ON | Puts the functions that run most at the start of the program (list in `app/orden_funciones.ld`), which makes them faster to fetch. |
+| `NFSMW_PGO` | empty | `use` ("use") builds with the recorded profile in `pgo/pal_es`. `generar` ("generate") builds a special NRO that records a new profile. |
+| `NFSC_ORDER_FUNCTIONS` | ON | Puts the functions that run most at the start of the program (list in `app/order_functions.ld`), which makes them faster to fetch. |
 
 The icon for the Homebrew Menu is not included. Put a 256x256 JPEG at `tools/switch/icono/nfsmw_icono.jpg`, or the
 NRO gets libnx's default icon.
@@ -130,7 +130,7 @@ NRO gets libnx's default icon.
 
 [PGO](glossary.md#pgo) uses a record of which code runs most. `pgo/<edition>/` has the profile the released NROs were
 built with. It was recorded on the console while playing (a small test, not a full playthrough), and then translated to
-each edition with `tools/editions/pgo/traducir_perfil.py`.
+each edition with `tools/editions/pgo/translate_profile.py`.
 
 **Why the folder paths matter:** GCC finds each function in the profile by a fingerprint of its name. For functions
 that only exist inside one file (`static` functions, or those in anonymous namespaces), the fingerprint also includes
@@ -142,7 +142,7 @@ To record a new profile:
 1. Configure with `-DNFSMW_PGO=generar` and build.
 2. Play. The NRO writes its counters to `sdmc:/switch/nfsmw/pgo/` every three minutes.
 3. Copy the `.gcda` files into `pgo/pal_es/`.
-4. Build again with `-DNFSMW_PGO=usar`.
+4. Build again with `-DNFSMW_PGO=use`.
 
 [toolchain.md](toolchain.md) has the details and the traps.
 
@@ -153,11 +153,11 @@ The game's [shaders](glossary.md#shader) are Xbox 360 [microcode](glossary.md#mi
 installer page builds it in the browser from the disc; you only need this step to build it on your PC.
 
 ```sh
-MESA=/path/to/mesa-switch shaders/nfsmw_regenerar_biblioteca_pcf.sh out/library /path/to/extracted/containers
+MESA=/path/to/mesa-switch shaders/nfsmw_rebuild_library_pcf.sh out/library /path/to/extracted/containers
 ```
 
 The containers (the files that hold the shaders) are taken out of the disc files by
-`shaders/nfsmw_buscar_contenedores.cpp` ("find containers").
+`shaders/nfsmw_find_containers.cpp` ("find containers").
 
 ## 8. Copy it to the SD card
 
@@ -181,7 +181,7 @@ game), or with a [forwarder](glossary.md#forwarder). Started from the album, it 
 
 Every `default.xex` is a different program, so every edition needs its own build:
 
-- `tools/editions/crear_arbol.py` ("create tree") makes a copy of the app, `app_<edition>`, with all of our addresses
+- `tools/editions/create_tree.py` ("create tree") makes a copy of the app, `app_<edition>`, with all of our addresses
   translated to that edition.
 - `tools/editions/build_edition.ps1` builds it from the same folder paths as the main one, so the PGO profile matches.
 

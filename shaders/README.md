@@ -17,13 +17,13 @@ containers, translate the microcode to [HLSL](../docs/glossary.md#hlsl), compile
 |---|---|
 | `XenosRecomp/` | [XenosRecomp](https://github.com/hedge-dev/XenosRecomp) (by hedge-dev), with this port's changes under `NFSMW_RECOMP`: it translates microcode to HLSL. |
 | `shader_common.h` | The HLSL helpers every translated shader includes (texture fetches, specialization constants). |
-| `nfsmw_contenedor.h` ("container") | Reads the game's shader containers (the 2005 layout of this game). |
-| `nfsmw_buscar_contenedores.cpp` ("find containers") | Finds shader containers in the disc files. |
+| `nfsmw_container_2005.h` ("container") | Reads the game's shader containers (the 2005 layout of this game). |
+| `nfsmw_find_containers.cpp` ("find containers") | Finds shader containers in the disc files. |
 | `nfsmw_hlsl.cpp` | Translates every container of a folder to HLSL. |
-| `nfsmw_empaquetar.cpp` ("pack") | Packs the SPIR-V into the library, keyed by a fingerprint of each container. |
+| `nfsmw_pack_library.cpp` ("pack") | Packs the SPIR-V into the library, keyed by a fingerprint of each container. |
 | `nfsmw_lzx.cpp` | LZX decompression of the executable image (with libmspack), done the same way as the runtime does it. |
-| `nfsmw_probar_contenedor.cpp`, `nfsmw_probar_biblioteca.cpp` ("test container", "test library") | Regression checks of the container reader and of a built library. |
-| `nfsmw_regenerar_biblioteca_pcf.sh` ("regenerate library") | The whole pipeline on the PC: translate, rewrite the shadow and blur paths, compile with DXC, validate, pack. |
+| `nfsmw_test_container.cpp`, `nfsmw_test_library.cpp` ("test container", "test library") | Regression checks of the container reader and of a built library. |
+| `nfsmw_rebuild_library_pcf.sh` ("regenerate library") | The whole pipeline on the PC: translate, rewrite the shadow and blur paths, compile with DXC, validate, pack. |
 | `pch_min.h` | Precompiled header of the translator build. |
 | `wasm/` | The WebAssembly builds (programs compiled to run in a browser) used by the installer page: `build_wasm_tools.bat` and `link_dxc_wasm.bat` build them, and `dxc_web.cpp` is the entry point of DXC in the browser. |
 

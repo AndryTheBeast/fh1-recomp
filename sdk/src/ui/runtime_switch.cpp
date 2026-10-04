@@ -36,7 +36,7 @@ namespace {
  * errors what() includes the path. It ends with error 2345-0104.
  */
 [[noreturn]] void RexSwitchTerminate() {
-  char reason[768] = "std::terminate sin excepcion activa";
+  char reason[768] = "std::terminate sin excepcion active";
   if (std::exception_ptr current = std::current_exception()) {
     const std::type_info* type = abi::__cxa_current_exception_type();
     int status = -1;

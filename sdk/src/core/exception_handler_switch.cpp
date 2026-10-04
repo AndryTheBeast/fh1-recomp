@@ -58,7 +58,7 @@
  * mutex pointer turned into 1. The latter killed the process (report in
  * rex_crash.log, 2345-0102).
  *
- * Fix: REX_EXC_RANURAS stack + dump sets. The entry takes a free one with
+ * Fix: REX_EXC_SLOTS stack + dump sets. The entry takes a free one with
  * ldaxr/stlxr, points the dump and sp at it, and stores the slot number in pad[0] of
  * the dump. On resume, the trap branch reads it from the copy and releases the slot:
  * at that point the thread no longer runs on that stack, so another one can take it
@@ -102,19 +102,19 @@ extern "C" const char* RexSwitchLogDir(void);
  * Eight is plenty: measurements never showed more than two threads inside the handler at once, and
  * they are 512 KB of .bss, which take no space in the NRO.
  */
-#define REX_EXC_RANURAS 8
-#define REX_EXC_PILA 0x10000   /* 64 KB per slot -> shift of 16 */
-#define REX_EXC_VOLCADO 0x400  /* the dump takes 0x340 -> shift of 10 */
+#define REX_EXC_SLOTS 8
+#define REX_EXC_STACK 0x10000   /* 64 KB per slot -> shift of 16 */
+#define REX_EXC_DUMP 0x400  /* the dump takes 0x340 -> shift of 10 */
 
 extern "C" {
-alignas(16) uint8_t g_rex_exc_pilas[REX_EXC_RANURAS][REX_EXC_PILA];
-alignas(16) uint8_t g_rex_exc_volcados[REX_EXC_RANURAS][REX_EXC_VOLCADO];
-alignas(16) uint32_t g_rex_exc_ocupadas[REX_EXC_RANURAS];
+alignas(16) uint8_t g_rex_exc_stacks[REX_EXC_SLOTS][REX_EXC_STACK];
+alignas(16) uint8_t g_rex_exc_dumps[REX_EXC_SLOTS][REX_EXC_DUMP];
+alignas(16) uint32_t g_rex_exc_busy[REX_EXC_SLOTS];
 }
 
-static_assert(sizeof(ThreadExceptionDump) <= REX_EXC_VOLCADO,
-              "el volcado ya no cabe en la ranura");
-static_assert(REX_EXC_RANURAS == 8, "el ensamblador compara contra 8 a mano");
+static_assert(sizeof(ThreadExceptionDump) <= REX_EXC_DUMP,
+              "el dump ya no fits en la slot");
+static_assert(REX_EXC_SLOTS == 8, "el assembler compare contra 8 a mano");
 
 /*
  * The exception entry, replacing libnx's
@@ -176,35 +176,35 @@ __asm__(".text\n"
          * the kernel frame, and both are needed below.
          */
         ".Lrex_exc_dump:\n"
-        "    adrp x6, g_rex_exc_ocupadas\n"
-        "    add  x6, x6, :lo12:g_rex_exc_ocupadas\n"
+        "    adrp x6, g_rex_exc_busy\n"
+        "    add  x6, x6, :lo12:g_rex_exc_busy\n"
         "    mov  w7, wzr\n"
-        ".Lrex_exc_pide:\n"
+        ".Lrex_exc_asks:\n"
         "    add  x5, x6, x7, lsl #2\n"
         "    ldaxr w4, [x5]\n"
-        "    cbnz w4, .Lrex_exc_siguiente\n"
+        "    cbnz w4, .Lrex_exc_next\n"
         "    mov  w3, #1\n"
         "    stlxr w4, w3, [x5]\n"
         "    cbz  w4, .Lrex_exc_cogida\n"
-        "    b    .Lrex_exc_pide\n"
-        ".Lrex_exc_siguiente:\n"
+        "    b    .Lrex_exc_asks\n"
+        ".Lrex_exc_next:\n"
         "    clrex\n"
         "    add  w7, w7, #1\n"
         "    cmp  w7, #8\n"
-        "    b.lo .Lrex_exc_pide\n"
+        "    b.lo .Lrex_exc_asks\n"
         /*
          * All taken: go back to the first one and wait. A thread stalled here is far
          * less harmful than two writing to the same dump.
          */
         "    mov  w7, wzr\n"
-        "    b    .Lrex_exc_pide\n"
+        "    b    .Lrex_exc_asks\n"
         ".Lrex_exc_cogida:\n"
         /*
          * This slot's dump, with the slot number in pad[0], which the resume branch
          * reads from the copy to release it.
          */
-        "    adrp x2, g_rex_exc_volcados\n"
-        "    add  x2, x2, :lo12:g_rex_exc_volcados\n"
+        "    adrp x2, g_rex_exc_dumps\n"
+        "    add  x2, x2, :lo12:g_rex_exc_dumps\n"
         "    add  x2, x2, x7, lsl #10\n"
         "    mov  x5, x2\n"
         "    str  w0,  [x2], #4\n"
@@ -236,9 +236,9 @@ __asm__(".text\n"
         "    str  x29, [x2], #8\n"
         "    ldr  x3, [x1], #8\n"
         "    str  x3, [x2], #8\n"
-        /* Top of this slot's stack: base + (ranura + 1) * 64 KB. */
-        "    adrp x4, g_rex_exc_pilas\n"
-        "    add  x4, x4, :lo12:g_rex_exc_pilas\n"
+        /* Top of this slot's stack: base + (slot + 1) * 64 KB. */
+        "    adrp x4, g_rex_exc_stacks\n"
+        "    add  x4, x4, :lo12:g_rex_exc_stacks\n"
         "    add  x7, x7, #1\n"
         "    add  x4, x4, x7, lsl #16\n"
         "    ldr  x3, [x1]\n"
@@ -289,8 +289,8 @@ __asm__(".text\n"
          */
         "    ldr  w3, [x2, #4]\n"
         "    and  w3, w3, #7\n"
-        "    adrp x4, g_rex_exc_ocupadas\n"
-        "    add  x4, x4, :lo12:g_rex_exc_ocupadas\n"
+        "    adrp x4, g_rex_exc_busy\n"
+        "    add  x4, x4, :lo12:g_rex_exc_busy\n"
         "    add  x4, x4, x3, lsl #2\n"
         "    stlr wzr, [x4]\n"
         "    ldp  x3, x4, [x2, #16]\n"
@@ -383,11 +383,11 @@ void ScanStack(CrashBuf& b, uint64_t stack, uint64_t base, uint64_t text_lo, uin
   stack &= ~uint64_t(7);
   MemoryInfo mi;
   if (!QueryReadable(stack, 8, &mi)) {
-    Append(b, "pila ilegible en 0x%016" PRIx64 "\n", stack);
+    Append(b, "stack ilegible en 0x%016" PRIx64 "\n", stack);
     return;
   }
   const uint64_t end = std::min(mi.addr + mi.size, stack + 0x10000);
-  Append(b, "posibles retornos en la pila (0x%016" PRIx64 "):\n", stack);
+  Append(b, "posibles retornos en la stack (0x%016" PRIx64 "):\n", stack);
   int hits = 0;
   for (uint64_t p = stack; p + 8 <= end && hits < 48; p += 8) {
     const uint64_t v = *reinterpret_cast<const uint64_t*>(p);
@@ -400,7 +400,7 @@ void ScanStack(CrashBuf& b, uint64_t stack, uint64_t base, uint64_t text_lo, uin
     if (!bl && !blr) {
       continue;
     }
-    Append(b, "  sp+0x%05" PRIx64 "  imagen+0x%" PRIx64 "\n", p - stack, v - base);
+    Append(b, "  sp+0x%05" PRIx64 "  image+0x%" PRIx64 "\n", p - stack, v - base);
     ++hits;
   }
 }
@@ -410,9 +410,9 @@ void WriteCrashFile(const char* data, size_t len) {
   char path[FS_MAX_PATH];
   // In <NRO folder>/logs/rex/ (switch_crash_hooks.c computes it at startup, without allocating here).
   // If that path cannot be translated, the default one.
-  char ruta[FS_MAX_PATH];
-  std::snprintf(ruta, sizeof(ruta), "%srex_crash.log", RexSwitchLogDir());
-  if ((fsdevTranslatePath(ruta, &fs, path) < 0 || !fs) &&
+  char path[FS_MAX_PATH];
+  std::snprintf(path, sizeof(path), "%srex_crash.log", RexSwitchLogDir());
+  if ((fsdevTranslatePath(path, &fs, path) < 0 || !fs) &&
       (fsdevTranslatePath("sdmc:/switch/rex_crash.log", &fs, path) < 0 || !fs)) {
     return;
   }
@@ -451,28 +451,28 @@ extern "C" void RexSwitchCrashLog(const char* reason, const ThreadExceptionDump*
   svcGetThreadId(&tid, CUR_THREAD_HANDLE);
 
   Append(b, "==== %s ====\n", reason ? reason : "?");
-  Append(b, "hilo %" PRIu64 ", imagen 0x%016" PRIx64 " (codigo hasta 0x%016" PRIx64 ")\n", tid,
+  Append(b, "thread_value %" PRIu64 ", image 0x%016" PRIx64 " (code until 0x%016" PRIx64 ")\n", tid,
          base, text_hi);
-  Append(b, "pc 0x%016" PRIx64 " = imagen+0x%" PRIx64 "\n", pc, pc - base);
+  Append(b, "pc 0x%016" PRIx64 " = image+0x%" PRIx64 "\n", pc, pc - base);
 
   if (ctx) {
     const uint32_t esr = ctx->esr;
-    Append(b, "lr 0x%016" PRIx64 " = imagen+0x%" PRIx64 "\n", ctx->lr.x, ctx->lr.x - base);
+    Append(b, "lr 0x%016" PRIx64 " = image+0x%" PRIx64 "\n", ctx->lr.x, ctx->lr.x - base);
     Append(b, "esr 0x%08x (EC 0x%02x)  far 0x%016" PRIx64 "  error_desc 0x%x  pstate 0x%08x\n",
            esr, esr >> 26, ctx->far.x, ctx->error_desc, ctx->pstate);
     if (QueryReadable(pc, 4, &mi) && (mi.perm & Perm_X)) {
-      Append(b, "instruccion 0x%08x\n", *reinterpret_cast<const uint32_t*>(pc));
+      Append(b, "instruction 0x%08x\n", *reinterpret_cast<const uint32_t*>(pc));
     }
     MemoryInfo fm;
     u32 page_info = 0;
     if (R_SUCCEEDED(svcQueryMemory(&fm, &page_info, ctx->far.x))) {
       Append(b,
-             "far en region 0x%016" PRIx64 "+0x%" PRIx64 " tipo 0x%x permisos 0x%x\n",
+             "far en region 0x%016" PRIx64 "+0x%" PRIx64 " type 0x%x permissions 0x%x\n",
              fm.addr, fm.size, fm.type, fm.perm);
     }
     const uint64_t gm = reinterpret_cast<uint64_t>(RexGmBase());
     if (gm && ctx->far.x >= gm && ctx->far.x < gm + RexGmSize()) {
-      Append(b, "far dentro de la memoria del invitado: 0x%08" PRIx64 "\n", ctx->far.x - gm);
+      Append(b, "far inside de la memory_block del guest: 0x%08" PRIx64 "\n", ctx->far.x - gm);
     }
     for (int i = 0; i < 29; ++i) {
       Append(b, "x%-2d 0x%016" PRIx64 "%s", i, ctx->cpu_gprs[i].x, (i % 3 == 2) ? "\n" : "  ");
@@ -489,7 +489,7 @@ extern "C" void RexSwitchCrashLog(const char* reason, const ThreadExceptionDump*
     const uint64_t next = reinterpret_cast<const uint64_t*>(frame)[0];
     const uint64_t ret = reinterpret_cast<const uint64_t*>(frame)[1];
     if (ret >= text_lo && ret < text_hi) {
-      Append(b, "  #%02d imagen+0x%" PRIx64 "\n", i, ret - base);
+      Append(b, "  #%02d image+0x%" PRIx64 "\n", i, ret - base);
     } else {
       Append(b, "  #%02d 0x%016" PRIx64 "\n", i, ret);
     }
@@ -633,17 +633,17 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
    * there with the shadow. Two remain: the query and the shadow.
    */
   if (data_abort && in_window) {
-    size_t largo = 0x1000;
-    RexGmAccess acceso = REX_GM_NONE;
-    const bool hay_permiso =
-        RexGmQueryProtect(reinterpret_cast<uint8_t*>(far), &largo, &acceso);
+    size_t is_long = 0x1000;
+    RexGmAccess access = REX_GM_NONE;
+    const bool there_is_permission =
+        RexGmQueryProtect(reinterpret_cast<uint8_t*>(far), &is_long, &access);
 
     /*
      * (1) Read from a watched page. By far the common case, so it goes first and asks nothing
      * again. It is still emulated through the shadow: see below for why treating it as a write
      * does not work.
      */
-    if (!is_write && hay_permiso && acceso == REX_GM_READ && EmulateViaShadow(ctx)) {
+    if (!is_write && there_is_permission && access == REX_GM_READ && EmulateViaShadow(ctx)) {
       RexSwitchPerfCount(1);
       RexResumeFromException(ctx);
     }
@@ -662,13 +662,13 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
      * with the 360's five views are about 640 mappings (1 MB chunks gave about 2,500); with 64 KB pages
      * it would be 40,000 and the kernel runs out of blocks. The same instruction is retried, without touching the PC.
      */
-    if (!hay_permiso) {
-      constexpr size_t kFisicaIni = 0x100000000ull;
-      constexpr size_t kFisicaFin = 0x120000000ull;
-      constexpr size_t kTrozo = 0x400000;  // 4 MB: fewer chunks and fewer mappings
+    if (!there_is_permission) {
+      constexpr size_t kPhysicalIni = 0x100000000ull;
+      constexpr size_t kPhysicalEnd = 0x120000000ull;
+      constexpr size_t kChunk = 0x400000;  // 4 MB: fewer chunks and fewer mappings
       size_t offset = 0;
-      if (RexGmWindowToOffset(far, &offset) && offset >= kFisicaIni && offset < kFisicaFin) {
-        if (RexGmCommit(offset & ~(kTrozo - 1), kTrozo, REX_GM_WRITE) && RexGmFaultIn(far)) {
+      if (RexGmWindowToOffset(far, &offset) && offset >= kPhysicalIni && offset < kPhysicalEnd) {
+        if (RexGmCommit(offset & ~(kChunk - 1), kChunk, REX_GM_WRITE) && RexGmFaultIn(far)) {
           RexSwitchPerfCount(17);
           RexResumeFromException(ctx);
         }
@@ -701,7 +701,7 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
   HostThreadContext tc;
   FillContext(tc, ctx);
   Exception ex;
-  bool clasificado = true;
+  bool classified = true;
   if (data_abort) {
     ex.InitializeAccessViolation(&tc, far,
                                  is_write ? Exception::AccessViolationOperation::kWrite
@@ -709,10 +709,10 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
   } else if (ec == kEcUnknown) {
     ex.InitializeIllegalInstruction(&tc);
   } else {
-    clasificado = false;
+    classified = false;
   }
 
-  if (clasificado) {
+  if (classified) {
     for (size_t i = 0; i < kMaxHandlerCount && handlers_[i].first; ++i) {
       if (!handlers_[i].first(&ex, handlers_[i].second)) {
         continue;
@@ -727,13 +727,13 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
         const bool ok = RexGmQueryProtect(reinterpret_cast<uint8_t*>(far), &len, &a);
         // A read can be retried on REX_GM_READ: it will fault again, but it will land
         // in step 1 and be emulated. A write needs WRITE.
-        const bool reintentable = ok && (is_write ? a == REX_GM_WRITE : a != REX_GM_NONE);
-        if (!reintentable) {
+        const bool retryable = ok && (is_write ? a == REX_GM_WRITE : a != REX_GM_NONE);
+        if (!retryable) {
           if (EmulateViaShadow(ctx)) {
             RexSwitchPerfCount(3);
             RexResumeFromException(ctx);
           }
-          break;  // ni reintentable ni emulable: sigue a SEH y a fatal
+          break;  // ni retryable ni emulable: sigue a SEH y a fatal
         }
       }
       RexSwitchPerfCount(2);
@@ -752,7 +752,7 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
   // not another exception: it ends with error 2345-0102.
   (void)far;
   (void)esr;
-  RexSwitchCrashLog(data_abort ? "fallo de acceso a memoria" : "excepcion de CPU", ctx,
+  RexSwitchCrashLog(data_abort ? "miss de access a memory_block" : "excepcion de CPU", ctx,
                     ctx->sp.x, pc);
   diagAbortWithResult(MAKERESULT(Module_Libnx, 102));
 }

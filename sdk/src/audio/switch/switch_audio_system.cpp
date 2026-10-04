@@ -28,16 +28,16 @@ extern "C" void RexSwitchPerfAdd(unsigned id, u64 value);
 extern "C" void RexSwitchPerfMax(unsigned id, u64 value);
 
 REXCVAR_DEFINE_BOOL(audio_mute, false, "Audio", "Mute audio output");
-REXCVAR_DEFINE_BOOL(audio_switch_bomba, true, "Audio",
-                    "Pedir al juego una trama cada 5,333 ms (bomba de 187,5 Hz, como "
-                    "MarathonRecomp-NX) en vez de 4 seguidas al consumir cada bufer de audout, que "
-                    "dejaban sin paquete a la voz del servidor de audio del juego (audio robotico); "
-                    "se lee al abrir el audio");
-REXCVAR_DEFINE_INT32(audio_switch_tramas_en_cola, 10, "Audio",
-                     "Con audio_switch_bomba: tramas del juego que se mantienen en cola antes de audout "
-                     "(colchon; 10 = 53 ms, 6 hasta la build 105). Mas cola deja esperar al juego sin cortar la "
-                     "salida, a cambio de latencia: nfsmw_audio_esperar_servidor_ms espera hasta 30 ms; se lee "
-                     "al abrir el audio");
+REXCVAR_DEFINE_BOOL(audio_switch_pump, true, "Audio",
+                    "Request al game one frame every 5,333 ms (pump de 187,5 Hz, as "
+                    "MarathonRecomp-NX) en time de 4 consecutive al consumir every buffer de audout, que "
+                    "dejaban sin packet a la voice del server de audio del game (audio robotico); "
+                    "se reads al open el audio");
+REXCVAR_DEFINE_INT32(audio_switch_frames_in_queue, 10, "Audio",
+                     "Con audio_switch_pump: frames del game que se mantienen en queue before de audout "
+                     "(colchon; 10 = 53 ms, 6 until la build 105). Mas queue leaves wait al game sin cut la "
+                     "output, a change de latency: nfsc_audio_wait_server_ms wait until 30 ms; se reads "
+                     "al open el audio");
 
 namespace rex::audio::nx {
 
@@ -59,7 +59,7 @@ constexpr int kOutputThreadPriority = 0x2B;
 constexpr size_t kOutputThreadStack = 0x10000;
 // Bounded so the thread notices shutdown even if the device stops releasing.
 constexpr u64 kWaitTimeoutNs = 100'000'000;
-// audio_switch_bomba: one frame (256 samples) every 5.333 ms with absolute deadlines. With this many
+// audio_switch_pump: one frame (256 samples) every 5.333 ms with absolute deadlines. With this many
 // frames queued or fewer, another one is requested on each tick, and below the minimum one more is
 // requested to catch up (the system clock and the audio clock do not match exactly).
 constexpr u64 kPumpIntervalNs = 1'000'000'000ull * SwitchAudioDriver::kChannelSamples / 48000;
@@ -126,7 +126,7 @@ bool SwitchAudioDriver::MixFrameInto(float* stereo_out, const StereoFold& fold, 
     frames_unused_.push(frame);
   }
   // Exactly one release per frame really consumed: that is what lets the guest
-  // render the next one. With audio_switch_bomba, PumpTick requests them at a fixed rate.
+  // render the next one. With audio_switch_pump, PumpTick requests them at a fixed rate.
   if (release) {
     auto released = semaphore_->Release(1, nullptr);
     assert_true(released);
@@ -150,8 +150,8 @@ struct SwitchAudioSystem::Output {
   Thread thread{};
   bool thread_created = false;
   std::atomic<bool> running{false};
-  bool pump = false;  // audio_switch_bomba, read when audio is opened
-  size_t tramas_en_cola = kTargetQueuedFrames;  // audio_switch_tramas_en_cola, read when audio is opened
+  bool pump = false;  // audio_switch_pump, read when audio is opened
+  size_t frames_in_queue = kTargetQueuedFrames;  // audio_switch_frames_in_queue, read when audio is opened
   bool audout_initialized = false;
   bool audout_started = false;
   std::array<AudioOutBuffer, kBufferCount> buffers{};
@@ -201,10 +201,10 @@ void SwitchAudioSystem::DestroyDriver(AudioDriver* driver) {
 
 bool SwitchAudioSystem::StartOutput() {
   auto output = std::make_unique<Output>();
-  output->pump = REXCVAR_GET(audio_switch_bomba);
-  output->tramas_en_cola = static_cast<size_t>(std::clamp(REXCVAR_GET(audio_switch_tramas_en_cola), 2, 32));
-  REXLOG_INFO("SwitchAudioSystem: bomba de 187,5 Hz {}, {} tramas en cola", output->pump ? "activa" : "apagada",
-              output->tramas_en_cola);
+  output->pump = REXCVAR_GET(audio_switch_pump);
+  output->frames_in_queue = static_cast<size_t>(std::clamp(REXCVAR_GET(audio_switch_frames_in_queue), 2, 32));
+  REXLOG_INFO("SwitchAudioSystem: pump de 187,5 Hz {}, {} frames en queue", output->pump ? "active" : "off",
+              output->frames_in_queue);
 
   Result rc = audoutInitialize();
   if (R_FAILED(rc)) {
@@ -318,20 +318,20 @@ void SwitchAudioSystem::FillAndAppend(size_t buffer_index) {
   bool pcm_nonzero = false;
   // How much the mix saturates before it is clipped (the crackling in handheld mode). Counting only.
   float pico = 0.0f;
-  uint32_t saturadas = 0;
+  uint32_t saturated = 0;
   if (REXCVAR_GET(audio_mute)) {
     std::memset(samples, 0, kBufferBytes);
   } else {
     for (size_t i = 0; i < output.mix.size(); ++i) {
       const float value = std::isfinite(output.mix[i]) ? output.mix[i] : 0.0f;
-      const float magnitud = std::fabs(value);
-      pico = std::max(pico, magnitud);
-      saturadas += magnitud > 1.0f ? 1 : 0;
+      const float magnitude = std::fabs(value);
+      pico = std::max(pico, magnitude);
+      saturated += magnitude > 1.0f ? 1 : 0;
       samples[i] = static_cast<s16>(std::lrint(std::clamp(value, -1.0f, 1.0f) * 32767.0f));
       pcm_nonzero |= samples[i] != 0;
     }
   }
-  RexSwitchPerfAdd(21, saturadas);
+  RexSwitchPerfAdd(21, saturated);
   RexSwitchPerfAdd(22, pico >= 0.98f ? 1 : 0);
   RexSwitchPerfMax(23, static_cast<u64>(std::min(pico, 100.0f) * 10000.0f));
   output.buffers[buffer_index].data_size = kBufferBytes;
@@ -352,7 +352,7 @@ void SwitchAudioSystem::PumpTick() {
   std::lock_guard<std::mutex> guard(drivers_mutex_);
   for (SwitchAudioDriver* driver : drivers_) {
     const size_t queued = driver->QueuedFrames();
-    if (queued <= output_->tramas_en_cola) {
+    if (queued <= output_->frames_in_queue) {
       driver->RequestFrame();
     }
     if (queued < kMinQueuedFrames) {

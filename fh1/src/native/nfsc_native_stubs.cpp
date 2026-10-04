@@ -8,43 +8,43 @@
 #include <cstdint>
 #include <string>
 
-namespace nfsmw::reflejo_demanda {
+namespace nfsc::reflection_demand {
 // Reflection-on-demand is a Most Wanted shortcut (a reflection resolved to a fixed address); off here.
-void AnotarLectura() {}
-void AnotarCopia() {}
-void AnotarSwap() {}
-bool MedirVisibilidad() { return false; }
-bool VisibilidadComprobada() { return false; }
-void AnotarVisible(bool) {}
-void AnotarOculto() {}
-void AnotarTestigo(bool) {}
-}  // namespace nfsmw::reflejo_demanda
+void NoteRead() {}
+void NoteCopy() {}
+void NoteSwap() {}
+bool MeasureVisibility() { return false; }
+bool VisibilityChecked() { return false; }
+void NoteVisible(bool) {}
+void NoteHidden() {}
+void NoteWitness(bool) {}
+}  // namespace nfsc::reflection_demand
 
-namespace nfsmw::guardia30 {
+namespace nfsc::guard30 {
 // The 30 FPS guard (drops shadows when the frame rate falls): not used.
-void Latir(double) {}
-void Informe() {}
-bool SinSombras(bool del_usuario) { return del_usuario; }
-}  // namespace nfsmw::guardia30
+void Beat(double) {}
+void Report() {}
+bool WithoutShadows(bool of_user) { return of_user; }
+}  // namespace nfsc::guard30
 
-namespace nfsmw::escenario_lod {
-std::string Resumen() { return std::string(); }
-}  // namespace nfsmw::escenario_lod
+namespace nfsc::scenery_lod {
+std::string Summary() { return std::string(); }
+}  // namespace nfsc::scenery_lod
 
-namespace nfsmw::render_targets {
+namespace nfsc::render_targets {
 // Samples per pixel of the game's current anti-aliasing mode: 1 until the Carbon location is known.
-uint32_t MuestrasOriginalesModoActual(const uint8_t*) { return 1; }
-}  // namespace nfsmw::render_targets
+uint32_t SamplesOriginalModeCurrent(const uint8_t*) { return 1; }
+}  // namespace nfsc::render_targets
 
 // Frames counted by the game thread (Most Wanted hook); the ring thread compares it with its own count.
-std::atomic<uint64_t> g_nfsmw_fotogramas_juego{0};
+std::atomic<uint64_t> g_nfsc_frames_game{0};
 
-namespace nfsmw::nativo {
+namespace nfsc::native {
 // Direct3D-level markers: need the Carbon D3D hooks (phase 2).
-void ActivarConsumidorMarcadores(bool) {}
-void AnotarComprobacionMarcador(bool, uint32_t, uint32_t, uint32_t, uint32_t) {}
+void ActivateConsumerMarkers(bool) {}
+void NoteCheckMarker(bool, uint32_t, uint32_t, uint32_t, uint32_t) {}
 // Ring progress: wakes the game's Direct3D ring wait (carbon/src/nfsc_d3d_wait.cpp), which sleeps in
 // rex::WaitRingProgress. This was an empty stand-in, so on the native renderer every one of those sleeps ran to its
 // 2 ms cap (log: "0 ended by GPU progress") and a run of them showed up as the 160-180 ms hitches in Free Roam.
-void AvisarProgresoAnillo() { rex::NotifyRingProgress(); }
-}  // namespace nfsmw::nativo
+void NotifyProgressRing() { rex::NotifyRingProgress(); }
+}  // namespace nfsc::native

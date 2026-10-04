@@ -26,18 +26,18 @@ namespace rex::filesystem {
 namespace {
 // How much SD work the path lookup is saving. The [io] summary in xboxkrnl_io.cpp writes it to
 // the log. Relaxed on purpose: they are counters, they do not synchronize anything.
-std::atomic<uint64_t> g_misses_en_seco{0};
+std::atomic<uint64_t> g_misses_in_dry{0};
 std::atomic<uint64_t> g_stats_en_sd{0};
-std::atomic<uint64_t> g_barridos_en_sd{0};
-std::atomic<uint64_t> g_entradas_en_arbol{0};
+std::atomic<uint64_t> g_scans_in_sd{0};
+std::atomic<uint64_t> g_entries_in_tree{0};
 }  // namespace
 
-EstadisticasRutas LeerEstadisticasRutas() {
-  EstadisticasRutas e;
-  e.misses_en_seco = g_misses_en_seco.load(std::memory_order_relaxed);
+StatisticsPaths ReadStatisticsPaths() {
+  StatisticsPaths e;
+  e.misses_in_dry = g_misses_in_dry.load(std::memory_order_relaxed);
   e.stats_en_sd = g_stats_en_sd.load(std::memory_order_relaxed);
-  e.barridos_en_sd = g_barridos_en_sd.load(std::memory_order_relaxed);
-  e.entradas_en_arbol = g_entradas_en_arbol.load(std::memory_order_relaxed);
+  e.scans_in_sd = g_scans_in_sd.load(std::memory_order_relaxed);
+  e.entries_in_tree = g_entries_in_tree.load(std::memory_order_relaxed);
   return e;
 }
 
@@ -73,15 +73,15 @@ bool HostPathDevice::Initialize() {
    * in memory does not exist (see ResolvePath). If the entry count looks wrong or it takes long, it
    * shows here.
    */
-  const auto antes = std::chrono::steady_clock::now();
-  const uint64_t entradas_antes = g_entradas_en_arbol.load(std::memory_order_relaxed);
+  const auto before = std::chrono::steady_clock::now();
+  const uint64_t entries_before = g_entries_in_tree.load(std::memory_order_relaxed);
   PopulateEntry(root_entry);
   const double ms =
-      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - antes).count();
-  REXFS_INFO("[io] montado '{}' en {}: {} entradas en {:.1f} ms ({})",
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - before).count();
+  REXFS_INFO("[io] montado '{}' en {}: {} entries en {:.1f} ms ({})",
              rex::path_to_utf8(host_path_), mount_path_,
-             g_entradas_en_arbol.load(std::memory_order_relaxed) - entradas_antes, ms,
-             read_only_ ? "solo lectura" : "escritura");
+             g_entries_in_tree.load(std::memory_order_relaxed) - entries_before, ms,
+             read_only_ ? "solo read" : "write");
 
   return true;
 }
@@ -138,7 +138,7 @@ Entry* HostPathDevice::ResolvePath(const std::string_view path) {
     if (!child) {
       // The directory was already fully enumerated and the name is not there: it does not exist. No SD access.
       if (read_only_ && current_entry->children_complete()) {
-        g_misses_en_seco.fetch_add(1, std::memory_order_relaxed);
+        g_misses_in_dry.fetch_add(1, std::memory_order_relaxed);
         return nullptr;
       }
 
@@ -164,7 +164,7 @@ Entry* HostPathDevice::ResolvePath(const std::string_view path) {
        * incomplete and marking it complete would make lookups of its siblings fail falsely. The mark
        * is set by PopulateEntry, which does add them all.
        */
-      g_barridos_en_sd.fetch_add(1, std::memory_order_relaxed);
+      g_scans_in_sd.fetch_add(1, std::memory_order_relaxed);
       auto child_infos = rex::filesystem::ListFiles(current_entry->host_path());
       auto match = std::find_if(child_infos.begin(), child_infos.end(), [&](const auto& info) {
         return rex::string::utf8_equal_case(rex::path_to_utf8(info.name), part);
@@ -194,7 +194,7 @@ void HostPathDevice::PopulateEntry(HostPathEntry* parent_entry) {
     auto child = HostPathEntry::Create(this, parent_entry,
                                        parent_entry->host_path() / child_info.name, child_info);
     parent_entry->children_.push_back(std::unique_ptr<Entry>(child));
-    g_entradas_en_arbol.fetch_add(1, std::memory_order_relaxed);
+    g_entries_in_tree.fetch_add(1, std::memory_order_relaxed);
 
     if (child_info.type == rex::filesystem::FileInfo::Type::kDirectory) {
       PopulateEntry(child);

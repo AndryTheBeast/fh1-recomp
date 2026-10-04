@@ -95,10 +95,10 @@ While it is open, the controls go to the menu and not to the game.
 
 The categories:
 
-- **Graficos**: internal resolution, frame rate limit (60 or 30), the GPU clock requested in handheld mode, FXAA
+- **Graphics**: internal resolution, frame rate limit (60 or 30), the GPU clock requested in handheld mode, FXAA
   antialiasing, the sky glow, and the options for the console overlays (SaltyNX) and ReverseNX-RT.
-- **Graficos > Posproceso**: color filters for the final image, as presets (`cine`, `sepia`, `noir`, `frio`,
-  `calido`, `vivo`, `matrix`, `crt`) or `personalizado` with your own brightness, contrast, saturation, vibrance,
+- **Graphics > Postprocess**: color filters for the final image, as presets (`cine`, `sepia`, `noir`, `frio`,
+  `calido`, `live`, `matrix`, `crt`) or `personalizado` with your own brightness, contrast, saturation, vibrance,
   temperature, gamma, vignette and scanlines.
 - **NFSMW**: the port's own settings: renderer, shadows, reflections, streaming, audio, the game functions that run as
   native code, and diagnostics. Many of them are described in `nfsmw.toml`; change them only to try something.
@@ -111,12 +111,12 @@ The categories:
 
 ## Resolution
 
-The resolution is automatic by default (`nfsmw_resolucion_interna = "automatico"`): **1280x720** in handheld mode and
+The resolution is automatic by default (`nfsmw_internal_resolution = "automatico"`): **1280x720** in handheld mode and
 **1920x1080** docked. It's chosen when the game starts: if you dock or undock the console while playing, the game keeps
 the resolution, scaled to the screen until you restart it. ReverseNX-RT's Fake Docked and Fake Handheld count as well,
 when they are saved for the game with **Save current settings** in the overlay.
 
-To use one resolution in both modes, set it in `nfsmw.toml` (or in the Debug Menu, category **Graficos**, then
+To use one resolution in both modes, set it in `nfsmw.toml` (or in the Debug Menu, category **Graphics**, then
 **Save to config**) and restart the game:
 
 - `1280x720`: the resolution of the Xbox 360 version. Docked, it can give a higher frame rate than `1920x1080`, which

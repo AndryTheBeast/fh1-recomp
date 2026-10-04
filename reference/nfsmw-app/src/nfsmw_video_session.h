@@ -4,25 +4,25 @@
 namespace nfsmw::native {
 // Three resource sets, without waiting to reuse a busy one. The graphics
 // thread decides whether to present natively or keep the Xenos frame.
-class SesionVideo {
+class SessionVideo {
  public:
-  SesionVideo(VkDevice device, PFN_vkGetDeviceProcAddr proc,
-               const VkPhysicalDeviceMemoryProperties& memoria, uint32_t familia);
-  ~SesionVideo();
-  SesionVideo(const SesionVideo&) = delete;
-  SesionVideo& operator=(const SesionVideo&) = delete;
-  bool Preparar(const FotogramaVideo& f, VkImage imagen, VkImageView vista, uint64_t version,
-                bool escrita, uint32_t ancho, uint32_t alto);
-  void Enviar(VkQueue cola);
+  SessionVideo(VkDevice device, PFN_vkGetDeviceProcAddr proc,
+               const VkPhysicalDeviceMemoryProperties& memory_block, uint32_t family);
+  ~SessionVideo();
+  SessionVideo(const SessionVideo&) = delete;
+  SessionVideo& operator=(const SessionVideo&) = delete;
+  bool Prepare(const FrameVideo& f, VkImage image, VkImageView vista, uint64_t version,
+                bool written, uint32_t width, uint32_t height);
+  void Send(VkQueue queue);
  private:
-  struct Recursos;
+  struct Resources;
   VkDevice device_;
   PFN_vkGetDeviceProcAddr proc_;
-  VkPhysicalDeviceMemoryProperties memoria_;
-  uint32_t familia_;
-  std::unique_ptr<ModulosShaders> modulos_;
-  std::array<std::unique_ptr<Recursos>, 3> recursos_;
-  Recursos* preparado_ = nullptr;
-  unsigned siguiente_ = 0;
+  VkPhysicalDeviceMemoryProperties memory_;
+  uint32_t family_;
+  std::unique_ptr<ModulesShaders> modules_;
+  std::array<std::unique_ptr<Resources>, 3> resources_;
+  Resources* prepared_ = nullptr;
+  unsigned next_ = 0;
 };
 }

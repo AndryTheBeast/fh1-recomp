@@ -54,8 +54,8 @@ struct SwitchWindowedAppContext::Impl {
   // The last effective mode seen. A Reverse-NX change is pure software: the applet does not
   // change operation mode, so neither the hook nor the resolution event ever fires and the
   // window would not notice. It is polled here, the only place that already loops on its own.
-  bool sobremesa_efectivo = false;
-  bool sobremesa_efectivo_visto = false;
+  bool docked_effective = false;
+  bool docked_effective_seen = false;
 };
 
 SwitchWindowedAppContext::SwitchWindowedAppContext() : impl_(std::make_unique<Impl>()) {
@@ -94,7 +94,7 @@ bool SwitchWindowedAppContext::Initialize() {
   impl_->has_display_resolution_event =
       R_SUCCEEDED(appletGetDefaultDisplayResolutionChangeEvent(&impl_->display_resolution_changed));
   REXLOG_INFO("Switch: {} mode, {}",
-              rex::ui::switch_saltynx::ModoBase(appletGetOperationMode() == AppletOperationMode_Console) ? "docked" : "handheld",
+              rex::ui::switch_saltynx::ModeBase(appletGetOperationMode() == AppletOperationMode_Console) ? "docked" : "handheld",
               FocusStateName(appletGetFocusState()));
   return true;
 }
@@ -126,7 +126,7 @@ void SwitchWindowedAppContext::OnAppletHook(int hook_type) {
   switch (AppletHookType(hook_type)) {
     case AppletHookType_OnOperationMode:
       REXLOG_INFO("Switch: now {}",
-                  rex::ui::switch_saltynx::ModoBase(appletGetOperationMode() == AppletOperationMode_Console) ? "docked" : "handheld");
+                  rex::ui::switch_saltynx::ModeBase(appletGetOperationMode() == AppletOperationMode_Console) ? "docked" : "handheld");
       display_changed_ = true;
       break;
     case AppletHookType_OnFocusState:
@@ -184,15 +184,15 @@ int SwitchWindowedAppContext::RunMainMessageLoop() {
     }
     // And the same if what changed is Reverse-NX, which signals no event.
     {
-      const bool sobremesa = rex::ui::switch_saltynx::ModoBase(
+      const bool docked = rex::ui::switch_saltynx::ModeBase(
           appletGetOperationMode() == AppletOperationMode_Console);
-      if (!impl_->sobremesa_efectivo_visto) {
-        impl_->sobremesa_efectivo_visto = true;
-        impl_->sobremesa_efectivo = sobremesa;
-      } else if (sobremesa != impl_->sobremesa_efectivo) {
-        impl_->sobremesa_efectivo = sobremesa;
-        REXLOG_INFO("Switch: Reverse-NX ahora dice {}: se cambia el tamano de la ventana",
-                    sobremesa ? "sobremesa" : "portatil");
+      if (!impl_->docked_effective_seen) {
+        impl_->docked_effective_seen = true;
+        impl_->docked_effective = docked;
+      } else if (docked != impl_->docked_effective) {
+        impl_->docked_effective = docked;
+        REXLOG_INFO("Switch: Reverse-NX now dice {}: se cambia el size de la window",
+                    docked ? "docked" : "handheld");
         display_changed_ = true;
       }
     }

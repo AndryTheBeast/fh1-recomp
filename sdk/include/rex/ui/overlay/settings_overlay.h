@@ -20,7 +20,7 @@ namespace rex::ui {
 // nfsmw: the app removes from the settings menu the cvars that do nothing in its configuration (for
 // example, the emulated path's ones when its own renderer draws). They are only hidden: the command
 // line and the configuration file still read them. Can be called at any time; calls accumulate.
-void OcultarAjustesEnMenu(const std::vector<std::string>& nombres);
+void HideSettingsInMenu(const std::vector<std::string>& names);
 
 class SettingsDialog : public ImGuiDialog {
  public:

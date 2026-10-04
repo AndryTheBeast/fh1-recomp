@@ -6,7 +6,7 @@
  * GPU at 99.7% according to the Horizon OC monitor. That does not tell what to optimize: it takes
  * knowing which thread spends the CPU and in which function. Horizon has no perf and no debugger
  * on a retail console, so it is measured from inside. Every 10 s a report is appended to
- * <NRO folder>/logs/rex/rex_perfil.log:
+ * <NRO folder>/logs/rex/rex_profile.log:
  *
  *  - Game FPS: guest presents (IssueSwap).
  *  - Faults per second by type: each one costs an exception, or two with the resume through the
@@ -63,8 +63,8 @@ const char* RexSwitchLogDir(void);
  */
 size_t RexGmCommittedBytes(void);
 size_t RexGmMappedBytes(void);
-/* 0 = sin probar, 1 = permisos (paginas vigiladas legibles), 2 = desmapeo. */
-int RexGmModoProteccion(void);
+/* 0 = sin test, 1 = permissions (pages watched legibles), 2 = desmapeo. */
+int RexGmModeProtection(void);
 Result __real_threadCreate(Thread* t, ThreadFunc entry, void* arg, void* stack_mem,
                            size_t stack_sz, int prio, int cpuid);
 Result __real_threadClose(Thread* t);
@@ -85,14 +85,14 @@ namespace {
 
 constexpr size_t kMaxThreads = 160;
 constexpr u64 kSampleIntervalNs = 1000000ULL;  // 1 ms
-constexpr u64 kSegundoNs = 1000000000ULL;      // tick for the console overlays
+constexpr u64 kSecondNs = 1000000000ULL;      // tick for the console overlays
 
 /* internal resolution published to the overlays. The game sets it when choosing the video mode. */
-std::atomic<uint32_t> g_resolucion{(1280u << 16) | 720u};
+std::atomic<uint32_t> g_resolution{(1280u << 16) | 720u};
 constexpr u64 kPassiveIntervalNs = 100000000ULL;  // 100 ms, without pausing threads
 // Next to the rexglue logs, in <NRO folder>/logs/rex/.
 std::string StackFlagPath() {
-  return std::string(RexSwitchLogDir()) + "perfil_pilas.flag";
+  return std::string(RexSwitchLogDir()) + "profile_stacks.flag";
 }
 constexpr u64 kReportSeconds = 10;
 /*
@@ -106,7 +106,7 @@ constexpr size_t kFrames = 10;
 constexpr unsigned kCounterCount = 33;
 // In <NRO folder>/logs/rex/ (switch_crash_hooks.c computes it at startup).
 std::string ReportPath() {
-  return std::string(RexSwitchLogDir()) + "rex_perfil.log";
+  return std::string(RexSwitchLogDir()) + "rex_profile.log";
 }
 
 struct Slot {
@@ -129,17 +129,17 @@ struct Sample {
 };
 
 /*
- * Long frame windows. The renderer calls RexSwitchPerfTiron with the interval of every frame over
+ * Long frame windows. The renderer calls RexSwitchPerfHitch with the interval of every frame over
  * 45 ms; the report separates the samples taken inside those intervals and says what each thread was
- * doing right then (section "durante los tirones"). Only works with perfil_pilas.flag.
+ * doing right then (section "during los hitches"). Only works with profile_stacks.flag.
  */
-constexpr size_t kMaxTirones = 256;
-struct VentanaTiron {
-  u64 inicio;
+constexpr size_t kMaxHitches = 256;
+struct WindowHitch {
+  u64 start;
   u64 fin;
 };
-VentanaTiron g_tirones[kMaxTirones];
-std::atomic<u32> g_num_tirones{0};
+WindowHitch g_hitches[kMaxHitches];
+std::atomic<u32> g_num_hitches{0};
 Sample g_samples[kMaxSamples];
 size_t g_sample_count = 0;
 
@@ -151,32 +151,32 @@ std::atomic<u64> g_counters[kCounterCount];
  * before the constructors.
  */
 enum : unsigned {
-  kFenceConsulta,     // nvFenceWait con espera 0
-  kFenceEspera,       // nvFenceWait con espera
+  kFenceQuery,     // nvFenceWait con wait 0
+  kFenceWait,       // nvFenceWait con wait
   kKickoff,           // nvGpuChannelKickoff
-  kNvMapCacheada,     // nvMapCreate with CPU cache
+  kNvMapCached,     // nvMapCreate with CPU cache
   kNvMapSinCache,     // nvMapCreate without CPU cache
-  kReservaDireccion,  // nvAddressSpaceAllocFixed
-  kMapeoGpu,          // nvioctlNvhostAsGpu_MapBufferEx
+  kReserveAddress,  // nvAddressSpaceAllocFixed
+  kMappingGpu,          // nvioctlNvhostAsGpu_MapBufferEx
   kCacheClean,        // armDCacheClean
   kQueueBuffer,       // nwindowQueueBuffer
   kDequeueBuffer,     // bqDequeueBuffer
   kSleep0,            // svcSleepThread(0)
-  kSleepCeder,        // svcSleepThread(-1 o -2)
-  kSleepCorto,        // up to 1 ms
-  kSleepLargo,        // over 1 ms
-  kLlamadasCount,
+  kSleepYield,        // svcSleepThread(-1 o -2)
+  kSleepShort,        // up to 1 ms
+  kSleepLong,        // over 1 ms
+  kCallsCount,
 };
-struct Llamadas {
+struct Calls {
   std::atomic<u64> n{0};
   std::atomic<u64> ticks{0};
   std::atomic<u64> bytes{0};
 };
-Llamadas g_llamadas[kLlamadasCount];
+Calls g_calls[kCallsCount];
 
-inline void Anotar(unsigned id, u64 desde, u64 bytes = 0) {
-  const u64 ticks = armGetSystemTick() - desde;
-  Llamadas& l = g_llamadas[id];
+inline void Note(unsigned id, u64 since, u64 bytes = 0) {
+  const u64 ticks = armGetSystemTick() - since;
+  Calls& l = g_calls[id];
   l.n.fetch_add(1, std::memory_order_relaxed);
   l.ticks.fetch_add(ticks, std::memory_order_relaxed);
   if (bytes) {
@@ -187,7 +187,7 @@ inline void Anotar(unsigned id, u64 desde, u64 bytes = 0) {
 /*
  * Automatic A/B tests. Each report (10 s) removes one part of the GPU work: those commands (draw or
  * dispatch) stop being recorded, but everything else stays the same, so the state does not break.
- * The image looks wrong while the mode lasts; that is expected. If with "sin nada" it is just as
+ * The image looks wrong while the mode lasts; that is expected. If with "sin nothing" it is just as
  * slow, the cost is not in the work but in something fixed (submissions, driver).
  */
 struct Mode {
@@ -196,13 +196,13 @@ struct Mode {
 };
 constexpr Mode kModes[] = {
     {0, "normal"},
-    {1, "sin dibujados"},
+    {1, "sin drawn"},
     {2, "sin transferencias"},
     {4, "sin resolves"},
-    {8, "sin cargas de texturas"},
-    {16, "sin efecto de presentacion"},
-    {32, "sin despacho por baldosas"},
-    {63, "sin nada"},
+    {8, "sin loads de textures"},
+    {16, "sin effect de presentacion"},
+    {32, "sin dispatch por tiles"},
+    {63, "sin nothing"},
 };
 constexpr size_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
 
@@ -217,17 +217,17 @@ constexpr size_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
  * the measurement is useful. From then on it removes one part of the GPU work per report, goes once
  * through the eight modes and returns to "normal".
  *
- * How to read it. If with "sin nada" the game is just as slow, the cost is not in the GPU work but
+ * How to read it. If with "sin nothing" the game is just as slow, the cost is not in the GPU work but
  * in something fixed: submissions, the driver, or the guest itself. If FPS shoots up, the mode where
  * it rises most points to the culprit.
  */
-std::atomic<bool> g_ab_activas{false};
+std::atomic<bool> g_ab_active{false};
 std::atomic<u32> g_skip_mask{0};
 
 extern "C" void RexSwitchPerfToggleAb(void) {
-  const bool nuevo = !g_ab_activas.load(std::memory_order_relaxed);
-  g_ab_activas.store(nuevo, std::memory_order_relaxed);
-  if (!nuevo) {
+  const bool new_value = !g_ab_active.load(std::memory_order_relaxed);
+  g_ab_active.store(new_value, std::memory_order_relaxed);
+  if (!new_value) {
     g_skip_mask.store(0, std::memory_order_relaxed);
   }
 }
@@ -238,11 +238,11 @@ extern "C" void RexSwitchPerfToggleAb(void) {
  * view), so that limit is the real ceiling, not free memory. When it runs out,
  * even committing 4 KB fails with 2001-0103 (resource exhausted).
  */
-void LimiteDeMapeo(u64* usado_mb, u64* tope_mb, u64* proceso_mb, u64* total_mb) {
-  *usado_mb = *tope_mb = *proceso_mb = *total_mb = 0;
+void LimitOfMapping(u64* used_mb, u64* cap_mb, u64* process_mb, u64* total_mb) {
+  *used_mb = *cap_mb = *process_mb = *total_mb = 0;
   u64 v = 0;
   if (R_SUCCEEDED(svcGetInfo(&v, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0))) {
-    *proceso_mb = v >> 20;
+    *process_mb = v >> 20;
   }
   if (R_SUCCEEDED(svcGetInfo(&v, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0))) {
     *total_mb = v >> 20;
@@ -252,12 +252,12 @@ void LimiteDeMapeo(u64* usado_mb, u64* tope_mb, u64* proceso_mb, u64* total_mb) 
     return;
   }
   reslimit = static_cast<Handle>(v);
-  s64 actual = 0, tope = 0;
+  s64 actual = 0, cap = 0;
   if (R_SUCCEEDED(svcGetResourceLimitCurrentValue(&actual, reslimit, LimitableResource_Memory))) {
-    *usado_mb = static_cast<u64>(actual) >> 20;
+    *used_mb = static_cast<u64>(actual) >> 20;
   }
-  if (R_SUCCEEDED(svcGetResourceLimitLimitValue(&tope, reslimit, LimitableResource_Memory))) {
-    *tope_mb = static_cast<u64>(tope) >> 20;
+  if (R_SUCCEEDED(svcGetResourceLimitLimitValue(&cap, reslimit, LimitableResource_Memory))) {
+    *cap_mb = static_cast<u64>(cap) >> 20;
   }
   svcCloseHandle(reslimit);
 }
@@ -294,7 +294,7 @@ bool InText(u64 addr) { return addr >= g_text_lo && addr < g_text_hi; }
 
 void PrintAddr(FILE* f, u64 addr) {
   if (InText(addr)) {
-    std::fprintf(f, "imagen+0x%" PRIx64, addr - g_base);
+    std::fprintf(f, "image+0x%" PRIx64, addr - g_base);
   } else {
     std::fprintf(f, "0x%016" PRIx64, addr);
   }
@@ -378,19 +378,19 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
     return;
   }
 
-  u64 lim_usado = 0, lim_tope = 0, proc_usado = 0, proc_total = 0;
-  LimiteDeMapeo(&lim_usado, &lim_tope, &proc_usado, &proc_total);
+  u64 lim_used = 0, lim_cap = 0, proc_used = 0, proc_total = 0;
+  LimitOfMapping(&lim_used, &lim_cap, &proc_used, &proc_total);
 
   double total_cpu = 0.0;
   for (size_t i : order) {
     total_cpu += g_slots[i].cpu;
   }
   std::fprintf(f,
-               "==== %.1f s | modo: %s | juego %.1f fps | CPU total %.0f%% (400%% = 4 nucleos) | fallos/s: "
-               "lectura emulada %.0f, manejador SDK %.0f, reintento emulado %.0f, SEH %.0f, "
-               "fisica confirmada %.0f, vistas %.0f | invitado %zu/%zu MB (respaldo/mapeado) | "
-               "limite de mapeo %llu/%llu MB, proceso %llu/%llu MB | "
-               "muestras %zu | vigilancia: %s | samplers: %.0f nuevos/s, %.0f parones/s\n",
+               "==== %.1f s | mode: %s | game %.1f fps | CPU total %.0f%% (400%% = 4 cores) | misses/s: "
+               "read emulada %.0f, handler SDK %.0f, reintento emulado %.0f, SEH %.0f, "
+               "physical confirmada %.0f, views %.0f | guest %zu/%zu MB (fallback/mapped) | "
+               "limit de mapping %llu/%llu MB, process %llu/%llu MB | "
+               "sample_total %zu | vigilancia: %s | samplers: %.0f new_items/s, %.0f parones/s\n",
                seconds, mode, double(counters_now[0] - counters_last[0]) / seconds, total_cpu,
                double(counters_now[1] - counters_last[1]) / seconds,
                double(counters_now[2] - counters_last[2]) / seconds,
@@ -399,10 +399,10 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                double(counters_now[17] - counters_last[17]) / seconds,
                double(counters_now[18] - counters_last[18]) / seconds,
                RexGmCommittedBytes() >> 20, RexGmMappedBytes() >> 20,
-               (u64)lim_usado, (u64)lim_tope, (u64)proc_usado, (u64)proc_total, g_sample_count,
-                (RexGmModoProteccion() == 1   ? "permisos (paginas legibles)"
-                 : RexGmModoProteccion() == 2 ? "desmapeo (cada lectura falla)"
-                                              : "sin probar"),
+               (u64)lim_used, (u64)lim_cap, (u64)proc_used, (u64)proc_total, g_sample_count,
+                (RexGmModeProtection() == 1   ? "permissions (pages legibles)"
+                 : RexGmModeProtection() == 2 ? "desmapeo (every read falla)"
+                                              : "sin test"),
                 double(counters_now[20] - counters_last[20]) / seconds,
                 double(counters_now[19] - counters_last[19]) / seconds);
   // Work the game sends to the GPU, per presented frame. One screen is
@@ -414,133 +414,133 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
   // in handheld mode.
   const u64 pico_audio = g_counters[23].exchange(0, std::memory_order_relaxed);
   std::fprintf(f,
-               "     audio: %.0f bloques de cliente mezclados, %.0f solicitudes sin datos, "
-               "%.0f/%.0f buffers audout con PCM no nulo, %.0f muestras saturadas (mas de 1,0 antes de recortar), "
-               "%.0f buffers con pico de 0,98 o mas, pico maximo %.3f | consola en modo %s\n",
+               "     audio: %.0f blocks de client mezclados, %.0f solicitudes sin data, "
+               "%.0f/%.0f buffers audout con PCM no nulo, %.0f sample_total saturated (mas de 1,0 before de recortar), "
+               "%.0f buffers con pico de 0,98 o mas, pico maximum %.3f | consola en mode %s\n",
                delta(24), delta(25), delta(26), delta(27), delta(21), delta(22), double(pico_audio) / 10000.0,
-               rex::ui::switch_saltynx::ModoBase(appletGetOperationMode() == AppletOperationMode_Console)
-                   ? "sobremesa"
-                   : "portatil");
+               rex::ui::switch_saltynx::ModeBase(appletGetOperationMode() == AppletOperationMode_Console)
+                   ? "docked"
+                   : "handheld");
   // Reverse-NX state as is, without interpretation. A whole test session was wasted because its
   // overlay said "Docked" while "Controlled by system" was Yes, and in that case its mode does not
   // rule: it only mirrors the console's. This shows at a glance which of the two is happening.
   {
-    const auto reverse = rex::ui::switch_saltynx::EstadoReverse();
+    const auto reverse = rex::ui::switch_saltynx::StateReverse();
     const bool real = appletGetOperationMode() == AppletOperationMode_Console;
-    if (!reverse.hay) {
-      std::fprintf(f, "     Reverse-NX: sin bloque (consola %s, manda ella)\n",
-                   real ? "en la base" : "en las manos");
+    if (!reverse.there_is) {
+      std::fprintf(f, "     Reverse-NX: sin block (consola %s, manda ella)\n",
+                   real ? "en la base" : "en the manos");
     } else {
       std::fprintf(f,
-                   "     Reverse-NX: dice %s, manda %s (Controlled by system %s), el juego ha preguntado: %s; "
-                   "consola de verdad %s -> se obedece %s\n",
-                   reverse.en_base ? "sobremesa" : "portatil", reverse.por_defecto ? "la consola" : "Reverse-NX",
-                   reverse.por_defecto ? "Yes" : "No", reverse.plugin_activo ? "si" : "no",
-                   real ? "en la base" : "en las manos",
-                   rex::ui::switch_saltynx::ModoBase(real) ? "sobremesa" : "portatil");
+                   "     Reverse-NX: dice %s, manda %s (Controlled by system %s), el game ha preguntado: %s; "
+                   "consola de truth %s -> se obedece %s\n",
+                   reverse.en_base ? "docked" : "handheld", reverse.by_default ? "la consola" : "Reverse-NX",
+                   reverse.by_default ? "Yes" : "No", reverse.plugin_active ? "si" : "no",
+                   real ? "en la base" : "en the manos",
+                   rex::ui::switch_saltynx::ModeBase(real) ? "docked" : "handheld");
     }
   }
   // Real console clocks (clkrst, 8.0.0+) and the cores the process may use. It tells whether the
   // session ran overclocked and with which CPU limit it was measured: performance tests run without
   // overclock.
   {
-    static bool iniciado = false;
-    static bool hay_clkrst = false;
-    static ClkrstSession sesiones[3]{};
-    static u64 mascara_nucleos = 0;
-    if (!iniciado) {
-      iniciado = true;
-      if (R_FAILED(svcGetInfo(&mascara_nucleos, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0))) {
-        mascara_nucleos = 0;
+    static bool started = false;
+    static bool there_is_clkrst = false;
+    static ClkrstSession sessions[3]{};
+    static u64 mask_cores = 0;
+    if (!started) {
+      started = true;
+      if (R_FAILED(svcGetInfo(&mask_cores, InfoType_CoreMask, CUR_PROCESS_HANDLE, 0))) {
+        mask_cores = 0;
       }
       if (R_SUCCEEDED(clkrstInitialize())) {
-        static const PcvModuleId modulos[3] = {PcvModuleId_CpuBus, PcvModuleId_GPU, PcvModuleId_EMC};
-        hay_clkrst = true;
+        static const PcvModuleId modules[3] = {PcvModuleId_CpuBus, PcvModuleId_GPU, PcvModuleId_EMC};
+        there_is_clkrst = true;
         for (unsigned i = 0; i < 3; ++i) {
-          if (R_FAILED(clkrstOpenSession(&sesiones[i], modulos[i], 3))) {
-            hay_clkrst = false;
+          if (R_FAILED(clkrstOpenSession(&sessions[i], modules[i], 3))) {
+            there_is_clkrst = false;
           }
         }
       }
     }
     u32 hz[3] = {0, 0, 0};
-    if (hay_clkrst) {
+    if (there_is_clkrst) {
       for (unsigned i = 0; i < 3; ++i) {
-        clkrstGetClockRate(&sesiones[i], &hz[i]);
+        clkrstGetClockRate(&sessions[i], &hz[i]);
       }
     }
-    unsigned nucleos = 0;
+    unsigned cores = 0;
     for (unsigned i = 0; i < 64; ++i) {
-      nucleos += unsigned((mascara_nucleos >> i) & 1);
+      cores += unsigned((mask_cores >> i) & 1);
     }
     // SoC and board temperature (ts service, sessions on [10.0.0+]). The system lowers clocks around
     // 70 degrees and Erista gets there before Mariko: without this, "it is slow" cannot be told apart
     // from "it is hot". On the OLED model the board sensor reads wrong, because it sits next to the
     // charging IC.
-    static bool ts_iniciado = false;
-    static bool hay_ts = false;
-    static TsSession ts_soc{}, ts_placa{};
-    if (!ts_iniciado) {
-      ts_iniciado = true;
+    static bool ts_started = false;
+    static bool there_is_ts = false;
+    static TsSession ts_soc{}, ts_board{};
+    if (!ts_started) {
+      ts_started = true;
       if (R_SUCCEEDED(tsInitialize())) {
-        hay_ts = R_SUCCEEDED(tsOpenSession(&ts_soc, TsDeviceCode_LocationExternal)) &&
-                 R_SUCCEEDED(tsOpenSession(&ts_placa, TsDeviceCode_LocationInternal));
+        there_is_ts = R_SUCCEEDED(tsOpenSession(&ts_soc, TsDeviceCode_LocationExternal)) &&
+                 R_SUCCEEDED(tsOpenSession(&ts_board, TsDeviceCode_LocationInternal));
       }
     }
-    float grados_soc = 0.0f, grados_placa = 0.0f;
-    if (hay_ts) {
-      tsSessionGetTemperature(&ts_soc, &grados_soc);
-      tsSessionGetTemperature(&ts_placa, &grados_placa);
+    float degrees_soc = 0.0f, degrees_board = 0.0f;
+    if (there_is_ts) {
+      tsSessionGetTemperature(&ts_soc, &degrees_soc);
+      tsSessionGetTemperature(&ts_board, &degrees_board);
     }
     std::fprintf(f,
-                 "     relojes: CPU %.1f MHz, GPU %.1f MHz, memoria %.1f MHz%s | nucleos del proceso %u "
-                 "(mascara 0x%llX) | SoC %.1f C, placa %.1f C%s\n",
+                 "     clocks: CPU %.1f MHz, GPU %.1f MHz, memory_block %.1f MHz%s | cores del process %u "
+                 "(mask 0x%llX) | SoC %.1f C, board %.1f C%s\n",
                  double(hz[0]) / 1.0e6, double(hz[1]) / 1.0e6, double(hz[2]) / 1.0e6,
-                 hay_clkrst ? "" : " (clkrst no disponible)", nucleos,
-                 (unsigned long long)mascara_nucleos, double(grados_soc), double(grados_placa),
-                 hay_ts ? "" : " (ts no disponible)");
+                 there_is_clkrst ? "" : " (clkrst no available)", cores,
+                 (unsigned long long)mask_cores, double(degrees_soc), double(degrees_board),
+                 there_is_ts ? "" : " (ts no available)");
   }
   // libnx calls: per second, with the ms per second the calling threads spend inside.
   {
-    static u64 ultimo[kLlamadasCount][3];
-    double n[kLlamadasCount], ms[kLlamadasCount], mb[kLlamadasCount];
-    for (unsigned i = 0; i < kLlamadasCount; ++i) {
-      const u64 vn = g_llamadas[i].n.load(std::memory_order_relaxed);
-      const u64 vt = g_llamadas[i].ticks.load(std::memory_order_relaxed);
-      const u64 vb = g_llamadas[i].bytes.load(std::memory_order_relaxed);
-      n[i] = double(vn - ultimo[i][0]) / seconds;
-      ms[i] = double(vt - ultimo[i][1]) * 1000.0 / double(tick_freq) / seconds;
-      mb[i] = double(vb - ultimo[i][2]) / 1048576.0 / seconds;
-      ultimo[i][0] = vn;
-      ultimo[i][1] = vt;
-      ultimo[i][2] = vb;
+    static u64 last[kCallsCount][3];
+    double n[kCallsCount], ms[kCallsCount], mb[kCallsCount];
+    for (unsigned i = 0; i < kCallsCount; ++i) {
+      const u64 vn = g_calls[i].n.load(std::memory_order_relaxed);
+      const u64 vt = g_calls[i].ticks.load(std::memory_order_relaxed);
+      const u64 vb = g_calls[i].bytes.load(std::memory_order_relaxed);
+      n[i] = double(vn - last[i][0]) / seconds;
+      ms[i] = double(vt - last[i][1]) * 1000.0 / double(tick_freq) / seconds;
+      mb[i] = double(vb - last[i][2]) / 1048576.0 / seconds;
+      last[i][0] = vn;
+      last[i][1] = vt;
+      last[i][2] = vb;
     }
     std::fprintf(f,
-                 "     libnx por segundo (llamadas y ms dentro): fences consultadas %.0f (%.1f ms), esperadas %.0f "
-                 "(%.1f ms) | kickoff %.0f (%.1f ms) | NvMap nuevos %.1f con cache (%.1f MB) y %.1f sin cache "
-                 "(%.1f MB), %.1f ms | direcciones de GPU %.1f (%.1f ms), mapeos %.1f (%.1f MB, %.1f ms) | "
-                 "armDCacheClean %.0f (%.1f MB, %.1f ms) | cola de la ventana %.1f (%.1f ms), sacar buffer %.1f "
-                 "(%.1f ms) | svcSleepThread: 0 %.0f, ceder %.0f, hasta 1 ms %.0f (%.1f ms), mas %.0f\n",
-                 n[kFenceConsulta], ms[kFenceConsulta], n[kFenceEspera], ms[kFenceEspera], n[kKickoff],
-                 ms[kKickoff], n[kNvMapCacheada], mb[kNvMapCacheada], n[kNvMapSinCache], mb[kNvMapSinCache],
-                 ms[kNvMapCacheada] + ms[kNvMapSinCache], n[kReservaDireccion], ms[kReservaDireccion],
-                 n[kMapeoGpu], mb[kMapeoGpu], ms[kMapeoGpu], n[kCacheClean], mb[kCacheClean], ms[kCacheClean],
+                 "     libnx por second (calls y ms inside): fences consultadas %.0f (%.1f ms), esperadas %.0f "
+                 "(%.1f ms) | kickoff %.0f (%.1f ms) | NvMap new_items %.1f con cache (%.1f MB) y %.1f sin cache "
+                 "(%.1f MB), %.1f ms | addresses de GPU %.1f (%.1f ms), mapeos %.1f (%.1f MB, %.1f ms) | "
+                 "armDCacheClean %.0f (%.1f MB, %.1f ms) | queue de la window %.1f (%.1f ms), take buffer %.1f "
+                 "(%.1f ms) | svcSleepThread: 0 %.0f, yield %.0f, until 1 ms %.0f (%.1f ms), mas %.0f\n",
+                 n[kFenceQuery], ms[kFenceQuery], n[kFenceWait], ms[kFenceWait], n[kKickoff],
+                 ms[kKickoff], n[kNvMapCached], mb[kNvMapCached], n[kNvMapSinCache], mb[kNvMapSinCache],
+                 ms[kNvMapCached] + ms[kNvMapSinCache], n[kReserveAddress], ms[kReserveAddress],
+                 n[kMappingGpu], mb[kMappingGpu], ms[kMappingGpu], n[kCacheClean], mb[kCacheClean], ms[kCacheClean],
                  n[kQueueBuffer], ms[kQueueBuffer], n[kDequeueBuffer], ms[kDequeueBuffer], n[kSleep0],
-                 n[kSleepCeder], n[kSleepCorto], ms[kSleepCorto], n[kSleepLargo]);
+                 n[kSleepYield], n[kSleepShort], ms[kSleepShort], n[kSleepLong]);
   }
   if (frames > 0) {
     std::fprintf(f,
-                 "     por fotograma: %.0f dibujados | tijera %.1f pantallas | %.1f envios | "
-                 "%.1f resolves (%.2f pantallas) | transferencias: %.1f llamadas, %.1f render "
-                 "targets, %.1f dibujados | %.1f texturas cargadas | %.2f MB de memoria "
-                 "compartida subida | pipelines creados en el intervalo: %.0f\n",
+                 "     por frame: %.0f drawn | scissor %.1f pantallas | %.1f submissions | "
+                 "%.1f resolves (%.2f pantallas) | transferencias: %.1f calls, %.1f render "
+                 "targets, %.1f drawn | %.1f textures cargadas | %.2f MB de memory_block "
+                 "shared upload | pipelines created en el interval: %.0f\n",
                  delta(5) / frames, delta(6) / frames / 921600.0, delta(7) / frames,
                  delta(9) / frames, delta(10) / frames / 921600.0, delta(11) / frames,
                  delta(12) / frames, delta(13) / frames, delta(14) / frames,
                  delta(15) / frames / 1048576.0, delta(16));
     std::fprintf(f,
-                 "     dibujados por ancho de superficie: 1600+ %.0f | 1280-1599 %.0f | "
-                 "640-1279 %.0f | 256-639 %.0f | menos de 256 %.0f\n",
+                 "     drawn por width de surface: 1600+ %.0f | 1280-1599 %.0f | "
+                 "640-1279 %.0f | 256-639 %.0f | minus de 256 %.0f\n",
                  delta(28) / frames, delta(29) / frames, delta(30) / frames, delta(31) / frames,
                  delta(32) / frames);
   }
@@ -556,63 +556,63 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
 
   // What each thread was doing during the long frames of this interval.
   {
-    const u32 nt = std::min<u32>(g_num_tirones.exchange(0), kMaxTirones);
+    const u32 nt = std::min<u32>(g_num_hitches.exchange(0), kMaxHitches);
     if (nt && !samples.empty()) {
-      std::vector<VentanaTiron> v(g_tirones, g_tirones + nt);
-      std::sort(v.begin(), v.end(), [](const VentanaTiron& a, const VentanaTiron& b) { return a.inicio < b.inicio; });
+      std::vector<WindowHitch> v(g_hitches, g_hitches + nt);
+      std::sort(v.begin(), v.end(), [](const WindowHitch& a, const WindowHitch& b) { return a.start < b.start; });
       double ms_total = 0.0;
-      for (const VentanaTiron& w : v) {
-        ms_total += double(w.fin - w.inicio) * 1000.0 / double(tick_freq);
+      for (const WindowHitch& w : v) {
+        ms_total += double(w.fin - w.start) * 1000.0 / double(tick_freq);
       }
-      const auto dentro = [&v](u64 t) {
-        auto it = std::upper_bound(v.begin(), v.end(), t, [](u64 x, const VentanaTiron& w) { return x < w.inicio; });
+      const auto inside = [&v](u64 t) {
+        auto it = std::upper_bound(v.begin(), v.end(), t, [](u64 x, const WindowHitch& w) { return x < w.start; });
         return it != v.begin() && t <= (it - 1)->fin;
       };
-      std::fprintf(f, "\n== durante los tirones: %u fotogramas de mas de 45 ms (%.0f ms en total) ==\n", nt, ms_total);
+      std::fprintf(f, "\n== during los hitches: %u frames de mas de 45 ms (%.0f ms en total) ==\n", nt, ms_total);
       for (size_t i : order) {
         std::vector<u64> pcs;
-        std::vector<const Sample*> todas;
+        std::vector<const Sample*> all;
         size_t en_svc = 0;
         for (const Sample& m : samples) {
-          if (m.slot != i || !dentro(m.tick)) {
+          if (m.slot != i || !inside(m.tick)) {
             continue;
           }
-          todas.push_back(&m);
+          all.push_back(&m);
           if (AfterSvc(m.pc)) {
             ++en_svc;
           } else {
             pcs.push_back(m.pc);
           }
         }
-        if (todas.size() < 5) {
+        if (all.size() < 5) {
           continue;
         }
         const Slot& s = g_slots[i];
-        std::fprintf(f, "-- hilo \"%s\": %zu muestras en los tirones, %.0f%% esperando en el kernel\n",
-                     s.name[0] ? s.name : "?", todas.size(), double(en_svc) * 100.0 / double(todas.size()));
+        std::fprintf(f, "-- thread_value \"%s\": %zu sample_total en los hitches, %.0f%% waiting en el kernel\n",
+                     s.name[0] ? s.name : "?", all.size(), double(en_svc) * 100.0 / double(all.size()));
         const auto h = Histogram(pcs);
         for (size_t k = 0; k < h.size() && k < 25; ++k) {
-          std::fprintf(f, "   %5.1f%%  pc ", double(h[k].n) * 100.0 / double(todas.size()));
+          std::fprintf(f, "   %5.1f%%  pc ", double(h[k].n) * 100.0 / double(all.size()));
           PrintAddr(f, h[k].addr);
           std::fputc('\n', f);
         }
-        std::sort(todas.begin(), todas.end(), [](const Sample* a, const Sample* b) {
+        std::sort(all.begin(), all.end(), [](const Sample* a, const Sample* b) {
           return std::memcmp(a->frames, b->frames, sizeof(a->frames)) < 0;
         });
-        std::vector<std::pair<const Sample*, u32>> pilas;
-        for (const Sample* m : todas) {
-          if (pilas.empty() || std::memcmp(pilas.back().first->frames, m->frames, sizeof(m->frames)) != 0) {
-            pilas.push_back({m, 1});
+        std::vector<std::pair<const Sample*, u32>> stacks_value;
+        for (const Sample* m : all) {
+          if (stacks_value.empty() || std::memcmp(stacks_value.back().first->frames, m->frames, sizeof(m->frames)) != 0) {
+            stacks_value.push_back({m, 1});
           } else {
-            ++pilas.back().second;
+            ++stacks_value.back().second;
           }
         }
-        std::sort(pilas.begin(), pilas.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
-        for (size_t k = 0; k < pilas.size() && k < 10; ++k) {
-          std::fprintf(f, "   %5.1f%%  pila", double(pilas[k].second) * 100.0 / double(todas.size()));
-          for (size_t j = 0; j < kFrames && pilas[k].first->frames[j]; ++j) {
+        std::sort(stacks_value.begin(), stacks_value.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        for (size_t k = 0; k < stacks_value.size() && k < 10; ++k) {
+          std::fprintf(f, "   %5.1f%%  stack", double(stacks_value[k].second) * 100.0 / double(all.size()));
+          for (size_t j = 0; j < kFrames && stacks_value[k].first->frames[j]; ++j) {
             std::fputs(j == 0 ? " " : " <- ", f);
-            PrintAddr(f, pilas[k].first->frames[j]);
+            PrintAddr(f, stacks_value[k].first->frames[j]);
           }
           std::fputc('\n', f);
         }
@@ -626,20 +626,20 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
      * Threads that use no CPU are listed too, with less detail: in a hang their
      * stacks are needed to know what they are waiting for.
      */
-    const bool activo = s.cpu >= 1.0;
+    const bool active = s.cpu >= 1.0;
     u64 tid = 0;
     svcGetThreadId(&tid, s.handle.load());
     // Horizon priority, preferred core and allowed cores: who can take the CPU from whom.
-    s32 prioridad = -1;
-    s32 preferido = -1;
-    u64 mascara = 0;
-    svcGetThreadPriority(&prioridad, s.handle.load());
-    svcGetThreadCoreMask(&preferido, &mascara, s.handle.load());
+    s32 priority = -1;
+    s32 preferred = -1;
+    u64 mask = 0;
+    svcGetThreadPriority(&priority, s.handle.load());
+    svcGetThreadCoreMask(&preferred, &mask, s.handle.load());
     std::fprintf(f,
-                 "\n-- hilo %" PRIu64 " \"%s\": CPU %.1f%% | prioridad 0x%X, nucleo preferido %d, "
-                 "mascara 0x%llX\n",
-                 tid, s.name[0] ? s.name : "?", s.cpu, static_cast<unsigned>(prioridad),
-                 static_cast<int>(preferido), static_cast<unsigned long long>(mascara));
+                 "\n-- thread_value %" PRIu64 " \"%s\": CPU %.1f%% | priority 0x%X, core preferred %d, "
+                 "mask 0x%llX\n",
+                 tid, s.name[0] ? s.name : "?", s.cpu, static_cast<unsigned>(priority),
+                 static_cast<int>(preferred), static_cast<unsigned long long>(mask));
 
     auto lo = std::lower_bound(samples.begin(), samples.end(), i,
                                [](const Sample& a, size_t v) { return a.slot < v; });
@@ -647,7 +647,7 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                                [](size_t v, const Sample& a) { return v < a.slot; });
     const size_t n = size_t(hi - lo);
     if (n == 0) {
-      std::fprintf(f, "   sin muestras\n");
+      std::fprintf(f, "   sin sample_total\n");
       continue;
     }
     std::vector<u64> pcs, lrs;
@@ -660,17 +660,17 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
       pcs.push_back(it->pc);
       lrs.push_back(it->lr);
     }
-    std::fprintf(f, "   %zu muestras, %.0f%% esperando en el kernel\n", n,
+    std::fprintf(f, "   %zu sample_total, %.0f%% waiting en el kernel\n", n,
                  double(in_svc) * 100.0 / double(n));
     const auto pc_hist = Histogram(pcs);
     const size_t busy = pcs.size();
-    for (size_t k = 0; k < pc_hist.size() && k < (activo ? 80u : 3u); ++k) {
+    for (size_t k = 0; k < pc_hist.size() && k < (active ? 80u : 3u); ++k) {
       std::fprintf(f, "   %5.1f%%  pc ", double(pc_hist[k].n) * 100.0 / double(busy));
       PrintAddr(f, pc_hist[k].addr);
       std::fputc('\n', f);
     }
     const auto lr_hist = Histogram(lrs);
-    for (size_t k = 0; k < lr_hist.size() && k < (activo ? 40u : 3u); ++k) {
+    for (size_t k = 0; k < lr_hist.size() && k < (active ? 40u : 3u); ++k) {
       std::fprintf(f, "   %5.1f%%  lr ", double(lr_hist[k].n) * 100.0 / double(busy));
       PrintAddr(f, lr_hist[k].addr);
       std::fputc('\n', f);
@@ -699,8 +699,8 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
     }
     std::sort(stacks.begin(), stacks.end(),
               [](const StackCount& a, const StackCount& b) { return a.n > b.n; });
-    for (size_t k = 0; k < stacks.size() && k < (activo ? 30u : 3u); ++k) {
-      std::fprintf(f, "   %5.1f%%  pila", double(stacks[k].n) * 100.0 / double(n));
+    for (size_t k = 0; k < stacks.size() && k < (active ? 30u : 3u); ++k) {
+      std::fprintf(f, "   %5.1f%%  stack", double(stacks[k].n) * 100.0 / double(n));
       for (size_t j = 0; j < kFrames && stacks[k].s->frames[j]; ++j) {
         std::fputs(j == 0 ? " " : " <- ", f);
         PrintAddr(f, stacks[k].s->frames[j]);
@@ -720,65 +720,65 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
  * passed: they appeared with the EA logo instead of with the Most Wanted logo, which comes much
  * earlier.
  *
- * It is cheap: two counter reads and a few bytes in shared memory. Actualizar also re-attaches the
+ * It is cheap: two counter reads and a few bytes in shared memory. Update also re-attaches the
  * block if it is missing, so the overlay can be opened at any time.
  */
 struct TicOverlay {
   u64 tic = 0;
-  u64 presentados = 0;
+  u64 presented = 0;
   double media[10] = {};
   size_t pos = 0;
 
-  void Arrancar(u64 ahora) {
-    tic = ahora;
-    presentados = g_counters[0].load(std::memory_order_relaxed);
-    // Publish what is known right away: the resolution is valid from the first instant (g_resolucion
+  void Start(u64 now) {
+    tic = now;
+    presented = g_counters[0].load(std::memory_order_relaxed);
+    // Publish what is known right away: the resolution is valid from the first instant (g_resolution
     // starts at 1280x720 and the game corrects it when choosing the video mode), so the overlay's RES
     // row can show up even before the first frame.
-    const uint32_t res = g_resolucion.load(std::memory_order_relaxed);
-    rex::ui::switch_saltynx::Actualizar(0.0, 0.0, res >> 16, res & 0xFFFF, presentados);
+    const uint32_t res = g_resolution.load(std::memory_order_relaxed);
+    rex::ui::switch_saltynx::Update(0.0, 0.0, res >> 16, res & 0xFFFF, presented);
   }
 
-  // Once per second. `con_relojes` turns off the Reverse-NX and clock sysmodule part, which is better
+  // Once per second. `with_clocks` turns off the Reverse-NX and clock sysmodule part, which is better
   // left alone during warm-up.
-  void Paso(u64 ahora, u64 freq, bool con_relojes) {
-    if (ahora - tic < freq) {
+  void Step(u64 now, u64 freq, bool with_clocks) {
+    if (now - tic < freq) {
       return;
     }
-    const double segundos = double(ahora - tic) / double(freq);
-    const u64 ahora_presentados = g_counters[0].load(std::memory_order_relaxed);
-    const double fps = segundos > 0.0 ? double(ahora_presentados - presentados) / segundos : 0.0;
+    const double seconds = double(now - tic) / double(freq);
+    const u64 now_presented = g_counters[0].load(std::memory_order_relaxed);
+    const double fps = seconds > 0.0 ? double(now_presented - presented) / seconds : 0.0;
     media[pos] = fps;
     pos = (pos + 1) % 10;
-    double suma = 0.0;
-    size_t cuantos = 0;
+    double sum = 0.0;
+    size_t how_many_2 = 0;
     for (double v : media) {
       if (v > 0.0) {
-        suma += v;
-        ++cuantos;
+        sum += v;
+        ++how_many_2;
       }
     }
-    const uint32_t res = g_resolucion.load(std::memory_order_relaxed);
-    rex::ui::switch_saltynx::Actualizar(fps, cuantos ? suma / double(cuantos) : fps, res >> 16, res & 0xFFFF,
-                                        ahora_presentados);
+    const uint32_t res = g_resolution.load(std::memory_order_relaxed);
+    rex::ui::switch_saltynx::Update(fps, how_many_2 ? sum / double(how_many_2) : fps, res >> 16, res & 0xFFFF,
+                                        now_presented);
     // Reverse-NX is also told that the game keeps asking for the mode (its overlay requires it to show
     // the controls) and, if the system rules, the real mode is mirrored.
     // And if requested, the clock sysmodule is asked for its docked clocks.
-    if (con_relojes) {
-      const bool sobremesa_real = appletGetOperationMode() == AppletOperationMode_Console;
-      const bool sobremesa = rex::ui::switch_saltynx::ModoBase(sobremesa_real);
-      rex::ui::switch_sysclk::SeguirModo(sobremesa, sobremesa_real);
+    if (with_clocks) {
+      const bool docked_real = appletGetOperationMode() == AppletOperationMode_Console;
+      const bool docked = rex::ui::switch_saltynx::ModeBase(docked_real);
+      rex::ui::switch_sysclk::FollowMode(docked, docked_real);
     }
     /*
      * The memory clock is watched here too. It is outside the if above on purpose: the
      * system raises the EMC right after we request the GPU profile, that is, during
-     * warm-up, which is when con_relojes is false. It is one clkrst read per second for
+     * warm-up, which is when with_clocks is false. It is one clkrst read per second for
      * the first 20 and one every 30 after that; when we have not changed anything it
      * does not even do that.
      */
-    RexSwitchApmVigilar();
-    presentados = ahora_presentados;
-    tic = ahora;
+    RexSwitchApmWatch();
+    presented = now_presented;
+    tic = now;
   }
 };
 
@@ -793,12 +793,12 @@ void ProfilerMain(void*) {
    * SaltyNX is slow.
    */
   TicOverlay overlay;
-  const u64 inicio = armGetSystemTick();
-  overlay.Arrancar(inicio);
-  const u64 calentamiento = (kStartDelayNs / 1000000ULL) * tick_freq / 1000ULL;
-  while (armGetSystemTick() - inicio < calentamiento) {
+  const u64 start = armGetSystemTick();
+  overlay.Start(start);
+  const u64 warmup = (kStartDelayNs / 1000000ULL) * tick_freq / 1000ULL;
+  while (armGetSystemTick() - start < warmup) {
     __real_svcSleepThread(kPassiveIntervalNs);
-    overlay.Paso(armGetSystemTick(), tick_freq, false);
+    overlay.Step(armGetSystemTick(), tick_freq, false);
   }
 
   // Invasive sampling is only enabled explicitly, for diagnostics.
@@ -814,9 +814,9 @@ void ProfilerMain(void*) {
     counters_last[i] = g_counters[i].load(std::memory_order_relaxed);
   }
   if (FILE* f = std::fopen(ReportPath().c_str(), "w")) {
-    std::fprintf(f, "imagen 0x%016" PRIx64 ", codigo hasta 0x%016" PRIx64 "\n\n", g_base,
+    std::fprintf(f, "image 0x%016" PRIx64 ", code until 0x%016" PRIx64 "\n\n", g_base,
                  g_text_hi);
-    std::fprintf(f, "Muestreo de pilas: %s\n", sample_stacks ? "activo (1 ms)" : "desactivado");
+    std::fprintf(f, "Sampling de stacks_value: %s\n", sample_stacks ? "active (1 ms)" : "desactivado");
     std::fclose(f);
   }
 
@@ -876,15 +876,15 @@ void ProfilerMain(void*) {
 
     const u64 now = armGetSystemTick();
     // Once per second, FPS and resolution for the overlay (the profile report runs every 10 s).
-    overlay.Paso(now, tick_freq, true);
+    overlay.Step(now, tick_freq, true);
     if (now - report_start >= kReportSeconds * tick_freq) {
       Report(now - report_start, tick_freq, counters_last, kModes[mode_index].name);
-      if (g_ab_activas.load(std::memory_order_relaxed)) {
+      if (g_ab_active.load(std::memory_order_relaxed)) {
         mode_index = (mode_index + 1) % kModeCount;
         g_skip_mask.store(kModes[mode_index].mask, std::memory_order_relaxed);
         if (mode_index == 0) {
           // Full cycle: it turns itself off and the game looks right again.
-          g_ab_activas.store(false, std::memory_order_relaxed);
+          g_ab_active.store(false, std::memory_order_relaxed);
         }
       }
       report_start = armGetSystemTick();
@@ -931,52 +931,52 @@ Result __wrap_threadClose(Thread* t) {
   return __real_threadClose(t);
 }
 
-/* libnx calls that cost IPC or walk memory. See g_llamadas. */
+/* libnx calls that cost IPC or walk memory. See g_calls. */
 Result __wrap_nvFenceWait(NvFence* f, s32 timeout_us) {
-  const u64 desde = armGetSystemTick();
+  const u64 since = armGetSystemTick();
   const Result rc = __real_nvFenceWait(f, timeout_us);
-  Anotar(timeout_us == 0 ? kFenceConsulta : kFenceEspera, desde);
+  Note(timeout_us == 0 ? kFenceQuery : kFenceWait, since);
   return rc;
 }
 
 Result __wrap_nvGpuChannelKickoff(NvGpuChannel* c) {
-  const u64 desde = armGetSystemTick();
+  const u64 since = armGetSystemTick();
   const Result rc = __real_nvGpuChannelKickoff(c);
-  Anotar(kKickoff, desde);
+  Note(kKickoff, since);
   return rc;
 }
 
 Result __wrap_nvMapCreate(NvMap* m, void* cpu_addr, u32 size, u32 align, NvKind kind, bool is_cpu_cacheable) {
-  const u64 desde = armGetSystemTick();
+  const u64 since = armGetSystemTick();
   const Result rc = __real_nvMapCreate(m, cpu_addr, size, align, kind, is_cpu_cacheable);
-  Anotar(is_cpu_cacheable ? kNvMapCacheada : kNvMapSinCache, desde, size);
+  Note(is_cpu_cacheable ? kNvMapCached : kNvMapSinCache, since, size);
   return rc;
 }
 
 Result __wrap_nvAddressSpaceAllocFixed(NvAddressSpace* a, bool sparse, u64 size, iova_t iova) {
-  const u64 desde = armGetSystemTick();
+  const u64 since = armGetSystemTick();
   const Result rc = __real_nvAddressSpaceAllocFixed(a, sparse, size, iova);
-  Anotar(kReservaDireccion, desde, size);
+  Note(kReserveAddress, since, size);
   return rc;
 }
 
 Result __wrap_nvioctlNvhostAsGpu_MapBufferEx(u32 fd, u32 flags, u32 kind, u32 nvmap_handle, u32 page_size,
                                              u64 buffer_offset, u64 mapping_size, u64 input_offset, u64* offset) {
-  const u64 desde = armGetSystemTick();
+  const u64 since = armGetSystemTick();
   const Result rc = __real_nvioctlNvhostAsGpu_MapBufferEx(fd, flags, kind, nvmap_handle, page_size, buffer_offset,
                                                           mapping_size, input_offset, offset);
-  Anotar(kMapeoGpu, desde, mapping_size);
+  Note(kMappingGpu, since, mapping_size);
   return rc;
 }
 
 void __wrap_armDCacheClean(void* addr, size_t size) {
-  const u64 desde = armGetSystemTick();
+  const u64 since = armGetSystemTick();
   __real_armDCacheClean(addr, size);
-  Anotar(kCacheClean, desde, size);
+  Note(kCacheClean, since, size);
 }
 
 /*
- * The presentation interval (nfsmw_intervalo_swap).
+ * The presentation interval (nfsc_swap_interval).
  *
  * It is reapplied on every present, not when the chain is created, on purpose: the WSI sets it to 1
  * when creating the swapchain, and the chain is recreated when switching from docked to handheld.
@@ -988,31 +988,31 @@ void __wrap_armDCacheClean(void* addr, size_t size) {
  * Warning: it is 0 and must stay that way. Measured: with the current frame time, setting 2 sends
  * 22 % of the frames to 66.7 ms. It only makes sense with a median frame time below 31 ms.
  */
-std::atomic<unsigned> g_intervalo_swap{0};
+std::atomic<unsigned> g_interval_swap{0};
 
 Result __wrap_nwindowQueueBuffer(NWindow* nw, s32 slot, const NvMultiFence* fence) {
-  const u64 desde = armGetSystemTick();
-  const unsigned pedido = g_intervalo_swap.load(std::memory_order_relaxed);
-  if (pedido != 0 && nw != nullptr && nw->swap_interval != pedido) {
-    nwindowSetSwapInterval(nw, pedido);
+  const u64 since = armGetSystemTick();
+  const unsigned requested = g_interval_swap.load(std::memory_order_relaxed);
+  if (requested != 0 && nw != nullptr && nw->swap_interval != requested) {
+    nwindowSetSwapInterval(nw, requested);
   }
   const Result rc = __real_nwindowQueueBuffer(nw, slot, fence);
-  Anotar(kQueueBuffer, desde);
+  Note(kQueueBuffer, since);
   return rc;
 }
 
 Result __wrap_bqDequeueBuffer(Binder* b, bool async, u32 width, u32 height, s32 format, u32 usage, s32* buf,
                               NvMultiFence* fence) {
-  const u64 desde = armGetSystemTick();
+  const u64 since = armGetSystemTick();
   const Result rc = __real_bqDequeueBuffer(b, async, width, height, format, usage, buf, fence);
-  Anotar(kDequeueBuffer, desde);
+  Note(kDequeueBuffer, since);
   return rc;
 }
 
 void __wrap_svcSleepThread(s64 nano) {
-  const u64 desde = armGetSystemTick();
+  const u64 since = armGetSystemTick();
   __real_svcSleepThread(nano);
-  Anotar(nano == 0 ? kSleep0 : nano < 0 ? kSleepCeder : nano <= 1000000 ? kSleepCorto : kSleepLargo, desde);
+  Note(nano == 0 ? kSleep0 : nano < 0 ? kSleepYield : nano <= 1000000 ? kSleepShort : kSleepLong, since);
 }
 
 /*
@@ -1021,21 +1021,21 @@ void __wrap_svcSleepThread(s64 nano) {
  * shadow, 4 = SEH. 28..32 = draws per surface width from IssueDraw
  * (1600 or more, 1280-1599, 640-1279, 256-639, under 256).
  */
-// A long frame, in armGetSystemTick ticks (see VentanaTiron).
-void RexSwitchPerfTiron(u64 inicio, u64 fin) {
-  const u32 i = g_num_tirones.fetch_add(1);
-  if (i < kMaxTirones) {
-    g_tirones[i] = {inicio, fin};
+// A long frame, in armGetSystemTick ticks (see WindowHitch).
+void RexSwitchPerfHitch(u64 start, u64 fin) {
+  const u32 i = g_num_hitches.fetch_add(1);
+  if (i < kMaxHitches) {
+    g_hitches[i] = {start, fin};
   }
 }
 
-void RexSwitchPerfResolution(unsigned ancho, unsigned alto) {
-  g_resolucion.store(((ancho & 0xFFFF) << 16) | (alto & 0xFFFF), std::memory_order_relaxed);
+void RexSwitchPerfResolution(unsigned width, unsigned height) {
+  g_resolution.store(((width & 0xFFFF) << 16) | (height & 0xFFFF), std::memory_order_relaxed);
 }
 
-// See g_intervalo_swap, next to the nwindowQueueBuffer wrapper. 0 = touch nothing (the normal case).
-void RexSwitchPerfIntervaloSwap(unsigned vblanks) {
-  g_intervalo_swap.store(vblanks, std::memory_order_relaxed);
+// See g_interval_swap, next to the nwindowQueueBuffer wrapper. 0 = touch nothing (the normal case).
+void RexSwitchPerfIntervalSwap(unsigned vblanks) {
+  g_interval_swap.store(vblanks, std::memory_order_relaxed);
 }
 
 void RexSwitchPerfCount(unsigned id) {
@@ -1046,8 +1046,8 @@ void RexSwitchPerfCount(unsigned id) {
     // Counter 0 is presents. The console overlay clears the "alive" mark and the resolution mark and
     // only waits 100 ms, so it has to be answered on every frame, not once per second. It is writing a
     // few bytes to shared memory.
-    const uint32_t res = g_resolucion.load(std::memory_order_relaxed);
-    rex::ui::switch_saltynx::Latir(res >> 16, res & 0xFFFF);
+    const uint32_t res = g_resolution.load(std::memory_order_relaxed);
+    rex::ui::switch_saltynx::Beat(res >> 16, res & 0xFFFF);
   }
 }
 

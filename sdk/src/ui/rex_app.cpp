@@ -283,7 +283,7 @@ bool ReXApp::ConstructRuntime(const PathConfig& paths) {
 #if REX_PLATFORM_SWITCH
         // The menu and the game share the controller: while a menu window
         // has navigation focus, the buttons belong to the menu.
-        return rex::ui::nx::JuegoRecibeMando(imgui_drawer_->GetIO());
+        return rex::ui::nx::GameReceivesController(imgui_drawer_->GetIO());
 #else
         return !imgui_drawer_->GetIO().WantCaptureMouse;
 #endif
@@ -515,14 +515,14 @@ void ReXApp::LaunchModule() {
     if (achievement_notification_listener_ == 0 && runtime_ && runtime_->kernel_state()) {
       achievement_notification_listener_ = achievements().RegisterNotificationCallback(
           [this](const rex::system::AchievementEvent& event) {
-            rex::system::AchievementEvent copia = event;
-            app_context().CallInUIThreadDeferred([this, copia]() {
+            rex::system::AchievementEvent copy = event;
+            app_context().CallInUIThreadDeferred([this, copy]() {
               if (!achievement_notification_) {
                 achievement_notification_ = std::shared_ptr<ui::AchievementNotificationDialog>(
                     CreateAchievementNotificationDialog());
               }
               if (achievement_notification_) {
-                achievement_notification_->Push(copia);
+                achievement_notification_->Push(copy);
               }
             });
           });

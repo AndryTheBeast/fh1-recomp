@@ -131,7 +131,7 @@ A race frame records about 2,000 draws on the CPU, and the thread that records t
 [native-renderer.md](native-renderer.md)). Part of the cost of each draw is inside NVK: binding the pipeline, the
 descriptor sets and the constant buffers, and writing the GPU state. The patch adds, only for the Switch:
 
-- **A shared measurement structure** (`nvk_switch_dibujo`, "dibujo" means draw). The driver fills it and the app reads
+- **A shared measurement structure** (`nvk_switch_draw`, "draw" means draw). The driver fills it and the app reads
   it, and it splits the cost of a draw into parts. It is versioned and found through weak symbols, so the app still
   works with a driver that does not have it.
 - **Cheaper writing** of the state of each draw, **fewer constant buffer rebinds** (38 to 45 % fewer in a race),
@@ -140,7 +140,7 @@ descriptor sets and the constant buffers, and writing the GPU state. The patch a
 - **Set 4 by differences.** The renderer's per-draw constants (descriptor set 4) are written as a difference against
   the previous draw: 1 write instead of 4.
 
-The app turns each of these on with its own settings (`nfsmw_nativo_nvk_*` and `nfsmw_nativo_set4_diferencias`), and
+The app turns each of these on with its own settings (`nfsmw_nativo_nvk_*` and `nfsc_native_set4_differences`), and
 each one checks itself inside the driver.
 
 Tried and dropped: moving to Vulkan's extended dynamic state (EDS 1, 2 and 3) with a simpler pipeline key. It cut

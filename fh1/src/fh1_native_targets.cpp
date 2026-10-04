@@ -1,4 +1,4 @@
-// fh1 - native renderer, step N3a (see fh1_native_targets.h). From nfsmw-nx's nfsmw_nativo_destinos.cpp,
+// fh1 - native renderer, step N3a (see fh1_native_targets.h). From nfsmw-nx's nfsc_native_targets.cpp,
 // without its NFS-specific optimisations and diagnostics.
 //
 // Covered: colour render targets in the formats FH1 uses (8888, 2_10_10_10, 2_10_10_10_FLOAT, 16-bit

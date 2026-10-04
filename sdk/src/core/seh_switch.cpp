@@ -90,12 +90,12 @@ extern "C" bool RexSwitchSehHandleFault(ThreadExceptionDump* ctx) {
   // It is recorded in the thread's SEH state, as seh_posix.cpp would do
   // before throwing: code and faulting address.
   const uint32_t ec = ctx->esr >> 26;
-  const bool fallo_de_datos = (ec & 0b111110) == 0b100100;
-  auto& estado = rex::platform::seh_thread_state();
-  estado.code = fallo_de_datos ? rex::SehException::ACCESS_VIOLATION
+  const bool miss_of_data = (ec & 0b111110) == 0b100100;
+  auto& state = rex::platform::seh_thread_state();
+  state.code = miss_of_data ? rex::SehException::ACCESS_VIOLATION
                                : rex::SehException::ILLEGAL_INSTRUCTION;
-  estado.info[0] = 0;
-  estado.info[1] = static_cast<uintptr_t>(ctx->far.x);
+  state.info[0] = 0;
+  state.info[1] = static_cast<uintptr_t>(ctx->far.x);
 
   return false;
 }

@@ -36,18 +36,18 @@ set(FH1_SOURCES
     src/fh1_native_targets.cpp
     src/fh1_shader_library.cpp
     # Native renderer from nfsc-recomp (GoatHonks), itself nfsmw-nx's (StevensND), GPL-3.0: see src/native/README.md.
-    # Run with --nfsmw_renderizador=nativo.
-    src/native/nfsmw_nativo_sistema.cpp
-    src/native/nfsmw_nativo_destinos.cpp
-    src/native/nfsmw_nativo_shaders.cpp
-    src/native/nfsmw_shader_library.cpp
-    src/native/nfsmw_nativo_ganchos.cpp
-    src/native/nfsmw_nativo_dibujos.cpp
-    src/native/nfsmw_nativo_texturas_pool.cpp
-    src/native/nfsmw_nativo_captura.cpp
-    src/native/nfsmw_ajustes_graficos.cpp
+    # Run with --nfsc_renderer=native.
+    src/native/nfsc_native_system.cpp
+    src/native/nfsc_native_targets.cpp
+    src/native/nfsc_native_shaders.cpp
+    src/native/nfsc_shader_library.cpp
+    src/native/nfsc_native_hooks.cpp
+    src/native/nfsc_native_draws.cpp
+    src/native/nfsc_native_texture_pool.cpp
+    src/native/nfsc_native_capture.cpp
+    src/native/nfsc_graphics_settings.cpp
     src/native/nfsc_native_stubs.cpp
-    src/native/nfsc_espera_corta.cpp
+    src/native/nfsc_short_wait.cpp
     src/native/ring_progress.cpp
 )
 

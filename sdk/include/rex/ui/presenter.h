@@ -54,7 +54,7 @@
 #include <wrl/client.h>
 #endif  // XE_PLATFORM
 
-// The presenter's own thread (present_hilo_propio). It is declared here instead of including
+// The presenter's own thread (present_own_thread). It is declared here instead of including
 // <rex/thread.h>, which drags half the platform into a header everyone includes. The unique_ptr with
 // an incomplete type works because ~Presenter() is out of line, in presenter.cpp.
 namespace rex {
@@ -392,7 +392,7 @@ class Presenter {
 
  protected:
   /*
-   * Stops and joins the presenter's own thread (present_hilo_propio).
+   * Stops and joins the presenter's own thread (present_own_thread).
    *
    * It is here, and not among the private members, because the derived presenter must call it on the
    * first line of its destructor: that thread calls PaintAndPresentImpl, which belongs to the derived
@@ -872,7 +872,7 @@ class Presenter {
   PaintResult PaintAndPresent(bool execute_ui_drawers);
 
   /*
-   * The presenter's own thread (cvar present_hilo_propio).
+   * The presenter's own thread (cvar present_own_thread).
    *
    * Why. Measured on the console (race): GPU work is 31.00 ms real and the ring thread's useful CPU
    * work 28.8 ms; both fit in 33.3. And yet the frame takes 37.3 ms (26.8 FPS), because the cycle is
@@ -997,30 +997,30 @@ class Presenter {
   bool surface_paint_connection_has_implicit_vsync_ = false;
 
   // The presenter's own thread. Only the UI thread (and ~Presenter()) touches the unique_ptr and the
-  // name; the rest is under paint_thread_mutex_. `paint_thread_activo_` is the only thing the game
+  // name; the rest is under paint_thread_mutex_. `paint_thread_active_` is the only thing the game
   // thread checks to know whether there is anyone to notify.
   std::unique_ptr<rex::thread::Thread> paint_thread_;
-  std::atomic<bool> paint_thread_activo_{false};
+  std::atomic<bool> paint_thread_active_{false};
   std::mutex paint_thread_mutex_;
   std::condition_variable paint_thread_signal_;
   /*
    * And the return notification, so the game thread can wait for the presenter to take the previous
    * frame instead of dropping it. See RequestPaintFromPaintThread.
    */
-  std::condition_variable paint_thread_libre_;
-  uint64_t paint_thread_esperas_ = 0;
-  uint64_t paint_thread_espera_ns_ = 0;
+  std::condition_variable paint_thread_free_;
+  uint64_t paint_thread_waits_ = 0;
+  uint64_t paint_thread_wait_ns_ = 0;
   // The safety net judges by the average over a window, not by streaks.
-  uint64_t paint_thread_ventana_ns_ = 0;
-  uint64_t paint_thread_ventana_n_ = 0;
-  double paint_thread_espera_media_us_ = 0.0;
+  uint64_t paint_thread_window_ns_ = 0;
+  uint64_t paint_thread_window_n_ = 0;
+  double paint_thread_wait_average_us_ = 0.0;
   bool paint_thread_pending_ = false;
   bool paint_thread_shutdown_ = false;
-  // For the log every 600: if "descartados" rises, frames are being dropped (this once happened with
+  // For the log every 600: if "discarded" rises, frames are being dropped (this once happened with
   // an invisible ImGuiDialog that forced painting on the UI thread).
-  uint64_t paint_thread_avisos_ = 0;
-  uint64_t paint_thread_pintados_ = 0;
-  uint64_t paint_thread_descartados_ = 0;
+  uint64_t paint_thread_warnings_ = 0;
+  uint64_t paint_thread_painted_ = 0;
+  uint64_t paint_thread_discarded_ = 0;
   // Modifiable only by the UI thread, can be read by the thread that's
   // painting.
   uint32_t surface_width_in_paint_connection_ = 0;

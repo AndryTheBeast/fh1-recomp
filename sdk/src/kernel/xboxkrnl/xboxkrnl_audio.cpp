@@ -35,140 +35,140 @@
 #include <unordered_map>
 #include <vector>
 
-REXCVAR_DEFINE_INT32(audio_volcado_s, 0, "Audio",
-                     "Diagnostico: segundos del audio que entrega el juego (6 canales, antes del "
-                     "driver) que se guardan en audio_volcado_<cliente>.wav junto al ejecutable; "
-                     "0 = nada");
-REXCVAR_DEFINE_INT32(audio_volcado_desde_s, 0, "Audio",
-                     "Diagnostico: segundos de audio de cada cliente que se saltan antes del volcado");
+REXCVAR_DEFINE_INT32(audio_dump_s, 0, "Audio",
+                     "Diagnostic: seconds del audio que delivery el game (6 channel_count, before del "
+                     "driver) que se guardan en audio_dump_<client>.wav junto al ejecutable; "
+                     "0 = nothing");
+REXCVAR_DEFINE_INT32(audio_dump_since_s, 0, "Audio",
+                     "Diagnostic: seconds de audio de every client que se saltan before del dump");
 
 namespace {
 
 // Diagnostics for the robotic audio: what the game delivers, the same on the PC and on the Switch.
 // Each frame is 6 channels x 256 samples in big-endian float, channel by channel; the WAV is
 // interleaved little-endian float at 48 kHz. It is kept in memory and written in one go.
-struct ClienteVolcado {
-  uint64_t saltadas = 0;
-  std::vector<float> muestras;
-  bool escrito = false;
+struct ClientDump {
+  uint64_t skipped = 0;
+  std::vector<float> sample_total;
+  bool write_pos = false;
 };
 
-std::mutex volcado_mutex;
-std::unordered_map<uint32_t, ClienteVolcado> volcado_clientes;
+std::mutex dump_mutex;
+std::unordered_map<uint32_t, ClientDump> dump_clients;
 
 // Dumps are written by a single thread that lives until the end of the process: on the Switch SD a
 // file can take seconds and the game's audio thread must not wait for that. No thread is created
 // per file: on the Switch, std::thread::detach() threw std::system_error (the writer thread had
 // already finished) and the game closed. If the thread cannot be created, the file is written on
 // the spot.
-class EscritorVolcados {
+class WriterDumps {
  public:
-  static void Encolar(std::function<void()> trabajo) {
-    static EscritorVolcados* const escritor = Crear();  // never destroyed
-    if (!escritor) {
-      trabajo();
+  static void Enqueue(std::function<void()> work) {
+    static WriterDumps* const writer = Create();  // never destroyed
+    if (!writer) {
+      work();
       return;
     }
     {
-      std::lock_guard<std::mutex> cerrojo(escritor->mutex_);
-      escritor->cola_.push_back(std::move(trabajo));
+      std::lock_guard<std::mutex> lock(writer->mutex_);
+      writer->queue_.push_back(std::move(work));
     }
-    escritor->aviso_.notify_one();
+    writer->warning_.notify_one();
   }
 
  private:
-  EscritorVolcados() : hilo_([this]() { Bucle(); }) {}
+  WriterDumps() : thread_([this]() { Loop(); }) {}
 
-  static EscritorVolcados* Crear() {
+  static WriterDumps* Create() {
     try {
-      return new EscritorVolcados();
+      return new WriterDumps();
     } catch (const std::system_error&) {
       return nullptr;
     }
   }
 
-  void Bucle() {
+  void Loop() {
     for (;;) {
-      std::function<void()> trabajo;
+      std::function<void()> work;
       {
-        std::unique_lock<std::mutex> cerrojo(mutex_);
-        aviso_.wait(cerrojo, [this]() { return !cola_.empty(); });
-        trabajo = std::move(cola_.front());
-        cola_.pop_front();
+        std::unique_lock<std::mutex> lock(mutex_);
+        warning_.wait(lock, [this]() { return !queue_.empty(); });
+        work = std::move(queue_.front());
+        queue_.pop_front();
       }
-      trabajo();
+      work();
     }
   }
 
   std::mutex mutex_;
-  std::condition_variable aviso_;
-  std::deque<std::function<void()>> cola_;
-  std::thread hilo_;  // last: starts with the other members already constructed
+  std::condition_variable warning_;
+  std::deque<std::function<void()>> queue_;
+  std::thread thread_;  // last: starts with the other members already constructed
 };
 
-void EscribirVolcado(uint32_t cliente, std::vector<float> muestras) {
-  EscritorVolcados::Encolar([cliente, muestras = std::move(muestras)]() {
-    const auto ruta = rex::filesystem::GetExecutableFolder() /
-                      ("audio_volcado_" + std::to_string(cliente) + ".wav");
-    std::ofstream fichero(ruta, std::ios::binary | std::ios::trunc);
-    if (!fichero) {
-      REXKRNL_WARN("[audio] no se pudo crear el volcado {}", ruta.string());
+void WriteDump(uint32_t client, std::vector<float> sample_total) {
+  WriterDumps::Enqueue([client, sample_total = std::move(sample_total)]() {
+    const auto path = rex::filesystem::GetExecutableFolder() /
+                      ("audio_dump_" + std::to_string(client) + ".wav");
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file) {
+      REXKRNL_WARN("[audio] no se pudo create el dump {}", path.string());
       return;
     }
-    const uint32_t bytes = uint32_t(muestras.size() * sizeof(float));
-    const auto u32 = [&](uint32_t v) { fichero.write(reinterpret_cast<const char*>(&v), 4); };
-    const auto u16 = [&](uint16_t v) { fichero.write(reinterpret_cast<const char*>(&v), 2); };
-    fichero.write("RIFF", 4);
+    const uint32_t bytes = uint32_t(sample_total.size() * sizeof(float));
+    const auto u32 = [&](uint32_t v) { file.write(reinterpret_cast<const char*>(&v), 4); };
+    const auto u16 = [&](uint16_t v) { file.write(reinterpret_cast<const char*>(&v), 2); };
+    file.write("RIFF", 4);
     u32(36 + bytes);
-    fichero.write("WAVEfmt ", 8);
+    file.write("WAVEfmt ", 8);
     u32(16);
-    u16(3);  // flotante IEEE
+    u16(3);  // float IEEE
     u16(6);
     u32(48000);
     u32(48000 * 6 * 4);
     u16(6 * 4);
     u16(32);
-    fichero.write("data", 4);
+    file.write("data", 4);
     u32(bytes);
-    fichero.write(reinterpret_cast<const char*>(muestras.data()), bytes);
-    REXKRNL_INFO("[audio] volcado del cliente {}: {} muestras por canal en {}", cliente,
-                 muestras.size() / 6, ruta.string());
+    file.write(reinterpret_cast<const char*>(sample_total.data()), bytes);
+    REXKRNL_INFO("[audio] dump del client {}: {} sample_total por canal en {}", client,
+                 sample_total.size() / 6, path.string());
   });
 }
 
-void VolcarTrama(uint32_t cliente, const uint8_t* trama) {
-  const int32_t segundos = REXCVAR_GET(audio_volcado_s);
-  if (segundos <= 0 || !trama) {
+void DumpFrame(uint32_t client, const uint8_t* frame) {
+  const int32_t seconds = REXCVAR_GET(audio_dump_s);
+  if (seconds <= 0 || !frame) {
     return;
   }
-  std::lock_guard<std::mutex> cerrojo(volcado_mutex);
-  ClienteVolcado& c = volcado_clientes[cliente];
-  if (c.escrito) {
+  std::lock_guard<std::mutex> lock(dump_mutex);
+  ClientDump& c = dump_clients[client];
+  if (c.write_pos) {
     return;
   }
-  const uint64_t saltar = uint64_t(std::max(REXCVAR_GET(audio_volcado_desde_s), 0)) * 48000;
-  if (c.saltadas < saltar) {
-    c.saltadas += 256;
+  const uint64_t skip = uint64_t(std::max(REXCVAR_GET(audio_dump_since_s), 0)) * 48000;
+  if (c.skipped < skip) {
+    c.skipped += 256;
     return;
   }
-  const size_t objetivo = size_t(segundos) * 48000 * 6;
-  if (c.muestras.capacity() < objetivo) {
-    c.muestras.reserve(objetivo);
+  const size_t target_2 = size_t(seconds) * 48000 * 6;
+  if (c.sample_total.capacity() < target_2) {
+    c.sample_total.reserve(target_2);
   }
   for (uint32_t i = 0; i < 256; ++i) {
     for (uint32_t canal = 0; canal < 6; ++canal) {
-      const uint8_t* b = trama + (size_t(canal) * 256 + i) * 4;
+      const uint8_t* b = frame + (size_t(canal) * 256 + i) * 4;
       const uint32_t bits = (uint32_t(b[0]) << 24) | (uint32_t(b[1]) << 16) |
                             (uint32_t(b[2]) << 8) | uint32_t(b[3]);
-      float valor;
-      std::memcpy(&valor, &bits, sizeof(valor));
-      c.muestras.push_back(valor);
+      float input_value;
+      std::memcpy(&input_value, &bits, sizeof(input_value));
+      c.sample_total.push_back(input_value);
     }
   }
-  if (c.muestras.size() >= objetivo) {
-    c.escrito = true;
-    EscribirVolcado(cliente, std::move(c.muestras));
-    c.muestras = std::vector<float>();
+  if (c.sample_total.size() >= target_2) {
+    c.write_pos = true;
+    WriteDump(client, std::move(c.sample_total));
+    c.sample_total = std::vector<float>();
   }
 }
 
@@ -251,8 +251,8 @@ u32 XAudioSubmitRenderDriverFrame_entry(mapped_void driver_ptr, mapped_void samp
     submit_krnl_count++;
   }
 
-  // Diagnostics (audio_volcado_s): copy of the frame before the driver; nothing else changes.
-  VolcarTrama(driver_ptr.guest_address() & 0x0000FFFF,
+  // Diagnostics (audio_dump_s): copy of the frame before the driver; nothing else changes.
+  DumpFrame(driver_ptr.guest_address() & 0x0000FFFF,
               REX_KERNEL_MEMORY()->TranslateVirtual<const uint8_t*>(samples_ptr.guest_address()));
 
   auto* audio_system =

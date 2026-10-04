@@ -1,5 +1,5 @@
 """Compiles the translated FH1 shaders (HLSL from shaders/fh1_hlsl.exe) to SPIR-V with DXC, with the
-options nfsmw-nx used (shaders/nfsmw_regenerar_biblioteca_pcf.sh). Native renderer step N0.
+options nfsmw-nx used (shaders/nfsmw_rebuild_library_pcf.sh). Native renderer step N0.
 
     python tools/fh1_compile_shaders.py HLSL_DIR SPIRV_DIR [DXC]
 

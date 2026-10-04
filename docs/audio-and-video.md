@@ -32,8 +32,8 @@ what it did at first:
 
 - **A pump at 187.5 Hz.** It asks the game for one frame of mixed sound at a steady rate, 187.5 times per second.
   Without it, the driver asked the game for four frames in a row and then nothing, which starved the game's voice (its
-  stream of sound, see below) between bursts. The setting `audio_switch_bomba` turns the pump on; it is on by default.
-- **A small queue of mixed frames**: 10 frames, 53 ms (setting `audio_switch_tramas_en_cola`). It absorbs short
+  stream of sound, see below) between bursts. The setting `audio_switch_pump` turns the pump on; it is on by default.
+- **A small queue of mixed frames**: 10 frames, 53 ms (setting `audio_switch_frames_in_queue`). It absorbs short
   delays of the game's audio thread without adding a delay you can hear.
 
 The game mixes six channels, and the driver folds them into two (the *downmix*): 0.586 for the front channels, 0.414
@@ -59,11 +59,11 @@ game thread and another busy guest thread, and the GPU ring thread ran above it 
 [platform-notes.md](platform-notes.md#threads) for how priorities work on the Switch). In crashes it delivered only
 89 % of its packets.
 
-- The server now runs at 0x2D (setting `nfsmw_audio_servidor_prioridad`).
+- The server now runs at 0x2D (setting `nfsc_audio_server_priority`).
 - The audio worker (the thread that mixes each audio frame) may wait up to 30 ms for a late packet, instead of mixing
-  that voice as silence (setting `nfsmw_audio_esperar_servidor_ms`).
+  that voice as silence (setting `nfsc_audio_wait_server_ms`).
 
-Both are in `app/src/nfsmw_audio_servidor.cpp`. Together they made the problem "barely noticeable".
+Both are in `app/src/nfsc_audio_server.cpp`. Together they made the problem "barely noticeable".
 
 The SDK's priority table also had a bug. It compared thread names exactly, but thread names get a ` (F80000xx)`
 suffix, so the audio worker and the XMA decoder never got the priority meant for them. It now compares with
@@ -77,8 +77,8 @@ recompiled code. The C++ does the same floating-point operations in the same ord
 for example `double(float(std::fma(...)))`, and the PowerPC instruction `fnmsubs` written as `-std::fma(x, y, -z)`.
 Over 159 million samples there were zero differences. The server's CPU time dropped by 17.5 %.
 
-The code is in `app/src/`: `nfsmw_audio_remuestreo.cpp` (resamplers), `nfsmw_audio_filtro.cpp` (filter),
-`nfsmw_audio_suma.cpp` (gain sum) and `nfsmw_crt_nativo.cpp` (`memset`).
+The code is in `app/src/`: `nfsmw_audio_remuestreo.cpp` (resamplers), `nfsc_audio_filter.cpp` (filter),
+`nfsmw_audio_suma.cpp` (gain sum) and `nfsc_crt_native.cpp` (`memset`).
 
 ### 3. XMA decoding off the game's thread
 
@@ -90,7 +90,7 @@ buffer, and the GPU ring thread interrupted the decoding halfway.
 Nothing in the game calls `WaitForWorkDone()`: the game polls the context (it checks it again and again). So the
 decoding does not have to happen inside the kick. Now the kick only marks the context in a bitmap (one bit per
 context) and wakes the XMA worker thread, which decodes it. The worker's full sweep over all contexts stays as a
-safety net. The code is in `sdk/src/audio/xma_decoder.cpp`. Its setting, `audio_xma_en_trabajador`, chooses which
+safety net. The code is in `sdk/src/audio/xma_decoder.cpp`. Its setting, `audio_xma_in_worker`, chooses which
 thread decodes; on the Switch it is the worker by default.
 
 Results on the console:
@@ -119,8 +119,8 @@ timeout. When it wakes up and its slot is still busy, it goes back to waiting wi
 lost end-of-packet notification stops it for good, and with it the game's queue of audio commands.
 
 **Fix:** a timeout on that wait. After 250 ms without progress, the thread retries the delivery and frees the slot.
-A timeout alone is not enough: the loop must also retry. The code is in `app/src/nfsmw_audio_servidor.cpp` (setting
-`nfsmw_audio_rescate`, on by default).
+A timeout alone is not enough: the loop must also retry. The code is in `app/src/nfsc_audio_server.cpp` (setting
+`nfsc_audio_rescue`, on by default).
 
 **Lesson:** when a failure is intermittent, one run with working audio does not prove that a build is good.
 
@@ -132,8 +132,8 @@ at 30 frames per second). So videos stuttered and their audio ended before the p
 
 The port now gives the same bytes to FFmpeg's WMV3 decoder instead. It reads them through the game's own data
 callbacks, and writes the decoded image planes (the Y, U and V parts of each frame) where the game expects them.
-Videos now take 7-15 ms per frame. The code is in `app/src/nfsmw_video_nativo.cpp` and `app/src/nfsmw_video_wmv3.cpp`,
-and the setting `nfsmw_video_wmv3_nativo` turns it on (on by default).
+Videos now take 7-15 ms per frame. The code is in `app/src/nfsc_video_native.cpp` and `app/src/nfsmw_video_wmv3.cpp`,
+and the setting `nfsc_video_wmv3_native` turns it on (on by default).
 
 - **License.** FFmpeg is linked under the LGPL 2.1 (the SDK's build, configured without GPL parts). Do not link a GPL
   build.
@@ -141,7 +141,7 @@ and the setting `nfsmw_video_wmv3_nativo` turns it on (on by default).
   - identify the video by the stream being decoded, not by the last `.wmv` opened: the game opens the next one early;
   - read through the game's data callback instead of opening the file separately;
   - leave the "data remaining" count where the game expects it, or the game drops the next frame.
-- **Checking.** A shadow mode (setting `nfsmw_video_wmv3_sombra`, off by default) decodes with both decoders and
+- **Checking.** A shadow mode (setting `nfsc_video_wmv3_shadow`, off by default) decodes with both decoders and
   compares them. The videos were identical bit for bit, except for three short sections of one video with a mean
   difference of 0.02.
 - **Frame counters read 30.** During videos the game presents 30 frames per second, so frame counters read 30, not 60.

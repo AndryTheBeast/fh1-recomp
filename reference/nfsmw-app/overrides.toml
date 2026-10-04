@@ -56,7 +56,7 @@ non_volatile_as_local = true
 xer_as_local = true
 ctr_as_local = true
 
-# --- fin RENDIMIENTO raiz ---
+# --- fin RENDIMIENTO root_value ---
 
 [functions]
 
@@ -66,7 +66,7 @@ ctr_as_local = true
 # safe in functions that do not use __savegprlr / __restgprlr (otherwise the caller would reload
 # values that were never restored). Verified in the generated code: neither of the two uses them
 # or touches r14-r31.
-#   sub_828531E8: audio server wait (nfsmw_audio_servidor.cpp reads ctx.r31).
+#   sub_828531E8: audio server wait (nfsmw_audio_server.cpp reads ctx.r31).
 #   sub_82589DF0: cutscenes (nfsmw_video_bridge.cpp reads r25, r27, r31; PC only).
 # sub_82593A10 (DrawVertices) is not marked: it uses savegpr/restgpr and would break the caller.
 # Its read of r31 in nfsmw_d3d_trace.cpp is inside NFSMW_NATIVE_SHADER_LIBRARY,
@@ -75,13 +75,13 @@ ctr_as_local = true
 "0x82589DF0" = { share_registers = true }
 
 # Function chunks that read registers of their parent function. The analyzer splits some
-# game functions in two (the tail is declared in huecos.toml, or it finds it by itself);
+# game functions in two (the tail is declared in gaps.toml, or it finds it by itself);
 # the parent sets up r14-r31, cr, ctr or xer and jumps to the tail. With the registers as
 # local variables the tail received them as zero, and the game hung at the EA video
 # (sub_826E724C did bctrl with ctr = 0). share_registers on the tail plus the codegen patch
 # (emit_call_sharing_registers) make the function that jumps pass its registers through ctx.
-# List generated with tools/lee_antes.py (reads before writes in the generated code); the ones
-# in huecos.toml carry the mark on their own line.
+# List generated with tools/read_before_write.py (reads before writes in the generated code); the ones
+# in gaps.toml carry the mark on their own line.
 "0x82636A50" = { share_registers = true }
 "0x82636A60" = { share_registers = true }
 "0x82638AD0" = { share_registers = true }

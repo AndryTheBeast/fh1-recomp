@@ -17,110 +17,110 @@ set(NFSMW_SOURCES
     # address is the function we think it is. It does not change drawing; it only writes rex_d3d.log.
     src/nfsmw_d3d_trace.cpp
     # The scene is drawn a single time: without the Xbox 360's 3-strip tiling or MSAA
-    # (cvar nfsmw_render_sin_mosaico, on by default on Switch).
+    # (cvar nfsmw_render_without_tile, on by default on Switch).
     src/nfsmw_render_targets.cpp
     # Race-time reductions: road reflection and faces of the car's cubemap
-    # (cvars nfsmw_reflejo_carretera and nfsmw_cubemap_caras_max).
-    src/nfsmw_recortes_carrera.cpp
+    # (cvars nfsmw_reflection_road and nfsmw_cubemap_faces_max).
+    src/nfsmw_clips_race.cpp
     # Rescues the game's audio server thread if the XAudio voice stops
-    # returning end-of-packet notifications (cvar nfsmw_audio_rescate).
-    src/nfsmw_audio_servidor.cpp
-    # Priority of the current thread on the Switch (nfsmw_audio_servidor_prioridad).
-    src/nfsmw_hilos_switch.cpp
+    # returning end-of-packet notifications (cvar nfsmw_audio_rescue).
+    src/nfsmw_audio_server.cpp
+    # Priority of the current thread on the Switch (nfsmw_audio_server_priority).
+    src/nfsmw_threads_switch.cpp
     # Diagnostic: timing of the sound engine functions on the audio server thread
-    # (cvar nfsmw_audio_diag_funciones).
-    src/nfsmw_audio_perfil_funciones.cpp
+    # (cvar nfsmw_audio_diag_functions).
+    src/nfsmw_audio_profile_functions.cpp
     # Measurement probe for the car engine sound (Ginsu): buffers, volumes and voices; it only
-    # measures (cvar nfsmw_audio_sonda_motor).
-    src/nfsmw_audio_motor_sonda.cpp
+    # measures (cvar nfsmw_audio_probe_engine).
+    src/nfsmw_audio_engine_probe.cpp
     # Linear resamplers of the sound engine in native code, bit-identical
-    # (cvar nfsmw_audio_remuestreo_nativo).
+    # (cvar nfsmw_audio_resampling_native).
     src/nfsmw_audio_remuestreo.cpp
     # Recursive filter of the sound engine (sub_825CD088) in native code, bit-identical
-    # (cvar nfsmw_audio_filtro_nativo).
-    src/nfsmw_audio_filtro.cpp
+    # (cvar nfsmw_audio_filter_native).
+    src/nfsmw_audio_filter.cpp
     # Gain-scaled sum of the sound engine (sub_825FDFB0) in native code, bit-identical
-    # (cvar nfsmw_audio_suma_nativa).
+    # (cvar nfsmw_audio_sum_native).
     src/nfsmw_audio_suma.cpp
-    # Environment variables for Mesa/NVK before creating Vulkan (cvar nfsmw_mesa_entorno) and, on the
+    # Environment variables for Mesa/NVK before creating Vulkan (cvar nfsmw_mesa_environment) and, on the
     # Switch, the size of Mesa's on-disk shader cache.
-    src/nfsmw_entorno_mesa.cpp
-    # Native memset of the game's CRT (sub_826BE610), like the memcpy of [rexcrt] (cvar nfsmw_crt_memset_nativo):
-    # src/nfsmw_crt_nativo.cpp is left out of the build. The recompiler's [rexcrt] (overrides.toml) now does that
+    src/nfsmw_environment_mesa.cpp
+    # Native memset of the game's CRT (sub_826BE610), like the memcpy of [rexcrt] (cvar nfsmw_crt_memset_native):
+    # src/nfsmw_crt_native.cpp is left out of the build. The recompiler's [rexcrt] (overrides.toml) now does that
     # memset: it emits rexcrt_memset at all 1,109 call sites, so the original function no longer exists and the
     # hook has nothing to hook (on PC it broke linking). Both did the same: std::memset with the same address
     # translation.
     # Cutscene diagnostic: frame presentation (cvar nfsmw_video_diag).
     src/nfsmw_video_diag.cpp
     # WMV3 cutscenes decoded with the SDK's FFmpeg instead of the recompiled
-    # XDK decoder (cvar nfsmw_video_wmv3_nativo).
+    # XDK decoder (cvar nfsmw_video_wmv3_native).
     src/nfsmw_video_wmv3.cpp
-    src/nfsmw_video_nativo.cpp
-    # Shadows updated once every N frames (cvar nfsmw_sombras_cada,
+    src/nfsmw_video_native.cpp
+    # Shadows updated once every N frames (cvar nfsmw_shadows_every,
     # 1 = as the game does; it can be changed at run time from the settings menu).
-    src/nfsmw_recorte_sombras.cpp
-    src/nfsmw_sombras_lod.cpp
+    src/nfsmw_clip_shadows.cpp
+    src/nfsmw_shadows_lod.cpp
     # Native renderer, part C1: the app's own graphics system (cvar
-    # nfsmw_renderizador, "xenos" by default). See docs/native-renderer.md.
-    src/nfsmw_nativo_sistema.cpp
+    # nfsmw_renderer, "xenos" by default). See docs/native-renderer.md.
+    src/nfsmw_native_system.cpp
     # The game's D3D waits without spinning: sleeps until the PM4 ring thread advances
-    # (cvar nfsmw_espera_anillo_bloqueante).
-    src/nfsmw_espera_anillo.cpp
+    # (cvar nfsmw_wait_ring_blocking).
+    src/nfsmw_wait_ring.cpp
     # Frame handoff between the game's two threads without a Sleep(0) loop
-    # (cvar nfsmw_espera_fotograma_bloqueante).
-    src/nfsmw_espera_fotograma.cpp
+    # (cvar nfsmw_wait_frame_blocking).
+    src/nfsmw_wait_frame.cpp
     # Dump of the changed registers of the game's D3D (sub_825A2AA0) in native code: one copy instead of
-    # ~15-20 instructions per word, bit-identical (cvar nfsmw_d3d_registros_nativo).
-    src/nfsmw_d3d_registros_nativo.cpp
+    # ~15-20 instructions per word, bit-identical (cvar nfsmw_d3d_registers_native).
+    src/nfsmw_d3d_registers_native.cpp
     # Per-draw material parameters (sub_824511E8 and its writers 8244F2E0, 82449360, 82449618,
     # 82449988 and 82449C00) in native code, bit-identical and checked at run time against the original
-    # (cvar nfsmw_material_nativo).
-    src/nfsmw_material_nativo.cpp
+    # (cvar nfsmw_material_native).
+    src/nfsmw_material_native.cpp
     # eViewPlatInterface::Render (sub_8243E358, the submesh loop of each model) in native code, bit-identical
-    # and checked at run time against the original (cvar nfsmw_eview_nativo).
-    src/nfsmw_eview_nativo.cpp
+    # and checked at run time against the original (cvar nfsmw_eview_native).
+    src/nfsmw_eview_native.cpp
     # Per-draw matrices (sub_824538D0: A x P, A x Q, A x C and the rigid inverse of A) in native code,
-    # bit-identical and checked at run time against the original (cvar nfsmw_matrices_nativo).
-    src/nfsmw_matrices_nativo.cpp
+    # bit-identical and checked at run time against the original (cvar nfsmw_matrices_native).
+    src/nfsmw_matrices_native.cpp
     # ScenerySectionHeader::DrawAScenery (sub_824C2850: culling, size in pixels, LOD and SceneryDrawInfo of
     # each scenery object) in native code, bit-identical and checked at run time against the original
-    # (cvar nfsmw_escenario_nativo).
-    src/nfsmw_escenario_nativo.cpp
+    # (cvar nfsmw_scenery_native).
+    src/nfsmw_scenery_native.cpp
     # Start of an effect pass (sub_82448E80: dirty masks, shaders, render states and sampler states) in
     # native code, identical and checked at run time against a literal copy of the original
-    # (cvar nfsmw_efecto_pasada_nativo).
-    src/nfsmw_efecto_pasada_nativo.cpp
+    # (cvar nfsmw_effect_pass_native).
+    src/nfsmw_effect_pass_native.cpp
     # The draw glue (sub_82452730 with the streams, the indices and the draw of each object) and the loop
     # over the list that calls it (sub_82454B50) in native code, identical, keeping the game's cache hints
-    # (dcbt), and checked at run time against a literal copy of the original (cvar nfsmw_pegamento_nativo).
-    src/nfsmw_pegamento_nativo.cpp
+    # (dcbt), and checked at run time against a literal copy of the original (cvar nfsmw_glue_native).
+    src/nfsmw_glue_native.cpp
     # PNG captures of the game image for testing (cvar
-    # nfsmw_captura_cada_s, 0 = never).
-    src/nfsmw_nativo_captura.cpp
+    # nfsmw_capture_every_s, 0 = never).
+    src/nfsmw_native_capture.cpp
     # Native renderer, part C2: render targets, copies (resolve and
     # clear) and presentation of the game image.
-    src/nfsmw_nativo_destinos.cpp
+    src/nfsmw_native_targets.cpp
     # Native renderer, part C5a: identifies the shaders that reach the PM4 ring
     # in the NFSSPV library (nfsmw_shaders.nfsp next to the executable).
-    src/nfsmw_nativo_shaders.cpp
+    src/nfsmw_native_shaders.cpp
     src/nfsmw_shader_library.cpp
     # Native renderer, part C5b: VS and PS of each draw from the game
     # thread (shader constructors and the D3D Draw* functions).
-    src/nfsmw_nativo_ganchos.cpp
+    src/nfsmw_native_hooks.cpp
     # Native renderer, parts C3-C6: textures, vertices, constants,
     # pipelines and render passes with the shaders from the library.
-    src/nfsmw_nativo_dibujos.cpp
-    src/nfsmw_nativo_texturas_pool.cpp
-    src/nfsmw_escenario_lod.cpp
+    src/nfsmw_native_draws.cpp
+    src/nfsmw_native_texture_pool.cpp
+    src/nfsmw_scenery_lod.cpp
     # The streamer requests the zone too late: facade popping and a hitch when entering a new
     # zone (hook on TrackStreamer::GetPredictedZone).
-    src/nfsmw_streaming_anticipacion.cpp
-    # Automated tests on PC: virtual gamepad driven by a script (nfsmw_prueba_botones).
-    src/nfsmw_prueba_entrada.cpp
+    src/nfsmw_streaming_readahead.cpp
+    # Automated tests on PC: virtual gamepad driven by a script (nfsmw_test_buttons).
+    src/nfsmw_test_entry.cpp
     # Internal resolution and FPS limit in the menu (F4) that work with the native renderer, with the
     # settings that have no effect taken out of the menu.
-    src/nfsmw_ajustes_graficos.cpp
-    # Profile dump of the instrumented build for PGO (NFSMW_PGO=generar; empty otherwise).
+    src/nfsmw_graphics_settings.cpp
+    # Profile dump of the instrumented build for PGO (NFSMW_PGO=generate; empty otherwise).
     src/nfsmw_pgo.cpp
 )
 
@@ -128,17 +128,17 @@ if(WIN32)
     add_executable(nfsmw WIN32 ${NFSMW_SOURCES})
     # PC build: masks again the floating-point exceptions that
     # rex::ppc::FPSCR can leave unmasked on x86 (see the file).
-    target_sources(nfsmw PRIVATE src/nfsmw_pc_coma_flotante.cpp)
-    # Sampling CPU profiler for the PC tests (cvar nfsmw_perfil_pc_desde_s, 0 = never).
-    target_sources(nfsmw PRIVATE src/nfsmw_perfil_pc.cpp)
+    target_sources(nfsmw PRIVATE src/nfsmw_pc_comma_float.cpp)
+    # Sampling CPU profiler for the PC tests (cvar nfsmw_profile_pc_since_s, 0 = never).
+    target_sources(nfsmw PRIVATE src/nfsmw_profile_pc.cpp)
     # Full symbols (CodeView) of the native renderer in the PDB: without them the profiler only sees the public
     # symbols, and all the code in anonymous namespaces shows up under the name of the preceding public symbol.
     # Debug info only; it does not change the generated code.
     set_source_files_properties(
-        src/nfsmw_nativo_sistema.cpp src/nfsmw_nativo_destinos.cpp src/nfsmw_nativo_dibujos.cpp
-        src/nfsmw_nativo_texturas_pool.cpp
-        src/nfsmw_nativo_shaders.cpp src/nfsmw_nativo_ganchos.cpp src/nfsmw_espera_anillo.cpp
-        src/nfsmw_espera_fotograma.cpp
+        src/nfsmw_native_system.cpp src/nfsmw_native_targets.cpp src/nfsmw_native_draws.cpp
+        src/nfsmw_native_texture_pool.cpp
+        src/nfsmw_native_shaders.cpp src/nfsmw_native_hooks.cpp src/nfsmw_wait_ring.cpp
+        src/nfsmw_wait_frame.cpp
         PROPERTIES COMPILE_OPTIONS "-g;-gcodeview")
 else()
     add_executable(nfsmw ${NFSMW_SOURCES})
@@ -168,7 +168,7 @@ target_link_libraries(nfsmw PRIVATE libavcodec)
 # include path does not reach the executable. On Switch rexglue_switch.cmake handles it, and with
 # the SDK installed the headers are already in its include directory (the target does not exist there).
 # The same goes for renderdoc_app.h, which rex/ui/vulkan/instance.h includes outside
-# Switch (nfsmw_nativo_sistema.cpp uses the SDK's Vulkan device).
+# Switch (nfsmw_native_system.cpp uses the SDK's Vulkan device).
 if(NOT REXGLUE_PLATFORM_SWITCH AND TARGET imgui)
     target_include_directories(nfsmw PRIVATE
         $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>)
@@ -178,7 +178,7 @@ if(NOT REXGLUE_PLATFORM_SWITCH AND TARGET renderdoc)
         $<TARGET_PROPERTY:renderdoc,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
 
-# Precompiled SPIR-V of the SDK presenter: nfsmw_nativo_destinos.cpp uses it to draw
+# Precompiled SPIR-V of the SDK presenter: nfsmw_native_targets.cpp uses it to draw
 # the game image into the presenter output.
 target_include_directories(nfsmw PRIVATE "${REXSDK_DIR}/src/ui/shaders")
 
@@ -188,7 +188,7 @@ target_include_directories(nfsmw PRIVATE "${NFSMW_XXHASH_INCLUDE}")
 
 # Experimental library: the synthetic tests do not validate the full game.
 # Regression confirmed on Switch: the release build excludes this path.
-option(NFSMW_NATIVE_SHADER_LIBRARY "Integrar la biblioteca experimental de shaders nativos" OFF)
+option(NFSMW_NATIVE_SHADER_LIBRARY "Integrar la library experimental de shaders native" OFF)
 if(NFSMW_NATIVE_SHADER_LIBRARY)
     target_sources(nfsmw PRIVATE
         src/nfsmw_shader_vulkan.cpp
@@ -207,43 +207,43 @@ if(REXGLUE_PLATFORM_SWITCH)
     # instruction cache and a small TLB: hot code scattered across the whole executable forces a page
     # table walk on every far jump. This only changes where each function is placed (-ffunction-sections
     # already gives one section per function). The list comes from stack sampling on the console.
-    # LTO on the game code and ours (not on the SDK libraries). Together with tools/llamadas_directas.py
+    # LTO on the game code and ours (not on the SDK libraries). Together with tools/direct_calls.py
     # (calls to functions without a hook go to __imp__, which is not weak) the compiler can inline small
     # game functions across files. -flto=2 and partitions: the whole-program phase handles 144 MB of
     # generated source; with more processes it does not fit in 16 GB.
-    option(NFSMW_LTO "LTO en el codigo del juego y de la app (Switch)" ON)
+    option(NFSMW_LTO "LTO en el code del game y de la app (Switch)" ON)
     if(NFSMW_LTO)
-        foreach(objetivo nfsmw_recomp nfsmw)
-            if(TARGET ${objetivo})
-                target_compile_options(${objetivo} PRIVATE -flto -fno-fat-lto-objects)
+        foreach(target_2 nfsmw_recomp nfsmw)
+            if(TARGET ${target_2})
+                target_compile_options(${target_2} PRIVATE -flto -fno-fat-lto-objects)
             endif()
         endforeach()
         target_link_options(nfsmw PRIVATE -flto=2 -flto-partition=balanced)
     endif()
     # Profile-guided optimization (PGO) in two steps.
-    #   generar: instrumented build; the game dumps the profile to sdmc:/switch/nfsmw/pgo every 3 minutes
+    #   generate: instrumented build; the game dumps the profile to sdmc:/switch/nfsmw/pgo every 3 minutes
     #            (src/nfsmw_pgo.cpp). GCC embeds paths "<profile folder>\<object with # instead of />.gcda"
     #            in the executable; a --wrap of fopen redirects them to the SD card.
-    #   usar:    rebuilds with those .gcda files copied to pgo/<edition> on the PC.
+    #   use:    rebuilds with those .gcda files copied to pgo/<edition> on the PC.
     # -fprofile-prefix-path with the build folder in native format (backslashes), which is how GCC sees it:
     # that way each .gcda name is relative and the same on the console and on the PC.
-    # Profile folder: one per edition under pgo/ at the root of the repository (tools/editions/crear_arbol.py
+    # Profile folder: one per edition under pgo/ at the root of the repository (tools/editions/create_tree.py
     # points each edition tree to its own).
     get_filename_component(NFSMW_PGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pgo/pal_es" ABSOLUTE)
-    set(NFSMW_PGO "" CACHE STRING "Optimizacion por perfil: vacio, generar o usar")
+    set(NFSMW_PGO "" CACHE STRING "Optimizacion por profile: empty, generate o use")
     if(NFSMW_PGO)
-        file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}" NFSMW_PGO_PREFIJO)
-        if(NFSMW_PGO STREQUAL "generar")
+        file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}" NFSMW_PGO_PREFIX)
+        if(NFSMW_PGO STREQUAL "generate")
             # -fno-profile-values: libgcov's indirect-call profiling reads the TLS with
             # mrs tpidr_el0, which is 0 on Horizon (libnx uses -mtp=soft), so the instrumented
             # build crashed at startup. Without value profiling the branch and function counts
             # remain, and those are what PGO uses.
-            set(NFSMW_PGO_OPCIONES -fprofile-generate=${NFSMW_PGO_DIR} "-fprofile-prefix-path=${NFSMW_PGO_PREFIJO}"
+            set(NFSMW_PGO_OPCIONES -fprofile-generate=${NFSMW_PGO_DIR} "-fprofile-prefix-path=${NFSMW_PGO_PREFIX}"
                                    -fprofile-update=single -fno-profile-values)
             target_link_options(nfsmw PRIVATE -fprofile-generate -Wl,--wrap=fopen)
-            target_compile_definitions(nfsmw PRIVATE NFSMW_PGO_GENERAR=1 "NFSMW_PGO_DIR=\"${NFSMW_PGO_DIR}\"")
-        elseif(NFSMW_PGO STREQUAL "usar")
-            set(NFSMW_PGO_OPCIONES -fprofile-use=${NFSMW_PGO_DIR} "-fprofile-prefix-path=${NFSMW_PGO_PREFIJO}"
+            target_compile_definitions(nfsmw PRIVATE NFSMW_PGO_GENERATE=1 "NFSMW_PGO_DIR=\"${NFSMW_PGO_DIR}\"")
+        elseif(NFSMW_PGO STREQUAL "use")
+            set(NFSMW_PGO_OPCIONES -fprofile-use=${NFSMW_PGO_DIR} "-fprofile-prefix-path=${NFSMW_PGO_PREFIX}"
                                    -fprofile-partial-training -fno-profile-values -fprofile-correction
                                    -Wno-missing-profile
                                    -Wno-error=coverage-mismatch)
@@ -252,11 +252,11 @@ if(REXGLUE_PLATFORM_SWITCH)
             # treated that as a corrupt profile and stopped. This option corrects them.
             target_link_options(nfsmw PRIVATE -fprofile-use -fprofile-partial-training -fprofile-correction)
         else()
-            message(FATAL_ERROR "NFSMW_PGO tiene que ser vacio, generar o usar (es '${NFSMW_PGO}')")
+            message(FATAL_ERROR "NFSMW_PGO has que ser empty, generate o use (es '${NFSMW_PGO}')")
         endif()
-        foreach(objetivo nfsmw_recomp nfsmw)
-            if(TARGET ${objetivo})
-                target_compile_options(${objetivo} PRIVATE ${NFSMW_PGO_OPCIONES})
+        foreach(target_2 nfsmw_recomp nfsmw)
+            if(TARGET ${target_2})
+                target_compile_options(${target_2} PRIVATE ${NFSMW_PGO_OPCIONES})
             endif()
         endforeach()
     endif()
@@ -264,15 +264,15 @@ if(REXGLUE_PLATFORM_SWITCH)
     # the code (53 MB) and the A57 has 48 KB of instruction cache: -O2 gives smaller code. It comes after the
     # -O3 of CMAKE_CXX_FLAGS_RELEASE, so it takes precedence. With LTO, GCC records each function's level at
     # compile time.
-    option(NFSMW_RECOMP_O2 "Compilar el codigo traducido con -O2 en vez de -O3" OFF)
+    option(NFSMW_RECOMP_O2 "Compile el code traducido con -O2 en time de -O3" OFF)
     if(NFSMW_RECOMP_O2 AND TARGET nfsmw_recomp)
         target_compile_options(nfsmw_recomp PRIVATE -O2)
     endif()
-    option(NFSMW_ORDEN_FUNCIONES "Juntar las funciones calientes al principio de .text" ON)
-    if(NFSMW_ORDEN_FUNCIONES)
+    option(NFSMW_ORDER_FUNCTIONS "Juntar the functions hot_functions al principio de .text" ON)
+    if(NFSMW_ORDER_FUNCTIONS)
         target_link_options(nfsmw PRIVATE
-            "-Wl,--section-ordering-file,${CMAKE_CURRENT_SOURCE_DIR}/orden_funciones.ld")
-        set_property(TARGET nfsmw APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/orden_funciones.ld")
+            "-Wl,--section-ordering-file,${CMAKE_CURRENT_SOURCE_DIR}/order_functions.ld")
+        set_property(TARGET nfsmw APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/order_functions.ld")
     endif()
     # Homebrew menu icon: a 256x256 JPEG, as elf2nro expects. It is not distributed with the sources; without
     # tools/switch/icono/nfsmw_icono.jpg the NRO gets the default libnx icon.
@@ -345,8 +345,8 @@ if(WIN32)
     # the old value, the target would report "done" and the folder would
     # appear where it did before. This way the value here always applies, and a -D
     # on the command line still overrides it.
-    if(NOT DEFINED NFSMW_DIST_NOMBRE)
-        set(NFSMW_DIST_NOMBRE "NFS_Most_Wanted")
+    if(NOT DEFINED NFSMW_DIST_NAME)
+        set(NFSMW_DIST_NAME "NFS_Most_Wanted")
     endif()
     if(NOT DEFINED NFSMW_DIST_DIR)
         set(NFSMW_DIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build")
@@ -358,18 +358,18 @@ if(WIN32)
                 -D "D_EXE=$<TARGET_FILE:nfsmw>"
                 -D "D_BUILD=$<TARGET_FILE_DIR:nfsmw>"
                 -D "D_DIST=${NFSMW_DIST_DIR}"
-                -D "D_NOMBRE=${NFSMW_DIST_NOMBRE}"
+                -D "D_NAME=${NFSMW_DIST_NAME}"
                 -D "D_VCRUNTIME=${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}"
                 -D "D_REDIST=$ENV{VCToolsRedistDir}"
                 -D "D_PLANTILLA=${CMAKE_CURRENT_SOURCE_DIR}/dist_leeme.txt"
                 -D "D_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/nfsmw.toml"
-                -D "D_EDRAM=${CMAKE_CURRENT_SOURCE_DIR}/dist_comparar_edram.bat"
+                -D "D_EDRAM=${CMAKE_CURRENT_SOURCE_DIR}/dist_compare_edram.bat"
                 -D "D_LANZADOR=${CMAKE_CURRENT_SOURCE_DIR}/../tools/lanzador/lanzador.ps1"
                 -D "D_LANZADOR_BAT=${CMAKE_CURRENT_SOURCE_DIR}/dist_lanzador.bat"
-                -D "D_MATRIZ=${CMAKE_CURRENT_SOURCE_DIR}/../tools/matriz.ps1"
-                -D "D_PROBAR=${CMAKE_CURRENT_SOURCE_DIR}/dist_probar.bat"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/hacer_dist.cmake"
-        COMMENT "Armando la carpeta portable en ${NFSMW_DIST_DIR}"
+                -D "D_MATRIX=${CMAKE_CURRENT_SOURCE_DIR}/../tools/matrix.ps1"
+                -D "D_TEST=${CMAKE_CURRENT_SOURCE_DIR}/dist_test.bat"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/do_dist.cmake"
+        COMMENT "Armando la folder portable en ${NFSMW_DIST_DIR}"
         VERBATIM
     )
 endif()

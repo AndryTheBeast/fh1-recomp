@@ -55,7 +55,7 @@ static_assert(offsetof(Ctx, d8) == 104, "Context: d8 movido");
 static_assert(offsetof(Ctx, d10) == 120, "Context: d10 movido");
 static_assert(offsetof(Ctx, d12) == 136, "Context: d12 movido");
 static_assert(offsetof(Ctx, d14) == 152, "Context: d14 movido");
-static_assert(sizeof(Ctx) == 168, "Context: tamano cambiado");
+static_assert(sizeof(Ctx) == 168, "Context: size cambiado");
 
 }  // namespace
 
@@ -156,7 +156,7 @@ void Fiber::Destroy() {
   if (is_thread_fiber_) {
     tls_current_ = nullptr;
   } else {
-    assert(this != tls_current_ && "Destroy sobre la fibra que esta corriendo");
+    assert(this != tls_current_ && "Destroy over la fibra que esta corriendo");
   }
   delete this;
 }
@@ -170,7 +170,7 @@ extern "C" [[noreturn]] void rex_fiber_trampoline(void) {
   f->entry_(f->arg_);
   // entry_ must not return: there is no context to go back to, this fiber's
   // stack ends here.
-  assert(false && "la funcion de entrada de una fibra ha vuelto");
+  assert(false && "la function de entry de one fibra ha vuelto");
   std::abort();
 }
 

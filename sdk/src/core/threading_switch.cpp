@@ -38,13 +38,13 @@ namespace {
  * Not a hot path: it is touched when threads are created and destroyed, never
  * per frame. A plain mutex is more than enough.
  */
-struct Registro {
+struct Register {
   std::mutex m;
-  std::unordered_map<uintptr_t, RexSwitchHandle> mapa;
+  std::unordered_map<uintptr_t, RexSwitchHandle> map;
 };
 
-Registro& registro() {
-  static Registro r;
+Register& reg_entry() {
+  static Register r;
   return r;
 }
 
@@ -53,25 +53,25 @@ Registro& registro() {
 extern "C" {
 
 void RexSwitchRegisterCurrentThread(void) {
-  auto& r = registro();
+  auto& r = reg_entry();
   std::lock_guard<std::mutex> lock(r.m);
-  r.mapa[reinterpret_cast<uintptr_t>(pthread_self())] = threadGetCurHandle();
+  r.map[reinterpret_cast<uintptr_t>(pthread_self())] = threadGetCurHandle();
 }
 
 void RexSwitchUnregisterCurrentThread(void) {
-  auto& r = registro();
+  auto& r = reg_entry();
   std::lock_guard<std::mutex> lock(r.m);
-  r.mapa.erase(reinterpret_cast<uintptr_t>(pthread_self()));
+  r.map.erase(reinterpret_cast<uintptr_t>(pthread_self()));
 }
 
 RexSwitchHandle RexSwitchHandleFor(pthread_t thread) {
   if (pthread_equal(thread, pthread_self()))
     return threadGetCurHandle();
 
-  auto& r = registro();
+  auto& r = reg_entry();
   std::lock_guard<std::mutex> lock(r.m);
-  auto it = r.mapa.find(reinterpret_cast<uintptr_t>(thread));
-  return it == r.mapa.end() ? REX_SWITCH_INVALID_HANDLE : it->second;
+  auto it = r.map.find(reinterpret_cast<uintptr_t>(thread));
+  return it == r.map.end() ? REX_SWITCH_INVALID_HANDLE : it->second;
 }
 
 /* --- afinidad ---------------------------------------------------------- */
@@ -84,12 +84,12 @@ int pthread_getaffinity_np(pthread_t thread, size_t size, cpu_set_t* set) {
   if (h == REX_SWITCH_INVALID_HANDLE)
     return ESRCH;
 
-  s32 preferido = 0;
-  u64 mascara = 0;
-  if (R_FAILED(svcGetThreadCoreMask(&preferido, &mascara, h)))
+  s32 preferred = 0;
+  u64 mask = 0;
+  if (R_FAILED(svcGetThreadCoreMask(&preferred, &mask, h)))
     return EINVAL;
 
-  set->bits = mascara;
+  set->bits = mask;
   return 0;
 }
 
@@ -106,20 +106,20 @@ int pthread_setaffinity_np(pthread_t thread, size_t size, const cpu_set_t* set) 
    * taken; -1 would mean "whatever it already had", which is not what the
    * POSIX API being imitated asks for.
    */
-  s32 preferido = -1;
+  s32 preferred = -1;
   for (int i = 0; i < 4; i++) {
-    if (set->bits & (1ull << i)) { preferido = i; break; }
+    if (set->bits & (1ull << i)) { preferred = i; break; }
   }
-  if (preferido < 0)
-    return EINVAL;  /* mascara vacia: POSIX tampoco lo permite */
+  if (preferred < 0)
+    return EINVAL;  /* mask empty_2: POSIX tampoco lo permite */
 
   /*
    * Only 4 cores exist. Asking for more is not a caller error (the SDK
    * passes 64-bit masks), so it is trimmed silently.
    */
-  const u32 mascara = static_cast<u32>(set->bits & 0xF);
+  const u32 mask = static_cast<u32>(set->bits & 0xF);
 
-  if (R_FAILED(svcSetThreadCoreMask(h, preferido, mascara)))
+  if (R_FAILED(svcSetThreadCoreMask(h, preferred, mask)))
     return EPERM;
   return 0;
 }
@@ -277,19 +277,19 @@ void RexSwitchSetCurrentThreadPriority(int priority) {
 bool RexSwitchSetCurrentThreadCore(int core) {
   Thread* yo = threadGetSelf();
   Handle h = (yo != nullptr) ? yo->handle : CUR_THREAD_HANDLE;
-  s32 preferido = 0;
-  u64 mascara = 0;
-  if (R_FAILED(svcGetThreadCoreMask(&preferido, &mascara, h))) {
+  s32 preferred = 0;
+  u64 mask = 0;
+  if (R_FAILED(svcGetThreadCoreMask(&preferred, &mask, h))) {
     if (h == CUR_THREAD_HANDLE ||
-        R_FAILED(svcGetThreadCoreMask(&preferido, &mascara, CUR_THREAD_HANDLE))) {
+        R_FAILED(svcGetThreadCoreMask(&preferred, &mask, CUR_THREAD_HANDLE))) {
       return false;
     }
     h = CUR_THREAD_HANDLE;
   }
-  if (core >= 0 && (mascara & (u64(1) << core)) == 0) {
+  if (core >= 0 && (mask & (u64(1) << core)) == 0) {
     return false;  // that core is not this process's: do not force it
   }
-  return R_SUCCEEDED(svcSetThreadCoreMask(h, core, mascara));
+  return R_SUCCEEDED(svcSetThreadCoreMask(h, core, mask));
 }
 
 /*
@@ -308,17 +308,17 @@ bool RexSwitchPinCurrentThreadToCore(int core) {
   }
   Thread* yo = threadGetSelf();
   Handle h = (yo != nullptr) ? yo->handle : CUR_THREAD_HANDLE;
-  s32 preferido = 0;
-  u64 mascara = 0;
-  if (R_FAILED(svcGetThreadCoreMask(&preferido, &mascara, h))) {
+  s32 preferred = 0;
+  u64 mask = 0;
+  if (R_FAILED(svcGetThreadCoreMask(&preferred, &mask, h))) {
     if (h == CUR_THREAD_HANDLE ||
-        R_FAILED(svcGetThreadCoreMask(&preferido, &mascara, CUR_THREAD_HANDLE))) {
+        R_FAILED(svcGetThreadCoreMask(&preferred, &mask, CUR_THREAD_HANDLE))) {
       return false;
     }
     h = CUR_THREAD_HANDLE;
   }
   const u64 solo_ese = u64(1) << core;
-  if ((mascara & solo_ese) == 0) {
+  if ((mask & solo_ese) == 0) {
     return false;  // that core is not this process's
   }
   return R_SUCCEEDED(svcSetThreadCoreMask(h, core, solo_ese));

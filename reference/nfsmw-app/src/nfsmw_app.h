@@ -9,8 +9,8 @@
 #include <rex/logging.h>
 #include <rex/rex_app.h>
 #include <rex/ui/overlay/debug_overlay.h>
-#include <rex/system/kernel_state.h>  // VIGILANTE DE CUELGUES
-#include <rex/system/xthread.h>       // VIGILANTE DE CUELGUES
+#include <rex/system/kernel_state.h>  // WATCHER DE CUELGUES
+#include <rex/system/xthread.h>       // WATCHER DE CUELGUES
 
 #include <algorithm>
 #include <atomic>
@@ -24,13 +24,13 @@
 #if defined(NFSMW_NATIVE_SHADER_LIBRARY)
 #include "nfsmw_shader_hooks.h"
 #endif
-#include "nfsmw_ajustes_graficos.h"
-#include "nfsmw_entorno_mesa.h"
-#include "nfsmw_nativo_captura.h"
-#include "nfsmw_nativo_sistema.h"
-#include "nfsmw_perfil_pc.h"
-#include "nfsmw_prueba_entrada.h"
-#include "nfsmw_video_nativo.h"  // HANG WATCHDOG - cutscene frames with FFmpeg
+#include "nfsmw_graphics_settings.h"
+#include "nfsmw_environment_mesa.h"
+#include "nfsmw_native_capture.h"
+#include "nfsmw_native_system.h"
+#include "nfsmw_profile_pc.h"
+#include "nfsmw_test_entry.h"
+#include "nfsmw_video_native.h"  // HANG WATCHDOG - cutscene frames with FFmpeg
 
 class NfsmwApp : public rex::ReXApp {
  public:
@@ -45,17 +45,17 @@ class NfsmwApp : public rex::ReXApp {
   // ==========================================================================
   //  0. NATIVE RENDERER
   //
-  //  With nfsmw_renderizador = "nativo" the graphics system is the app's own
-  //  (nfsmw_nativo_sistema.cpp) and the emulation plugin is not loaded:
+  //  With nfsmw_renderer = "native" the graphics system is the app's own
+  //  (nfsmw_native_system.cpp) and the emulation plugin is not loaded:
   //  ReXApp::SetupPresentation only loads it if config.graphics is empty.
   //  The code default is still emulation. See docs/native-renderer.md.
   // ==========================================================================
   void OnPreSetup(rex::RuntimeConfig& config) override {
-    if (nfsmw::nativo::Activo()) {
-      config.graphics = nfsmw::nativo::CrearSistemaGrafico();
+    if (nfsmw::native::Active()) {
+      config.graphics = nfsmw::native::CreateSystemGraphics();
     }
-    // Automated tests: virtual gamepad if nfsmw_prueba_botones has a script.
-    nfsmw::prueba::EnvolverEntrada(config);
+    // Automated tests: virtual gamepad if nfsmw_test_buttons has a script.
+    nfsmw::test::WrapEntry(config);
   }
 
   // Available hooks, unused:
@@ -103,7 +103,7 @@ class NfsmwApp : public rex::ReXApp {
   //  With content_backup_root, the runtime also leaves a copy sorted by
   //  profile when each save is closed:
   //      saves/<profile>/actual      the latest save
-  //      saves/<profile>/anterior    the previous one, in case the latest gets corrupted
+  //      saves/<profile>/previous    the previous one, in case the latest gets corrupted
   //
   //  On the Switch the NRO is in sdmc:/switch/nfsmw/, so this gives
   //  sdmc:/switch/nfsmw/saves. On PC, next to the .exe, like everything else.
@@ -111,39 +111,39 @@ class NfsmwApp : public rex::ReXApp {
   //  ORDER: this runs before nfsmw.toml is read, so the toml can
   //  change the folder or leave it empty to copy nothing.
   // ==========================================================================
-  void ElegirCarpetaDeGuardados() {
+  void ChooseFolderOfSaved() {
     if (rex::cvar::GetFlagInfo("content_backup_root") == nullptr) {
       return;  // SDK without that option: nothing happens
     }
     if (!rex::cvar::GetFlagByName("content_backup_root").empty()) {
       return;  // given on the command line
     }
-    const auto carpeta = rex::filesystem::GetExecutableFolder();
-    if (carpeta.empty()) {
+    const auto folder = rex::filesystem::GetExecutableFolder();
+    if (folder.empty()) {
       return;
     }
-    const auto destino = carpeta / "saves";
-    if (!rex::cvar::SetFlagByName("content_backup_root", rex::path_to_utf8(destino))) {
-      REXLOG_WARN("[guardado] no se pudo fijar la carpeta de copias en {}",
-                  rex::path_to_utf8(destino));
+    const auto target = folder / "saves";
+    if (!rex::cvar::SetFlagByName("content_backup_root", rex::path_to_utf8(target))) {
+      REXLOG_WARN("[saved] no se pudo fix la folder de copies en {}",
+                  rex::path_to_utf8(target));
     }
   }
 
   void OnConfigurePaths(rex::PathConfig& paths) override {
-    ElegirCarpetaDeGuardados();
+    ChooseFolderOfSaved();
     if (!paths.game_data_root.empty()) {
       return;  // given on the command line; it takes precedence.
     }
 
     std::error_code ec;
-    const auto carpeta = rex::filesystem::GetExecutableFolder();
-    if (carpeta.empty() || !std::filesystem::is_directory(carpeta, ec)) {
+    const auto folder = rex::filesystem::GetExecutableFolder();
+    if (folder.empty() || !std::filesystem::is_directory(folder, ec)) {
       return;
     }
 
     // The executable's name, for the preferred case.
-    std::filesystem::path preferida;
-    std::vector<std::filesystem::path> otras;
+    std::filesystem::path preferred;
+    std::vector<std::filesystem::path> other;
 
     std::string yo;
     {
@@ -155,7 +155,7 @@ class NfsmwApp : public rex::ReXApp {
       }
     }
 
-    for (const auto& e : std::filesystem::directory_iterator(carpeta, ec)) {
+    for (const auto& e : std::filesystem::directory_iterator(folder, ec)) {
       if (ec) break;
       if (!e.is_regular_file(ec)) continue;
 
@@ -169,23 +169,23 @@ class NfsmwApp : public rex::ReXApp {
                      [](unsigned char c) { return char(std::tolower(c)); });
 
       if (!yo.empty() && base == yo) {
-        preferida = e.path();
+        preferred = e.path();
       } else {
-        otras.push_back(e.path());
+        other.push_back(e.path());
       }
     }
 
-    if (!preferida.empty()) {
-      paths.game_data_root = preferida;
-    } else if (!otras.empty()) {
-      std::sort(otras.begin(), otras.end());
-      paths.game_data_root = otras.front();
+    if (!preferred.empty()) {
+      paths.game_data_root = preferred;
+    } else if (!other.empty()) {
+      std::sort(other.begin(), other.end());
+      paths.game_data_root = other.front();
     } else {
       // No ISO: an extracted folder next to it also works. The ISO patch
       // left --game_data_root accepting both.
-      const auto extraida = carpeta / "game_root";
-      if (std::filesystem::is_directory(extraida, ec)) {
-        paths.game_data_root = extraida;
+      const auto extracted = folder / "game_root";
+      if (std::filesystem::is_directory(extracted, ec)) {
+        paths.game_data_root = extracted;
       }
     }
     // If nothing is found, it is left empty on purpose: the SDK gives its
@@ -215,76 +215,76 @@ class NfsmwApp : public rex::ReXApp {
   //                          before a single frame has been drawn.
   // ==========================================================================
   void OnPostInitLogging() override {
-    // Mesa/NVK environment variables (nfsmw_mesa_entorno): the toml has already been read and Vulkan is
+    // Mesa/NVK environment variables (nfsmw_mesa_environment): the toml has already been read and Vulkan is
     // created later, in SetupPresentation.
-    nfsmw::entorno::AplicarEntornoMesa();
+    nfsmw::environment::ApplyEnvironmentMesa();
     // Internal resolution and FPS limit that work with the native renderer: passed to the video mode before
     // the game requests it, and the settings that do nothing are removed from the F4 menu.
-    nfsmw::ajustes::AplicarAjustesGraficos();
-    nfsmw::ajustes::OcultarAjustesSinEfecto();
-    // Optional post-processing (Graficos/Posproceso) and antialiasing: the output pass picks them up live.
-    nfsmw::ajustes::VigilarAjustesEnVivo();
+    nfsmw::settings::ApplySettingsGraphics();
+    nfsmw::settings::HideSettingsWithoutEffect();
+    // Optional post-processing (Graphics/Postprocess) and antialiasing: the output pass picks them up live.
+    nfsmw::settings::WatchSettingsInLive();
     // Without a GPU plugin the screen stays black: the game runs, but the
     // runtime discards its graphics calls with "no GPU emulation loaded".
-    PonerSiNadieLoPidio("gpu_plugin", "xenos");
+    SetSiNadieLoRequested("gpu_plugin", "xenos");
 #if defined(NFSMW_NATIVE_SHADER_LIBRARY)
     // VkDevice must be created with these capabilities; enabling them after
     // SetupPresentation does not change a device that already exists.
-    PonerSiNadieLoPidio("vulkan_native_shader_features", "true");
+    SetSiNadieLoRequested("vulkan_native_shader_features", "true");
 #endif
 #if !REX_PLATFORM_SWITCH
     // Keyboard and mouse in addition to the gamepad. The Switch has neither:
     // the synthetic device would only shadow the libnx controllers.
-    PonerSiNadieLoPidio("mnk_mode", "true");
+    SetSiNadieLoRequested("mnk_mode", "true");
 #endif
   }
 
   void OnPostSetup() override {
 #if defined(NFSMW_NATIVE_SHADER_LIBRARY)
-    nfsmw::native::IniciarBibliotecaShaders();
+    nfsmw::native::StartLibraryShaders();
 #endif
     // This is not a preference, it is a fix. The game computes its exposure
     // by measuring the average brightness of the scene and reading that value
     // back on the CPU. That readback is disabled by default ("none"), so the
     // game receives garbage, concludes that the scene is extremely dark and
     // raises the exposure to the maximum: washed-out image and a blown-out sun.
-    PonerSiNadieLoPidio("readback_resolve", "fast");
+    SetSiNadieLoRequested("readback_resolve", "fast");
 
     // FPS counter for the F3 overlay, see below.
-    SetGuestFrameStats([this] { return MuestreaFotograma(); });
+    SetGuestFrameStats([this] { return SamplesFrame(); });
 
     // Hang watchdog, see below.
-    ArrancarVigilante();
+    StartWatcher();
 
-    // PNG captures for the native renderer tests (nfsmw_captura_cada_s;
+    // PNG captures for the native renderer tests (nfsmw_capture_every_s;
     // off by default). It works the same with emulation, for comparison.
-    nfsmw::captura::Arrancar([this]() -> rex::ui::Presenter* {
+    nfsmw::capture::Start([this]() -> rex::ui::Presenter* {
       const auto* rt = runtime();
-      const auto* grafico = rt ? rt->graphics_system() : nullptr;
-      return grafico ? grafico->presenter() : nullptr;
+      const auto* graphics = rt ? rt->graphics_system() : nullptr;
+      return graphics ? graphics->presenter() : nullptr;
     });
 
-    // Sampling CPU profiler, PC only (nfsmw_perfil_pc_desde_s; off by default).
-    nfsmw::perfil_pc::Arrancar();
+    // Sampling CPU profiler, PC only (nfsmw_profile_pc_since_s; off by default).
+    nfsmw::profile_pc::Start();
   }
 
   void OnShutdown() override {
-    nfsmw::perfil_pc::Parar();
-    nfsmw::captura::Parar();
-    PararVigilante();
+    nfsmw::profile_pc::Stop();
+    nfsmw::capture::Stop();
+    StopWatcher();
   }
 
  private:
-  static void PonerSiNadieLoPidio(const char* nombre, const char* valor) {
-    if (rex::cvar::GetFlagInfo(nombre) == nullptr) {
-      REXLOG_DEBUG("Ajuste '{}' no registrado todavia; no lo toco.", nombre);
+  static void SetSiNadieLoRequested(const char* name, const char* input_value) {
+    if (rex::cvar::GetFlagInfo(name) == nullptr) {
+      REXLOG_DEBUG("Ajuste '{}' no registered todavia; no lo touched.", name);
       return;
     }
-    if (rex::cvar::HasNonDefaultValue(nombre)) {
+    if (rex::cvar::HasNonDefaultValue(name)) {
       return;  // set explicitly: do not override it.
     }
-    if (rex::cvar::SetFlagByName(nombre, valor)) {
-      REXLOG_DEBUG("Ajuste por defecto de la build portable: {} = {}", nombre, valor);
+    if (rex::cvar::SetFlagByName(name, input_value)) {
+      REXLOG_DEBUG("Ajuste por default de la build portable: {} = {}", name, input_value);
     }
   }
 
@@ -307,7 +307,7 @@ class NfsmwApp : public rex::ReXApp {
   //  (2) is the door that can be opened without touching the SDK.
   //
   //  WHAT IT MEASURES: the game's frames, counted in the
-  //  Swap hook (g_nfsmw_fotogramas_juego, nfsmw_d3d_trace.cpp). An earlier
+  //  Swap hook (g_nfsmw_frames_game, nfsmw_d3d_trace.cpp). An earlier
   //  version measured how often the overlay drew, and with a menu open the UI
   //  thread repaints nonstop: it showed ~60 FPS with the game at 4 or stopped.
   //
@@ -315,41 +315,41 @@ class NfsmwApp : public rex::ReXApp {
   //  recomputed at most once per second from the frames of that window, and
   //  smoothed a little (averaged with the previous window) so it is readable.
   // ==========================================================================
-  rex::ui::FrameStats MuestreaFotograma() {
-    extern std::atomic<uint64_t> g_nfsmw_fotogramas_juego;
-    using Reloj = std::chrono::steady_clock;
-    const auto ahora = Reloj::now();
-    const uint64_t total = g_nfsmw_fotogramas_juego.load(std::memory_order_relaxed);
+  rex::ui::FrameStats SamplesFrame() {
+    extern std::atomic<uint64_t> g_nfsmw_frames_game;
+    using Clock = std::chrono::steady_clock;
+    const auto now = Clock::now();
+    const uint64_t total = g_nfsmw_frames_game.load(std::memory_order_relaxed);
     stats_.frame_count = total > 0 ? total : 1;  // the overlay does not draw if this is 0
 
-    if (!tiene_anterior_) {
-      tiene_anterior_ = true;
-      ultimo_ = ahora;
-      fotogramas_ = total;
+    if (!has_previous_) {
+      has_previous_ = true;
+      last_ = now;
+      frames_ = total;
       return stats_;
     }
     const double dt_ms =
-        std::chrono::duration<double, std::milli>(ahora - ultimo_).count();
+        std::chrono::duration<double, std::milli>(now - last_).count();
     if (dt_ms < 1000.0) {
       return stats_;
     }
-    const uint64_t hechos = total - fotogramas_;
-    ultimo_ = ahora;
-    fotogramas_ = total;
+    const uint64_t done = total - frames_;
+    last_ = now;
+    frames_ = total;
 
-    if (hechos == 0) {
+    if (done == 0) {
       // The game has not presented anything in the whole window.
-      suave_ms_ = 0.0;
+      soft_ms_ = 0.0;
       stats_.fps = 0.0;
       stats_.frame_time_ms = dt_ms;
       return stats_;
     }
-    const double ms_por_fotograma = dt_ms / double(hechos);
+    const double ms_by_frame = dt_ms / double(done);
     // After a long time with the overlay closed, the previous window is useless.
-    suave_ms_ = (suave_ms_ <= 0.0 || dt_ms > 5000.0) ? ms_por_fotograma
-                                                     : (suave_ms_ + ms_por_fotograma) * 0.5;
-    stats_.frame_time_ms = suave_ms_;
-    stats_.fps = 1000.0 / suave_ms_;
+    soft_ms_ = (soft_ms_ <= 0.0 || dt_ms > 5000.0) ? ms_by_frame
+                                                     : (soft_ms_ + ms_by_frame) * 0.5;
+    stats_.frame_time_ms = soft_ms_;
+    stats_.fps = 1000.0 / soft_ms_;
     return stats_;
   }
 
@@ -399,74 +399,74 @@ class NfsmwApp : public rex::ReXApp {
   //  watchdog thread on anyone else.
   // ==========================================================================
 
-  void ArrancarVigilante() {
-    vigilante_activo_ = true;
-    vigilante_ = std::thread([this] { VigilanteMain(); });
+  void StartWatcher() {
+    watcher_active_ = true;
+    watcher_ = std::thread([this] { WatcherMain(); });
   }
 
-  void PararVigilante() {
-    vigilante_activo_ = false;
-    if (vigilante_.joinable()) {
-      vigilante_.join();
+  void StopWatcher() {
+    watcher_active_ = false;
+    if (watcher_.joinable()) {
+      watcher_.join();
     }
   }
 
   // Dump of the thread table. 'grave' decides whether it goes out as an error (when
   // it is a real alarm) or as debug (the routine snapshots).
-  template <typename Lista>
-  static void VolcarHilos(const Lista& hilos, bool grave) {
-    for (auto& h : hilos) {
+  template <typename List>
+  static void DumpThreads(const List& threads, bool grave) {
+    for (auto& h : threads) {
       const auto* cp = h->creation_params();
-      auto* estado = h->thread_state();
-      if (estado && estado->context()) {
-        const auto& c = *estado->context();
+      auto* state = h->thread_state();
+      if (state && state->context()) {
+        const auto& c = *state->context();
         if (grave) {
-          REXLOG_ERROR("[vigilante]   hilo id=0x{:X} entrada=0x{:08X} principal={} corriendo={} | "
+          REXLOG_ERROR("[watcher]   thread_value id=0x{:X} entry=0x{:08X} principal={} corriendo={} | "
                        "lr=0x{:08X} r1=0x{:08X} r13=0x{:08X} r3=0x{:08X} ctr=0x{:08X} "
-                       "ultimo_indirecto=0x{:08X}",
+                       "last_indirect=0x{:08X}",
                        h->thread_id(), cp->start_address, h->main_thread(), h->is_running(),
                        static_cast<uint32_t>(c.lr), c.r1.u32, c.r13.u32, c.r3.u32, c.ctr.u32,
                        c.last_indirect_target);
         } else {
-          REXLOG_DEBUG("[vigilante]   hilo id=0x{:X} entrada=0x{:08X} principal={} corriendo={} | "
+          REXLOG_DEBUG("[watcher]   thread_value id=0x{:X} entry=0x{:08X} principal={} corriendo={} | "
                        "lr=0x{:08X} r1=0x{:08X} r13=0x{:08X} r3=0x{:08X} ctr=0x{:08X} "
-                       "ultimo_indirecto=0x{:08X}",
+                       "last_indirect=0x{:08X}",
                        h->thread_id(), cp->start_address, h->main_thread(), h->is_running(),
                        static_cast<uint32_t>(c.lr), c.r1.u32, c.r13.u32, c.r3.u32, c.ctr.u32,
                        c.last_indirect_target);
         }
       } else {
-        REXLOG_DEBUG("[vigilante]   hilo id=0x{:X} entrada=0x{:08X} sin contexto", h->thread_id(),
+        REXLOG_DEBUG("[watcher]   thread_value id=0x{:X} entry=0x{:08X} sin context_id", h->thread_id(),
                      cp->start_address);
       }
     }
   }
 
-  void VigilanteMain() {
-    using Reloj = std::chrono::steady_clock;
+  void WatcherMain() {
+    using Clock = std::chrono::steady_clock;
 
     // How many seconds in a row without anything moving before raising the
     // alarm. Five is generous: this game at 10 fps still moves registers
     // a hundred times per second, so five still seconds are not slowness.
-    constexpr int kSegundosParaSospechar = 5;
-    constexpr int kSegundosEntreVolcados = 15;
+    constexpr int kSecondsForSuspect = 5;
+    constexpr int kSecondsBetweenDumps = 15;
 
-    uint64_t firma_anterior = 0;
-    int quietos = 0;
-    int desde_ultimo_volcado = 0;
-    int desde_instantanea = 0;
-    bool avisado = false;
-    int volcados_pilas = 0;  // logs/pilas_N.txt on PC (nfsmw_perfil_pc.cpp)
+    uint64_t signature_previous = 0;
+    int still = 0;
+    int since_last_dump = 0;
+    int since_snapshot = 0;
+    bool warned = false;
+    int dumps_stacks = 0;  // logs/stacks_N.txt on PC (nfsmw_profile_pc.cpp)
 
-    while (vigilante_activo_) {
+    while (watcher_active_) {
       std::this_thread::sleep_for(std::chrono::seconds(1));
-      if (!vigilante_activo_) break;
+      if (!watcher_active_) break;
 
       auto* kernel = rex::system::kernel_state();
       if (!kernel) continue;
 
-      auto hilos = kernel->object_table()->GetObjectsByType<rex::system::XThread>();
-      if (hilos.empty()) continue;
+      auto threads = kernel->object_table()->GetObjectsByType<rex::system::XThread>();
+      if (threads.empty()) continue;
 
       // A signature of "where everyone is". It does not need to be a
       // good hash: it only has to change if some register changes.
@@ -482,30 +482,30 @@ class NfsmwApp : public rex::ReXApp {
       // The fix is to put each thread in a map keyed by its id: the map sorts
       // itself, so the shuffling no longer matters, and a repeated id
       // overwrites instead of being counted twice. Only then is it mixed.
-      std::map<uint32_t, uint64_t> por_hilo;
-      for (auto& h : hilos) {
-        auto* estado = h->thread_state();
-        if (!estado || !estado->context()) continue;
-        const auto& c = *estado->context();
-        por_hilo[h->thread_id()] =
+      std::map<uint32_t, uint64_t> by_thread;
+      for (auto& h : threads) {
+        auto* state = h->thread_state();
+        if (!state || !state->context()) continue;
+        const auto& c = *state->context();
+        by_thread[h->thread_id()] =
             static_cast<uint64_t>(c.lr) ^ (static_cast<uint64_t>(c.r1.u32) << 20) ^
             (static_cast<uint64_t>(c.r3.u32) << 40);
       }
 
-      uint64_t firma = 1469598103934665603ull;
-      for (const auto& [id_hilo, huella] : por_hilo) {
-        firma = (firma ^ id_hilo) * 1099511628211ull;
-        firma = (firma ^ huella) * 1099511628211ull;
+      uint64_t signature = 1469598103934665603ull;
+      for (const auto& [id_thread, fingerprint] : by_thread) {
+        signature = (signature ^ id_thread) * 1099511628211ull;
+        signature = (signature ^ fingerprint) * 1099511628211ull;
       }
-      // Cutscenes with FFmpeg (nfsmw_video_nativo.cpp): the video player threads wait almost all the time
+      // Cutscenes with FFmpeg (nfsmw_video_native.cpp): the video player threads wait almost all the time
       // in the same place and the signature may not change even though the video advances. On PC the alarm
       // fired during attract_movie with the video at 30 frames/s and the audio without gaps.
-      firma = (firma ^ nfsmw::video_nativo::FotogramasNativos()) * 1099511628211ull;
-      // Native renderer swaps. With the blocking waits (nfsmw_espera_anillo.cpp and
-      // nfsmw_espera_fotograma.cpp) the main thread and the D3D thread sleep almost the whole frame in the
+      signature = (signature ^ nfsmw::video_native::FramesNative()) * 1099511628211ull;
+      // Native renderer swaps. With the blocking waits (nfsmw_wait_ring.cpp and
+      // nfsmw_wait_frame.cpp) the main thread and the D3D thread sleep almost the whole frame in the
       // same place, and the signature may not change even though the game keeps drawing: the alarm fired
       // in the menus of a PC race test with the PM4 ring thread drawing (118,332 draws in those 10 s).
-      firma = (firma ^ nfsmw::nativo::SwapsNativos()) * 1099511628211ull;
+      signature = (signature ^ nfsmw::native::SwapsNative()) * 1099511628211ull;
 
       // PERIODIC SNAPSHOT, WHATEVER HAPPENS.
       //
@@ -522,49 +522,49 @@ class NfsmwApp : public rex::ReXApp {
       //
       // It logs at debug level (no noise in normal use) and it is a few
       // lines every ten seconds.
-      if (++desde_instantanea >= 10) {
-        desde_instantanea = 0;
-        REXLOG_DEBUG("[vigilante] instantanea: {} hilos del juego", hilos.size());
-        VolcarHilos(hilos, false);
+      if (++since_snapshot >= 10) {
+        since_snapshot = 0;
+        REXLOG_DEBUG("[watcher] snapshot: {} threads del game", threads.size());
+        DumpThreads(threads, false);
       }
 
-      if (firma != firma_anterior) {
-        if (avisado) {
-          REXLOG_WARN("[vigilante] el juego ha vuelto a moverse despues de {} s parado.", quietos);
-          avisado = false;
+      if (signature != signature_previous) {
+        if (warned) {
+          REXLOG_WARN("[watcher] el game ha vuelto a moverse after de {} s stopped.", still);
+          warned = false;
         }
-        firma_anterior = firma;
-        quietos = 0;
-        desde_ultimo_volcado = 0;
+        signature_previous = signature;
+        still = 0;
+        since_last_dump = 0;
         continue;
       }
 
-      ++quietos;
-      ++desde_ultimo_volcado;
-      if (quietos < kSegundosParaSospechar) continue;
-      if (avisado && desde_ultimo_volcado < kSegundosEntreVolcados) continue;
-      desde_ultimo_volcado = 0;
+      ++still;
+      ++since_last_dump;
+      if (still < kSecondsForSuspect) continue;
+      if (warned && since_last_dump < kSecondsBetweenDumps) continue;
+      since_last_dump = 0;
 
-      REXLOG_ERROR("[vigilante] {} s sin que se mueva ni un registro en ninguno de los {} hilos "
-                   "del juego. Esto no es lentitud: esta parado.",
-                   quietos, hilos.size());
-      VolcarHilos(hilos, true);
+      REXLOG_ERROR("[watcher] {} s sin que se mueva ni un reg_entry en ninguno de los {} threads "
+                   "del game. Esto no es slowness: esta stopped.",
+                   still, threads.size());
+      DumpThreads(threads, true);
       // And the stacks of every thread in the process, host ones included (ring, audio, copies): on PC it
-      // writes logs/pilas_N.txt (nfsmw_perfil_pc.cpp). Only on the first two alarms.
-      if (volcados_pilas < 2) {
-        ++volcados_pilas;
-        nfsmw::perfil_pc::VolcarPilas("vigilante");
+      // writes logs/stacks_N.txt (nfsmw_profile_pc.cpp). Only on the first two alarms.
+      if (dumps_stacks < 2) {
+        ++dumps_stacks;
+        nfsmw::profile_pc::DumpStacks("watcher");
       }
-      avisado = true;
+      warned = true;
     }
   }
 
   rex::ui::FrameStats stats_{};
-  std::chrono::steady_clock::time_point ultimo_{};
-  double suave_ms_ = 0.0;
-  uint64_t fotogramas_ = 0;
-  bool tiene_anterior_ = false;
+  std::chrono::steady_clock::time_point last_{};
+  double soft_ms_ = 0.0;
+  uint64_t frames_ = 0;
+  bool has_previous_ = false;
 
-  std::thread vigilante_;
-  std::atomic<bool> vigilante_activo_{false};
+  std::thread watcher_;
+  std::atomic<bool> watcher_active_{false};
 };

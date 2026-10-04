@@ -46,11 +46,11 @@ namespace {
 // drawer stretches to the window (the coordinate space of ImmediateDrawer::Begin, scissors included): they take up
 // the same part of the screen in both modes. The window DPI is left alone because the application uses it too
 // (rex_app.cpp: OnWindowResized and OnDpiScaleChanged).
-float FisicoALogico(const Window* window) {
+float PhysicalALogical(const Window* window) {
 #if REX_PLATFORM_SWITCH
-  const uint32_t alto = window->GetActualPhysicalHeight();
-  if (alto) {
-    return 720.0f / float(alto);
+  const uint32_t height = window->GetActualPhysicalHeight();
+  if (height) {
+    return 720.0f / float(height);
   }
 #endif
   return float(window->GetMediumDpi()) / float(window->GetDpi());
@@ -191,7 +191,7 @@ void ImGuiDrawer::Initialize() {
 #if REX_PLATFORM_SWITCH
   // No mouse or keyboard: the menus are driven with the controller and the touch
   // screen (switch_imgui_input.h).
-  nx::ConfigurarNavegacion(io);
+  nx::ConfigureNavigation(io);
 #endif
 
   // Setup the font glyphs.
@@ -434,7 +434,7 @@ void ImGuiDrawer::Draw(UIDrawContext& ui_draw_context) {
   }
   last_frame_time_ticks_ = current_frame_time_ticks;
 
-  const float physical_to_logical = FisicoALogico(window_);
+  const float physical_to_logical = PhysicalALogical(window_);
   io.DisplaySize.x = window_->GetActualPhysicalWidth() * physical_to_logical;
   io.DisplaySize.y = window_->GetActualPhysicalHeight() * physical_to_logical;
 
@@ -444,12 +444,12 @@ void ImGuiDrawer::Draw(UIDrawContext& ui_draw_context) {
     // events: HID is read here, on the UI thread and before NewFrame. While a menu
     // is open, Draw repeats continuously (see the end). There is a single
     // ImGuiDrawer per process. The touch panel always measures 1280x720.
-    static nx::EstadoEntradaUi estado_entrada;
-    nx::EntradaUi entrada;
-    nx::LeerEntradaUi(entrada,
+    static nx::StateEntryUi state_entry;
+    nx::EntryUi entry;
+    nx::ReadEntryUi(entry,
                       float(window_->GetActualPhysicalWidth()) / 1280.0f * physical_to_logical,
                       float(window_->GetActualPhysicalHeight()) / 720.0f * physical_to_logical);
-    nx::AplicarEntrada(io, entrada, estado_entrada);
+    nx::ApplyEntry(io, entry, state_entry);
   }
 #endif
 
@@ -683,7 +683,7 @@ void ImGuiDrawer::OnKey(KeyEvent& e, bool is_down) {
 
 void ImGuiDrawer::UpdateMousePosition(float x, float y) {
   auto& io = GetIO();
-  const float physical_to_logical = FisicoALogico(window_);
+  const float physical_to_logical = PhysicalALogical(window_);
   io.MousePos.x = x * physical_to_logical;
   io.MousePos.y = y * physical_to_logical;
 }

@@ -23,7 +23,7 @@
 #include <rex/ui/vulkan/device.h>
 
 REXCVAR_DEFINE_BOOL(vulkan_native_shader_features, false, "UI/Vulkan",
-                    "Habilitar capacidades disponibles para los shaders nativos experimentales")
+                    "Enable capacidades available para los shaders native experimentales")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 REXCVAR_DEFINE_BOOL(vulkan_require_fragment_stores_and_atomics, true, "UI/Vulkan",

@@ -22,4 +22,4 @@ void *elf_getdata(void *scn, void *data) { (void)scn; (void)data; return NULL; }
 int elf_getshdrstrndx(void *elf, size_t *dst) { (void)elf; if (dst) *dst = 0; return -1; }
 char *elf_strptr(void *elf, size_t sec, size_t off) { (void)elf; (void)sec; (void)off; return NULL; }
 int elf_errno(void) { return 0; }
-const char *elf_errmsg(int err) { (void)err; return "libelf no disponible en Switch"; }
+const char *elf_errmsg(int err) { (void)err; return "libelf no available en Switch"; }

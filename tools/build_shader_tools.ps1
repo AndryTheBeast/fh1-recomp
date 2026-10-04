@@ -16,9 +16,9 @@ $S = Join-Path $Repo "shaders"
   -DNFSMW_RECOMP -D_CRT_SECURE_NO_WARNINGS -DNOMINMAX -Wno-switch -Wno-unused-variable -fms-extensions `
   "$S\nfsmw_hlsl.cpp" "$S\XenosRecomp\shader_recompiler.cpp" -o "$S\fh1_hlsl.exe"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-# Library packer: shaders/fh1_empaquetar.exe CONTAINERS SPIRV OUT.nfsp
+# Library packer: shaders/fh1_pack_library.exe CONTAINERS SPIRV OUT.nfsp
 & clang++ -std=c++23 -O2 "-I$Repo\sdk\thirdparty\xxHash" -D_CRT_SECURE_NO_WARNINGS -DNOMINMAX `
-  "$S\fh1_empaquetar.cpp" "$Repo\fh1\src\fh1_shader_library.cpp" -o "$S\fh1_empaquetar.exe"
+  "$S\fh1_pack_library.cpp" "$Repo\fh1\src\fh1_shader_library.cpp" -o "$S\fh1_pack_library.exe"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # Zip method 21 decoder (XMemCompress LZX) for the tracks' archives: libmspack's lzxd.c.
 $M = "$Repo\sdk\thirdparty\libmspack\libmspack\mspack"

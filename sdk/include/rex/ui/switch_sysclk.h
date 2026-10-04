@@ -13,7 +13,7 @@ namespace rex::ui::switch_sysclk {
 
 #if REX_PLATFORM_SWITCH
 
-// Once per second. "efectivo" is the mode the game obeys (Reverse-NX's if set) and "real" the
+// Once per second. "effective" is the mode the game obeys (Reverse-NX's if set) and "real" the
 // hardware's: something is done whenever they differ, in either direction, which is exactly what
 // the clock sysmodule cannot see (it looks at the hardware).
 //   effective docked   + real handheld -> clocks go up to the configured docked column.
@@ -22,15 +22,15 @@ namespace rex::ui::switch_sysclk {
 //                                         1331.2), which is what "Fake Handheld" is expected to do.
 //                                         Note: the sysmodule's overlay will keep saying "Docked"
 //                                         because that is its profile; what changes are the actual MHz.
-void SeguirModo(bool sobremesa_efectivo, bool sobremesa_real);
+void FollowMode(bool docked_effective, bool docked_real);
 
 // Turns all of this on or off (the game passes it from its cvar). Turning it off releases the clocks.
-void Habilitar(bool habilitado);
+void Enable(bool enabled);
 
 #else
 
-inline void SeguirModo(bool, bool) {}
-inline void Habilitar(bool) {}
+inline void FollowMode(bool, bool) {}
+inline void Enable(bool) {}
 
 #endif  // REX_PLATFORM_SWITCH
 

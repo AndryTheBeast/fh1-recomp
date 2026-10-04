@@ -86,7 +86,7 @@ struct LogConfig {
    *
    * On the Switch the log lives on the SD, and a flush there is not a buffer write: it is an fwrite plus
    * an fflush that goes down to the Horizon file system, with its round trip. And it ran on the thread
-   * that wrote the line. The "[nativo]" summary blocks are fifteen or twenty lines in a row from the
+   * that wrote the line. The "[native]" summary blocks are fifteen or twenty lines in a row from the
    * render thread: fifteen or twenty trips to the card within one frame. One log had seconds with 85
    * lines, and 38 of its 200 stutters fall less than 0.6 s from one of those blocks, of which there are
    * only 24 in the whole run (chance would give 23 of 200; there are 38).

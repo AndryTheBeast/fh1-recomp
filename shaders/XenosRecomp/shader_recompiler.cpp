@@ -183,10 +183,10 @@ void ShaderRecompiler::printDstSwizzle01(uint32_t dstRegister, uint32_t dstSwizz
 void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t address)
 {
     if (instr.isPredicated)
-        abrirPredicado(instr.predicateCondition);
+        openPredicate(instr.predicateCondition);
     else
-        cerrarPredicado();
-    const size_t marcaPredicado = out.size();
+        closePredicate();
+    const size_t markPredicate = out.size();
 #ifdef NFSMW_RECOMP
     if (!instr.isMiniFetch)
     {
@@ -212,14 +212,14 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         // FH1: a fetch from a stream the declaration does not list: read guest memory directly.
         // A mini fetch takes the constant, index and stride of the last full fetch.
         if (instr.isMiniFetch && !haveFullFetch)
-            throw std::runtime_error(fmt::format("FETCH mini sin FETCH completo antes (direccion {})", address));
+            throw std::runtime_error(fmt::format("mini FETCH without a full FETCH before it (address {})", address));
         uint32_t c = instr.isMiniFetch ? fullFetchConst : uint32_t(instr.constIndex);
         uint32_t src = instr.isMiniFetch ? fullFetchSrc : uint32_t(instr.srcRegister);
         uint32_t swz = instr.isMiniFetch ? fullFetchSwizzle : (instr.srcSwizzle & 3);
         uint32_t stride = instr.isMiniFetch ? fullFetchStride : uint32_t(instr.stride);
         bool rounded = instr.isMiniFetch ? fullFetchRounded : (instr.isIndexRounded != 0);
         if (c < 24)
-            throw std::runtime_error(fmt::format("FETCH directo con constante {} (solo 24-31)", c));
+            throw std::runtime_error(fmt::format("direct FETCH with constant {} (only 24-31)", c));
         rawFetchConstants.insert(c);
         print("fh1Fetch({}, r{}.{}, {}, {}, {}, {}, {}, {})", c, src, "xyzw"[swz], rounded ? "true" : "false",
               stride, int32_t(instr.offset), uint32_t(instr.format), instr.signedRfModeAll ? "true" : "false",
@@ -228,10 +228,10 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         printDstSwizzle(instr.dstSwizzle, true);
         out += ";\n";
         printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
-        cerrarSiEscribePredicado(marcaPredicado);
+        closeSiWritesPredicate(markPredicate);
         return;
 #else
-        throw std::runtime_error("FETCH de vertices sin elemento declarado");
+        throw std::runtime_error("vertex FETCH without a declared element");
 #endif
     }
 
@@ -298,7 +298,7 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
 
     printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
 
-    cerrarSiEscribePredicado(marcaPredicado);
+    closeSiWritesPredicate(markPredicate);
 }
 
 void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicubic)
@@ -307,10 +307,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
         return;
 
     if (instr.isPredicated)
-        abrirPredicado(instr.predCondition);
+        openPredicate(instr.predCondition);
     else
-        cerrarPredicado();
-    const size_t marcaPredicado = out.size();
+        closePredicate();
+    const size_t markPredicate = out.size();
 
     auto printSrcRegister = [&](size_t componentCount)
         {
@@ -425,7 +425,7 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
     {
     case TextureDimension::Texture2D:
         // The last argument is 1/size of the slot, so the texture does not have to be queried.
-        print(", float2({}, {}), {}_InvTamano", instr.offsetX * 0.5f, instr.offsetY * 0.5f, constNamePtr);
+        print(", float2({}, {}), {}_InvSize", instr.offsetX * 0.5f, instr.offsetY * 0.5f, constNamePtr);
         break;
     case TextureDimension::TextureCube:
         out += ", cubeMapData";
@@ -440,16 +440,16 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
 
     printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
 
-    cerrarSiEscribePredicado(marcaPredicado);
+    closeSiWritesPredicate(markPredicate);
 }
 
 void ShaderRecompiler::recompile(const AluInstruction& instr)
 {
     if (instr.isPredicated)
-        abrirPredicado(instr.predicateCondition);
+        openPredicate(instr.predicateCondition);
     else
-        cerrarPredicado();
-    const size_t marcaPredicado = out.size();
+        closePredicate();
+    const size_t markPredicate = out.size();
 
     enum
     {
@@ -536,7 +536,7 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
             {
                 // The bits correspond to the first constant and the following ones,
                 // not to the whole instruction. Temporary operands do not count.
-                const bool relativa = operand == VECTOR_0 ? instr.const0Relative :
+                const bool relative = operand == VECTOR_0 ? instr.const0Relative :
                     operand == VECTOR_1 ? (instr.src1Select ? instr.const0Relative : instr.const1Relative) :
                     (instr.src1Select && instr.src2Select ? instr.const0Relative : instr.const1Relative);
                 auto findResult = float4Constants.find(reg);
@@ -555,20 +555,20 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
                     #endif
                         {
                             regFormatted = fmt::format("{}({}{})", constantName,
-                                reg - findResult->second->registerIndex, relativa ? (instr.constAddressRegisterRelative ? " + a0" : " + aL") : "");
+                                reg - findResult->second->registerIndex, relative ? (instr.constAddressRegisterRelative ? " + a0" : " + aL") : "");
                         }
                     }
                     else
                     {
-                        if (relativa)
-                            throw std::runtime_error("direccionamiento relativo de constante escalar pendiente");
+                        if (relative)
+                            throw std::runtime_error("relative addressing of a scalar constant not implemented yet");
                         regFormatted = constantName;
                     }
                 }
                 else
                 {
-                    if (relativa)
-                        throw std::runtime_error("direccionamiento relativo sin constante declarada pendiente");
+                    if (relative)
+                        throw std::runtime_error("relative addressing without a declared constant not implemented yet");
                     regFormatted = fmt::format("c{}", reg);
                 }
             }
@@ -713,7 +713,7 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
             {
                 auto findResult = interpolators.find(instr.vectorDest);
                 if (findResult == interpolators.end())
-                    throw std::runtime_error("exportacion de vertices sin interpolador declarado");
+                    throw std::runtime_error("vertex export without a declared interpolator");
                 exportRegister = findResult->second;
                 break;
             }
@@ -1205,7 +1205,7 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
         out += "}\n";
     }
 
-    cerrarSiEscribePredicado(marcaPredicado);
+    closeSiWritesPredicate(markPredicate);
 }
 
 void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_view& include)
@@ -1274,7 +1274,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             {
                 uint32_t tailCount = (isPixelShader ? 256 : 256) - constantInfo->registerIndex;
 
-                // NFSMW: dynamic UBO or pointer, depending on SPEC_CONSTANT_CONSTANTES_UBO.
+                // NFSMW: dynamic UBO or pointer, depending on SPEC_CONSTANT_CONSTANTS_UBO.
                 println("#define {}(INDEX) select((INDEX) < {}, (NFSMW_UBO ? g_Ubo{}.v[{} + min(INDEX, {})] : vk::RawBufferLoad<float4>(g_PushConstants.{}ShaderConstants + ({} + min(INDEX, {})) * 16, 0x10)), 0.0)",
                     constantName, tailCount, shaderName, constantInfo->registerIndex.get(), tailCount - 1,
                     shaderName, constantInfo->registerIndex.get(), tailCount - 1);
@@ -1295,18 +1295,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
         {
             for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
             {
-                println("#define {}_Texture{}DescriptorIndex (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+                println("#define {}_Texture{}DescriptorIndex (NFSMW_UBO ? NFSC_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
                     constantName, TEXTURE_DIMENSIONS[j], j * 64 + constantInfo->registerIndex * 4, j * 64 + constantInfo->registerIndex * 4);
             }
 
-            println("#define {}_SamplerDescriptorIndex (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+            println("#define {}_SamplerDescriptorIndex (NFSMW_UBO ? NFSC_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
                 constantName, std::size(TEXTURE_DIMENSIONS) * 64 + constantInfo->registerIndex * 4, std::size(TEXTURE_DIMENSIONS) * 64 + constantInfo->registerIndex * 4);
 
             // 1/size of the host image of that slot, which the renderer writes at byte
             // 360 + slot * 8 of the shared constants (right after g_InputRemap).
             {
                 const uint32_t invBase = 360 + constantInfo->registerIndex * 8;
-                println("#define {}_InvTamano (NFSMW_UBO ? float2(NFSMW_COMPARTIDA_FLOAT({}), NFSMW_COMPARTIDA_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
+                println("#define {}_InvSize (NFSMW_UBO ? float2(NFSC_SHARED_FLOAT({}), NFSC_SHARED_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
                     constantName, invBase, invBase + 4, invBase);
             }
 
@@ -1416,11 +1416,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
         if (samplers.count(slot))
             continue;
         for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
-            println("#define s{}_Texture{}DescriptorIndex (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+            println("#define s{}_Texture{}DescriptorIndex (NFSMW_UBO ? NFSC_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
                 slot, TEXTURE_DIMENSIONS[j], j * 64 + slot * 4, j * 64 + slot * 4);
-        println("#define s{}_SamplerDescriptorIndex (NFSMW_UBO ? NFSMW_COMPARTIDA_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
+        println("#define s{}_SamplerDescriptorIndex (NFSMW_UBO ? NFSC_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
             slot, std::size(TEXTURE_DIMENSIONS) * 64 + slot * 4, std::size(TEXTURE_DIMENSIONS) * 64 + slot * 4);
-        println("#define s{}_InvTamano (NFSMW_UBO ? float2(NFSMW_COMPARTIDA_FLOAT({}), NFSMW_COMPARTIDA_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
+        println("#define s{}_InvSize (NFSMW_UBO ? float2(NFSC_SHARED_FLOAT({}), NFSC_SHARED_FLOAT({})) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + {}))",
             slot, 360 + slot * 8, 364 + slot * 8, 360 + slot * 8);
     }
 #endif
@@ -1820,12 +1820,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             /*
              * If this CF opens its own `if (p0)` (CondExecPred), its condition. It serves
              * two purposes: reusing the identical block that was just closed, and leaving its
-             * own brace recorded so the next one can reuse it. See reabrirCierre().
+             * own brace recorded so the next one can reuse it. See reopenClose().
              */
-            int condicionPredicadoCf = -1;
+            int conditionPredicateCf = -1;
 
             // Control flow boundary. An open predicated block does not cross this point.
-            cerrarPredicado();
+            closePredicate();
 
             switch (cfInstr.opcode)
             {
@@ -1848,11 +1848,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 {
                     // The condition belongs to the whole EXEC block, including its
                     // return. Per-instruction ALU predication does not replace it.
-                    const auto booleano = boolConstants.find(cfInstr.condExec.boolAddress);
-                    if (booleano == boolConstants.end())
-                        throw std::runtime_error("EXEC condicional sin constante booleana declarada");
+                    const auto boolean = boolConstants.find(cfInstr.condExec.boolAddress);
+                    if (boolean == boolConstants.end())
+                        throw std::runtime_error("conditional EXEC without a declared boolean constant");
                     indent();
-                    println("if ((g_Booleans & {}) {}= 0)", booleano->second, cfInstr.condExec.condition ? "!" : "=");
+                    println("if ((g_Booleans & {}) {}= 0)", boolean->second, cfInstr.condExec.condition ? "!" : "=");
                     indent();
                     out += "{\n";
                     ++indentation;
@@ -1866,25 +1866,25 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 count = cfInstr.condExecPred.count;
                 sequence = cfInstr.condExecPred.sequence;
                 shouldReturn = (cfInstr.opcode == ControlFlowOpcode::CondExecPredEnd);
-                condicionPredicadoCf = cfInstr.condExecPred.condition ? 1 : 0;
+                conditionPredicateCf = cfInstr.condExecPred.condition ? 1 : 0;
                 /*
                  * The previous block was this same `if (p0)` and nothing was emitted between
                  * the two: its brace is deleted and this EXEC continues inside. This way runs of
                  * CondExecPred with the same predicate (the nine PCF taps, the six car lights)
                  * end up in one basic block instead of three or four.
                  */
-                if (!reabrirCierre(condicionPredicadoCf))
+                if (!reopenClose(conditionPredicateCf))
                 {
                     indent();
-                    println("if ({}p0)", condicionPredicadoCf ? "" : "!");
+                    println("if ({}p0)", conditionPredicateCf ? "" : "!");
                     indent();
                     out += "{\n";
                     ++indentation;
                 }
                 shouldCloseCurlyBracket = true;
                 // This `if` governs the whole block, so the predicated instructions inside
-                // do not have to test it again. See predGarantizado_.
-                predGarantizado_ = condicionPredicadoCf;
+                // do not have to test it again. See predGuaranteed_.
+                predGuaranteed_ = conditionPredicateCf;
                 break;
 
             case ControlFlowOpcode::LoopStart:
@@ -2040,7 +2040,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 instructionCode += 3;
             }
 
-            cerrarPredicado();  // end of the EXEC instructions
+            closePredicate();  // end of the EXEC instructions
 
             if (shouldReturn)
             {
@@ -2119,18 +2119,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             if (shouldCloseCurlyBracket)
             {
                 --indentation;
-                const size_t marcaLlaveCf = out.size();
+                const size_t markBraceCf = out.size();
                 indent();
                 out += "}\n";
                 /*
                  * It is recorded in case the next CondExecPred is identical. Not with a
-                 * `return` inside, since the block does not continue; and anotarCierreCf() also
-                 * refuses if something wrote p0 in here (predGarantizado_ was set to -1): the
+                 * `return` inside, since the block does not continue; and noteCloseCf() also
+                 * refuses if something wrote p0 in here (predGuaranteed_ was set to -1): the
                  * next block has to test the new p0.
                  */
-                anotarCierreCf(marcaLlaveCf, shouldReturn ? -1 : condicionPredicadoCf);
+                noteCloseCf(markBraceCf, shouldReturn ? -1 : conditionPredicateCf);
             }
-            predGarantizado_ = -1;  // end of the EXEC block: it no longer guarantees anything
+            predGuaranteed_ = -1;  // end of the EXEC block: it no longer guarantees anything
         }
 
         controlFlowCode += 3;

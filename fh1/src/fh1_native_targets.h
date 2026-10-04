@@ -1,6 +1,6 @@
 // fh1 - native renderer, step N3a: render targets, copies (resolve and clear) and presentation of the
 // game's image, without EDRAM (docs/native-renderer-fh1.md). Lean FH1 version of nfsmw-nx's
-// nfsmw_nativo_destinos.* (stage C2): a render target is one Vulkan image per (EDRAM base, format,
+// nfsc_native_targets.* (stage C2): a render target is one Vulkan image per (EDRAM base, format,
 // pitch); a resolved texture is one image per destination address, where the Swap looks it up.
 // Everything runs on the native system's ring thread: no locks.
 

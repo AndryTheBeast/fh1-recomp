@@ -14,16 +14,16 @@
    each function of the game. This code is made from the game, so it is never shared: everyone makes it from their own
    copy.
 2. **Fix up the generated code.** Two tools run after every code generation:
-   - `tools/lee_antes.py` ("read before") looks for registers that are read before they are written in functions that
+   - `tools/read_before_write.py` ("read before") looks for registers that are read before they are written in functions that
      were split in pieces (see [Registers as C++ locals](#registers-as-c-locals)).
-   - `tools/llamadas_directas.py` ("direct calls") makes calls between game functions direct, so the compiler can
+   - `tools/direct_calls.py` ("direct calls") makes calls between game functions direct, so the compiler can
      optimize them (see [Direct calls](#direct-calls)).
 3. **Compile for the Switch** with devkitA64 (GCC 16), through CMake and Ninja, with [LTO](glossary.md#lto),
    [PGO](glossary.md#pgo) and [function ordering](glossary.md#function-ordering). The result is packed as an NRO.
 4. **Check the result** before you share a build:
    - `nm nfsmw | grep " _start$"` must print the address `0000000000000000`. If not, the NRO will not start (see
      [Function ordering](#function-ordering)).
-   - `tools/comprobar_clave_textura.py` ("check texture key") checks one piece of compiled code in the final program
+   - `tools/check_texture_key.py` ("check texture key") checks one piece of compiled code in the final program
      (see [the xxHash pitfall](#an-lto-and-pgo-pitfall-strict-aliasing-in-xxhash)).
    - The number of installed [hooks](glossary.md#hook) must be the same as in the build you started from.
 
@@ -74,7 +74,7 @@ of them, `__restgprlr_29` and `__savegprlr_29`.
      through `ctx`, and takes them back afterwards;
    - functions marked `share_registers` keep `cr`, `ctr` and `xer` in `ctx`.
 
-   198 pieces are marked. `tools/lee_antes.py` finds registers that are read before they are written in the generated
+   198 pieces are marked. `tools/read_before_write.py` finds registers that are read before they are written in the generated
    code; after marking, only two known false alarms (loops) are left. Run it after every code generation, because the
    list where the marks are kept can be regenerated.
 
@@ -93,7 +93,7 @@ program is linked. The generated code always calls `sub_XXXXXXXX`. But the compi
 weak alias (copy the called function into the caller), not in the same file and not with LTO, so LTO could barely
 improve the game code.
 
-**The fix:** `tools/llamadas_directas.py` rewrites `sub_X(ctx, base);` as `__imp__sub_X(ctx, base);` whenever `sub_X`
+**The fix:** `tools/direct_calls.py` rewrites `sub_X(ctx, base);` as `__imp__sub_X(ctx, base);` whenever `sub_X`
 has no hook: 79,612 of the 83,077 calls in this game.
 
 - A function counts as hooked if its address appears anywhere in the app's sources, the SDK or the configuration
@@ -153,7 +153,7 @@ programs. The other edition is then built from the same folder paths as the main
 
 ## Function ordering
 
-`app/orden_funciones.ld` ("function order") lists the functions that run most, taken from profiles of the game. It is
+`app/order_functions.ld` ("function order") lists the functions that run most, taken from profiles of the game. It is
 passed to the linker, which puts them at the start of the program's code (`.text`), close together.
 
 **The trap:** the linker places what this file lists **before** everything in its own script, including the start-up
@@ -179,7 +179,7 @@ against 1,743).
 - `XXH_FORCE_MEMORY_ACCESS 0` before `XXH_INLINE_ALL` in every file that includes xxHash, with an `#error` if it comes
   too late;
 - a check while the game runs, which recomputes a sample of keys;
-- `tools/comprobar_clave_textura.py`, which checks that compiled code in the final program.
+- `tools/check_texture_key.py`, which checks that compiled code in the final program.
 
 **The lesson:** with LTO and PGO, the compiler's decisions change as the program grows. So a hidden bug in the code
 (undefined behavior) that did no harm in one build can appear in the next one, without anyone touching that code.

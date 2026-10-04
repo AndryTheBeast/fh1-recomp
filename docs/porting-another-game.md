@@ -30,7 +30,7 @@ this stage.
 
 Two things from this repository help here:
 
-- **`tools/huecos.py` and `app/huecos.toml`** ("huecos" means gaps). They declare as functions the pieces of code that
+- **`tools/gaps.py` and `app/gaps.toml`** ("gaps" means gaps). They declare as functions the pieces of code that
   the translation did not reach.
 - **`share_registers`**, an option of the code generator (in `sdk/src/codegen/builders`). The translated code keeps
   the Xbox 360 processor's registers (its working slots) in normal C++ variables. This option lets the pieces of a
@@ -66,7 +66,7 @@ So the port has its own renderer. The game keeps using its own [Direct3D](glossa
 list of GPU commands (the [PM4 ring](glossary.md#pm4-ring)) as always. A thread of the port, the
 [ring thread](glossary.md#ring-thread), reads that list and draws the same thing directly with Vulkan.
 
-What you can reuse from `app/src/nfsmw_nativo_*` ("nativo" means native):
+What you can reuse from `app/src/nfsmw_nativo_*` ("native" means native):
 
 - the reader of the command list, the tracking of the GPU settings, and the recording of each draw;
 - [render targets](glossary.md#render-target) as normal Vulkan images, and [resolves](glossary.md#resolve) that avoid

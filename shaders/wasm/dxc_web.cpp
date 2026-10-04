@@ -2,7 +2,7 @@
 //
 // The installer page writes the HLSL sources and shader_common.h into the Emscripten file
 // system, calls compile() once per shader and reads back the SPIR-V. The arguments are the
-// exact ones used to build the reference shader library natively (nfsmw_completar_spirv.sh),
+// exact ones used to build the reference shader library natively (nfsc_complete_spirv.sh),
 // so the output has to be byte-identical to dxc.exe 1.8.0.4806 (commit 75a029d95).
 
 #include <emscripten/emscripten.h>

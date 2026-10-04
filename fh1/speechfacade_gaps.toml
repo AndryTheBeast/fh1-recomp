@@ -1,0 +1,174 @@
+# Code gaps (tools/gaps.py --min 8) in speechfacade_default.xex, declared as functions.
+# Cleaned with tools/gaps_pass.py and tools/merge_continuations.py.
+[functions]
+"0x890A0308" = { }   # 8 bytes, after 0x890A02BC
+"0x890A042C" = { }   # 12 bytes, after 0x890A0310
+"0x890A0A18" = { }   # 8 bytes, after 0x890A09C0
+"0x890A1CC8" = { }   # 32 bytes, after 0x890A1C78
+"0x890A1D90" = { }   # 8 bytes, after 0x890A1D10
+"0x890A2010" = { }   # 8 bytes, after 0x890A200C
+"0x890A2070" = { }   # 8 bytes, after 0x890A2064
+"0x890B2DD8" = { }   # 16 bytes, after 0x890B2DD0
+"0x890B2DF0" = { }   # 56 bytes, after 0x890B2DE8
+"0x890B2E30" = { }   # 32 bytes, after 0x890B2E28
+"0x890B2E58" = { }   # 8 bytes, after 0x890B2E50
+"0x890B2E68" = { }   # 16 bytes, after 0x890B2E60
+"0x890B2E88" = { }   # 8 bytes, after 0x890B2E80
+"0x890B4008" = { }   # 24 bytes, after 0x890B4000
+"0x890B7CB0" = { }   # 8 bytes, after 0x890B7CA8
+"0x890B9658" = { }   # 8 bytes, after 0x890B95B0
+"0x890BA8E0" = { }   # 8 bytes, after 0x890BA8D8
+"0x890BA908" = { }   # 16 bytes, after 0x890BA900
+"0x890BAE90" = { }   # 20 bytes, after 0x890BAE88
+"0x890BBE60" = { }   # 48 bytes, after 0x890BBE58
+"0x890BBE98" = { }   # 8 bytes, after 0x890BBE90
+"0x890BBEA8" = { }   # 8 bytes, after 0x890BBEA0
+"0x890BC368" = { }   # 56 bytes, after 0x890BC360
+"0x890C2A40" = { }   # 8 bytes, after 0x890C2A38
+"0x890C5968" = { }   # 68 bytes, after 0x890C5950
+"0x890CDE88" = { }   # 16 bytes, after 0x890CDDB0
+"0x890CDFB0" = { }   # 8 bytes, after 0x890CDF88
+"0x890DE158" = { }   # 8 bytes, after 0x890DE128
+"0x890E3580" = { }   # 40 bytes, after 0x890E3578
+"0x890E3670" = { }   # 48 bytes, after 0x890E3668
+"0x890F22F0" = { }   # 8 bytes, after 0x890F22E8
+"0x890F29F8" = { }   # 8 bytes, after 0x890F29A0
+"0x890F8890" = { }   # 16 bytes, after 0x890F8728
+"0x891080C0" = { }   # 8 bytes, after 0x89108058
+"0x891085B0" = { }   # 8 bytes, after 0x89108548
+"0x89108890" = { }   # 8 bytes, after 0x89108820
+"0x89109708" = { }   # 8 bytes, after 0x89109698
+"0x8910A1A8" = { }   # 8 bytes, after 0x8910A0B0
+"0x8910A8C8" = { }   # 8 bytes, after 0x8910A868
+"0x8910B890" = { }   # 8 bytes, after 0x8910B868
+"0x8910C660" = { }   # 8 bytes, after 0x8910C5A8
+"0x8910CF28" = { }   # 8 bytes, after 0x8910CF00
+"0x89112F18" = { }   # 8 bytes, after 0x89112EF0
+"0x89124F88" = { }   # 48 bytes, after 0x89124F48
+"0x89126398" = { }   # 8 bytes, after 0x89126208
+"0x8912AC18" = { }   # 8 bytes, after 0x8912ABB0
+"0x8912AED0" = { }   # 16 bytes, after 0x8912AEC8
+"0x8912AEE8" = { }   # 8 bytes, after 0x8912AEE0
+"0x8912AF00" = { }   # 8 bytes, after 0x8912AEF8
+"0x8912AF10" = { }   # 8 bytes, after 0x8912AF08
+"0x8912AF20" = { }   # 32 bytes, after 0x8912AF18
+"0x8912B0E8" = { }   # 8 bytes, after 0x8912AF40
+"0x8912BE80" = { }   # 8 bytes, after 0x8912BE78
+"0x8913E930" = { }   # 8 bytes, after 0x8913E8F8
+"0x8913EA48" = { }   # 8 bytes, after 0x8913EA10
+"0x89140E78" = { }   # 8 bytes, after 0x89140E10
+"0x89143AD0" = { }   # 8 bytes, after 0x89143970
+"0x89144080" = { }   # 8 bytes, after 0x89144010
+"0x89145EA0" = { }   # 8 bytes, after 0x89145E78
+"0x89146780" = { }   # 8 bytes, after 0x89146758
+"0x89146848" = { }   # 8 bytes, after 0x89146820
+"0x89146B70" = { }   # 8 bytes, after 0x89146B48
+"0x89146D10" = { }   # 8 bytes, after 0x89146CE8
+"0x89147908" = { }   # 8 bytes, after 0x891478E0
+"0x89148050" = { }   # 8 bytes, after 0x89148040
+"0x8914BD48" = { }   # 8 bytes, after 0x8914BCB0
+"0x8914E4F0" = { }   # 8 bytes, after 0x8914E3A0
+"0x8914F678" = { }   # 8 bytes, after 0x8914F650
+"0x8914F9E8" = { }   # 8 bytes, after 0x8914F830
+"0x891559C8" = { }   # 8 bytes, after 0x891559A0
+"0x89156A68" = { }   # 8 bytes, after 0x89156A40
+"0x89157670" = { }   # 8 bytes, after 0x89157658
+"0x89158870" = { }   # 8 bytes, after 0x89158848
+"0x8917A9C8" = { }   # 16 bytes, after 0x8917A8C8
+"0x8919E810" = { }   # 64 bytes, after 0x8919E7F8
+"0x8919F430" = { }   # 16 bytes, after 0x8919F3B8
+"0x891A3C10" = { }   # 16 bytes, after 0x891A3B10
+"0x891A4130" = { }   # 8 bytes, after 0x891A4088
+"0x891A4370" = { }   # 8 bytes, after 0x891A42C8
+"0x891A4570" = { }   # 8 bytes, after 0x891A4548
+"0x891A46A8" = { }   # 8 bytes, after 0x891A4600
+"0x891A4B48" = { }   # 8 bytes, after 0x891A4A48
+"0x891D34F0" = { }   # 8 bytes, after 0x891D33D0
+"0x891EBD9C" = { }   # 212 bytes, after 0x891EBCB0
+"0x891EFC68" = { }   # 8 bytes, after 0x891EF908
+"0x891F0214" = { }   # 24 bytes, after 0x891EFC70
+"0x891F0238" = { }   # 8 bytes, after 0x891F022C
+"0x891F0B30" = { }   # 8 bytes, after 0x891F0AE8
+"0x891F1634" = { }   # 68 bytes, after 0x891F0E30
+"0x891F5918" = { }   # 8 bytes, after 0x891F5910
+"0x891F7F18" = { }   # 8 bytes, after 0x891F7EF4
+"0x891F8C00" = { }   # 8 bytes, after 0x891F89E0
+"0x891F92A0" = { }   # 8 bytes, after 0x891F9234
+"0x891F9640" = { }   # 8 bytes, after 0x891F9578
+"0x891F9848" = { }   # 8 bytes, after 0x891F97D0
+"0x891FC720" = { }   # 8 bytes, after 0x891FC6C8
+"0x891FDC48" = { }   # 20 bytes, after 0x891FDAE0
+"0x891FE108" = { }   # 8 bytes, after 0x891FE0FC
+"0x891FE7B0" = { }   # 8 bytes, after 0x891FE500
+"0x891FE9B4" = { }   # 12 bytes, after 0x891FE7B8
+"0x891FF550" = { }   # 8 bytes, after 0x891FF310
+"0x891FF8F0" = { }   # 8 bytes, after 0x891FF838
+"0x89200F48" = { }   # 8 bytes, after 0x89200930
+"0x892010F8" = { }   # 8 bytes, after 0x892010C0
+"0x892024E8" = { }   # 8 bytes, after 0x89201318
+"0x892035B8" = { }   # 8 bytes, after 0x892034F0
+"0x892043B0" = { }   # 8 bytes, after 0x89204388
+
+
+# Thunk runs split by tools/gaps_pass.py
+"0x890B2DE0" = { }   # thunk
+"0x890B2DF8" = { }   # thunk
+"0x890B2E00" = { }   # thunk
+"0x890B2E08" = { }   # thunk
+"0x890B2E10" = { }   # thunk
+"0x890B2E18" = { }   # thunk
+"0x890B2E20" = { }   # thunk
+"0x890B2E38" = { }   # thunk
+"0x890B2E40" = { }   # thunk
+"0x890B2E48" = { }   # thunk
+"0x890B2E70" = { }   # thunk
+"0x890B4010" = { }   # thunk
+"0x890B4018" = { }   # thunk
+"0x890BA910" = { }   # thunk
+"0x890BBE68" = { }   # thunk
+"0x890BBE70" = { }   # thunk
+"0x890BBE78" = { }   # thunk
+"0x890BBE80" = { }   # thunk
+"0x890BBE88" = { }   # thunk
+"0x890BC370" = { }   # thunk
+"0x890BC378" = { }   # thunk
+"0x890BC380" = { }   # thunk
+"0x890BC388" = { }   # thunk
+"0x890BC390" = { }   # thunk
+"0x890BC398" = { }   # thunk
+"0x890E3588" = { }   # thunk
+"0x890E3590" = { }   # thunk
+"0x890E3598" = { }   # thunk
+"0x890E35A0" = { }   # thunk
+"0x890E3678" = { }   # thunk
+"0x890E3680" = { }   # thunk
+"0x890E3688" = { }   # thunk
+"0x890E3690" = { }   # thunk
+"0x890E3698" = { }   # thunk
+"0x8912AED8" = { }   # thunk
+"0x8912AF28" = { }   # thunk
+"0x8912AF30" = { }   # thunk
+"0x8912AF38" = { }   # thunk
+
+
+# Rests of gaps (tools/gaps_pass.py --restos)
+"0x890BAE98" = { }   # rest
+"0x890C5980" = { }   # rest
+"0x8919E828" = { }   # rest
+"0x891EBDEC" = { }   # rest
+"0x891F166C" = { }   # rest
+
+
+# Rests of gaps (tools/gaps_pass.py --restos)
+"0x890C5998" = { }   # rest
+"0x8919E840" = { }   # rest
+"0x891EBE08" = { }   # rest
+
+
+# Rests of gaps (tools/gaps_pass.py --restos)
+"0x891EBE38" = { }   # rest
+
+
+# Rests of gaps (tools/gaps_pass.py --restos)
+"0x891EBE60" = { }   # rest
+# Continuations (tools/merge_continuations.py)

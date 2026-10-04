@@ -9,19 +9,19 @@ namespace nfsmw::native {
 // Owned by the render thread. The library must stay immutable and the device
 // alive until this cache is destroyed. It does not wait for the GPU or create
 // pipelines: those steps belong to the renderer and its synchronization.
-class ModulosShaders {
+class ModulesShaders {
  public:
-  ModulosShaders(VkDevice dispositivo, PFN_vkCreateShaderModule crear,
-                 PFN_vkDestroyShaderModule destruir);
-  ~ModulosShaders();
-  ModulosShaders(const ModulosShaders&) = delete;
-  ModulosShaders& operator=(const ModulosShaders&) = delete;
-  VkResult Obtener(const Shader& shader, VkShaderModule& modulo);
+  ModulesShaders(VkDevice vulkan_device, PFN_vkCreateShaderModule create,
+                 PFN_vkDestroyShaderModule destroy);
+  ~ModulesShaders();
+  ModulesShaders(const ModulesShaders&) = delete;
+  ModulesShaders& operator=(const ModulesShaders&) = delete;
+  VkResult Get(const Shader& shader, VkShaderModule& modulo);
 
  private:
-  VkDevice dispositivo_;
-  PFN_vkCreateShaderModule crear_;
-  PFN_vkDestroyShaderModule destruir_;
-  std::unordered_map<const Shader*, VkShaderModule> modulos_;
+  VkDevice vulkan_device_;
+  PFN_vkCreateShaderModule create_;
+  PFN_vkDestroyShaderModule destroy_;
+  std::unordered_map<const Shader*, VkShaderModule> modules_;
 };
 }  // namespace nfsmw::native

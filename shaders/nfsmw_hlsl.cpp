@@ -19,12 +19,12 @@
  *
  * XenosRecomp assumes the shader container carries the signature 0x102A1100, which is
  * Sonic Unleashed's (2008). NFS Most Wanted is from 2005 and uses 0x102A0E00: an
- * earlier version of Microsoft's shader compiler. nfsmw_contenedor.h normalizes the
+ * earlier version of Microsoft's shader compiler. nfsmw_container_2005.h normalizes the
  * 2005 tables and validates the control flow.
  *
  * Input
  *
- * Original containers extracted from ZZDATA0.BIN with nfsmw_buscar_contenedores. Old
+ * Original containers extracted from ZZDATA0.BIN with nfsmw_find_containers. Old
  * console dumps lack the correct physical part; they are kept for regression and
  * rejected.
  *
@@ -33,7 +33,7 @@
  */
 
 #include "XenosRecomp/shader_recompiler.h"
-#include "nfsmw_contenedor.h"
+#include "nfsmw_container_2005.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -43,30 +43,30 @@
 
 namespace {
 
-std::vector<uint8_t> LeerTodo(const std::filesystem::path& ruta) {
-  std::vector<uint8_t> datos;
-  FILE* f = std::fopen(ruta.string().c_str(), "rb");
+std::vector<uint8_t> ReadAll(const std::filesystem::path& path) {
+  std::vector<uint8_t> data;
+  FILE* f = std::fopen(path.string().c_str(), "rb");
   if (!f) {
-    return datos;
+    return data;
   }
   std::fseek(f, 0, SEEK_END);
   const long n = std::ftell(f);
   std::fseek(f, 0, SEEK_SET);
   if (n > 0) {
-    datos.resize(static_cast<size_t>(n));
-    if (std::fread(datos.data(), 1, datos.size(), f) != datos.size()) {
-      datos.clear();
+    data.resize(static_cast<size_t>(n));
+    if (std::fread(data.data(), 1, data.size(), f) != data.size()) {
+      data.clear();
     }
   }
   std::fclose(f);
-  return datos;
+  return data;
 }
 
 /*
  * The two known signatures: the 2008 one XenosRecomp expects and the 2005 one Most
  * Wanted uses. They are compared without the low byte, which belongs to the tool itself.
  */
-bool FirmaValida(uint32_t flags_be) {
+bool SignatureValid(uint32_t flags_be) {
   const uint32_t flags = __builtin_bswap32(flags_be);
   const uint32_t v = flags & 0xFFFFFF00u;
   return v == 0x102A1100u || v == 0x102A0E00u;
@@ -77,96 +77,96 @@ bool FirmaValida(uint32_t flags_be) {
 
 int main(int argc, char** argv) try {
   if (argc < 4) {
-    std::printf("uso: nfsmw_hlsl <entrada> <salida> <shader_common.h>\n");
+    std::printf("use: nfsmw_hlsl <entry> <output> <shader_common.h>\n");
     return 1;
   }
-  const std::filesystem::path entrada = argv[1];
-  const std::filesystem::path salida = argv[2];
+  const std::filesystem::path entry = argv[1];
+  const std::filesystem::path output = argv[2];
 
-  const std::vector<uint8_t> comun = LeerTodo(argv[3]);
-  if (comun.empty()) {
-    std::printf("no pude leer %s\n", argv[3]);
+  const std::vector<uint8_t> common = ReadAll(argv[3]);
+  if (common.empty()) {
+    std::printf("no pude read %s\n", argv[3]);
     return 1;
   }
-  const std::string_view include(reinterpret_cast<const char*>(comun.data()), comun.size());
+  const std::string_view include(reinterpret_cast<const char*>(common.data()), common.size());
 
   std::error_code ec;
-  if (std::filesystem::exists(salida) && !std::filesystem::is_empty(salida)) {
-    std::fprintf(stderr, "la salida debe estar vacia para no mezclar resultados anteriores\n");
+  if (std::filesystem::exists(output) && !std::filesystem::is_empty(output)) {
+    std::fprintf(stderr, "the output must be empty so earlier results are not mixed in\n");
     return 1;
   }
-  std::filesystem::create_directories(salida, ec);
-  if (ec) throw std::runtime_error("no se pudo crear la carpeta de salida");
+  std::filesystem::create_directories(output, ec);
+  if (ec) throw std::runtime_error("could not create the output folder");
 
-  size_t total = 0, ok = 0, saltados = 0;
-  for (const auto& e : std::filesystem::directory_iterator(entrada)) {
+  size_t total = 0, ok = 0, skipped = 0;
+  for (const auto& e : std::filesystem::directory_iterator(entry)) {
     if (!e.is_regular_file() || e.path().extension() != ".bin") {
       continue;
     }
-    const std::vector<uint8_t> datos = LeerTodo(e.path());
+    const std::vector<uint8_t> data = ReadAll(e.path());
     ++total;
-    if (datos.size() < 24) {
-      std::printf("  %s: archivo ilegible o cabecera truncada\n", e.path().filename().string().c_str());
-      ++saltados;
+    if (data.size() < 24) {
+      std::printf("  %s: file ilegible o header truncada\n", e.path().filename().string().c_str());
+      ++skipped;
       continue;
     }
 
     uint32_t flags_be = 0;
-    std::memcpy(&flags_be, datos.data(), 4);
-    if (!FirmaValida(flags_be)) {
-      std::printf("  %-20s firma desconocida 0x%08X\n", e.path().filename().string().c_str(),
+    std::memcpy(&flags_be, data.data(), 4);
+    if (!SignatureValid(flags_be)) {
+      std::printf("  %-20s signature unknown 0x%08X\n", e.path().filename().string().c_str(),
                   __builtin_bswap32(flags_be));
-      ++saltados;
+      ++skipped;
       continue;
     }
 
     /* The 2005 one is converted to the 2008 form before translating. */
     const bool es2005 = (__builtin_bswap32(flags_be) & 0xFFFFFF00u) == 0x102A0E00u;
-    nfsmw::Flujo flujo;
+    nfsmw::Flow flow;
     std::vector<uint8_t> conv;
     try {
-      conv = es2005 ? nfsmw::Convertir2005(datos, flujo) : datos;
+      conv = es2005 ? nfsmw::Convert2005(data, flow) : data;
     } catch (const std::exception& error) {
       std::printf("  %s: %s\n", e.path().filename().string().c_str(), error.what());
-      ++saltados;
+      ++skipped;
       continue;
     }
     if (conv.empty()) {
-      std::printf("  %-20s no pude convertir el contenedor\n", e.path().filename().string().c_str());
-      ++saltados;
+      std::printf("  %-20s could not convert the container\n", e.path().filename().string().c_str());
+      ++skipped;
       continue;
     }
 
-    std::printf("  %s: CF %u bytes, %u instrucciones\n", e.path().filename().string().c_str(), flujo.bytes, flujo.instrucciones);
+    std::printf("  %s: CF %u bytes, %u instructions\n", e.path().filename().string().c_str(), flow.bytes, flow.instructions);
     std::fflush(stdout);
-    ShaderRecompiler recompilador;
+    ShaderRecompiler recompiler;
     try {
-      recompilador.recompile(conv.data(), include);
+      recompiler.recompile(conv.data(), include);
     } catch (const std::exception& error) {
-      std::printf("  %s: traduccion rechazada: %s\n", e.path().filename().string().c_str(), error.what());
-      ++saltados;
+      std::printf("  %s: translation rechazada: %s\n", e.path().filename().string().c_str(), error.what());
+      ++skipped;
       continue;
     }
-    if (recompilador.out.empty()) {
-      std::printf("  %-20s no produjo nada\n", e.path().filename().string().c_str());
-      ++saltados;
+    if (recompiler.out.empty()) {
+      std::printf("  %-20s no produced nothing\n", e.path().filename().string().c_str());
+      ++skipped;
       continue;
     }
 
-    auto destino = salida / e.path().filename();
-    destino.replace_extension(".hlsl");
-    FILE* f = std::fopen(destino.string().c_str(), "wb");
+    auto target = output / e.path().filename();
+    target.replace_extension(".hlsl");
+    FILE* f = std::fopen(target.string().c_str(), "wb");
     if (f) {
-      const bool completo = std::fwrite(recompilador.out.data(), 1, recompilador.out.size(), f) == recompilador.out.size();
-      const bool cerrado = std::fclose(f) == 0;
-      if (completo && cerrado) ++ok;
-      else ++saltados;
+      const bool complete = std::fwrite(recompiler.out.data(), 1, recompiler.out.size(), f) == recompiler.out.size();
+      const bool closed = std::fclose(f) == 0;
+      if (complete && closed) ++ok;
+      else ++skipped;
     } else {
-      ++saltados;
+      ++skipped;
     }
   }
 
-  std::printf("\n%zu shaders: %zu traducidos, %zu saltados\n", total, ok, saltados);
+  std::printf("\n%zu shaders: %zu traducidos, %zu skipped\n", total, ok, skipped);
   return total > 0 && ok == total ? 0 : 2;
 } catch (const std::exception& error) {
   std::fprintf(stderr, "error: %s\n", error.what());

@@ -43,5 +43,5 @@ if (Test-Path $Image) {
 & python (Join-Path $PSScriptRoot "fh1_extract_shaders.py") (Join-Path $Top "game_root") (Join-Path $Out "containers") @mergeArgs
 & python (Join-Path $PSScriptRoot "fh1_translate_shaders.py") (Join-Path $Out "containers") (Join-Path $Out "hlsl")
 & python (Join-Path $PSScriptRoot "fh1_compile_shaders.py") (Join-Path $Out "hlsl") (Join-Path $Out "spirv") $Dxc
-& (Join-Path $Repo "shaders\fh1_empaquetar.exe") (Join-Path $Out "containers") (Join-Path $Out "spirv") $lib
+& (Join-Path $Repo "shaders\fh1_pack_library.exe") (Join-Path $Out "containers") (Join-Path $Out "spirv") $lib
 if ($LASTEXITCODE -ne 0) { throw "packing failed" }

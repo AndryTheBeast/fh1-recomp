@@ -51,30 +51,30 @@
  *
  * A monotonic clock read per call is a few nanoseconds next to a trip to the SD. It is on.
  */
-REXCVAR_DEFINE_INT32(nfsmw_io_aviso_ms, 8, "Filesystem",
-                     "Avisa en el log de cada apertura o lectura que pase de estos ms (0 = nunca).");
-REXCVAR_DEFINE_INT32(nfsmw_io_resumen_s, 15, "Filesystem",
-                     "Cada cuantos segundos se escribe el resumen [io] (0 = nunca).");
+REXCVAR_DEFINE_INT32(nfsc_io_warning_ms, 8, "Filesystem",
+                     "Avisa en el log de every open o read que pass de estos ms (0 = never).");
+REXCVAR_DEFINE_INT32(nfsc_io_summary_s, 15, "Filesystem",
+                     "Every how_many_2 seconds se writes el summary [io] (0 = never).");
 
 namespace rex::kernel::xboxkrnl {
 using namespace rex::system;
 
 namespace {
 
-struct ContadoresIo {
-  std::atomic<uint64_t> aperturas_ok{0};
-  std::atomic<uint64_t> aperturas_fallo{0};
-  std::atomic<uint64_t> us_aperturas{0};
-  std::atomic<uint64_t> us_apertura_peor{0};
-  std::atomic<uint64_t> lecturas{0};
-  std::atomic<uint64_t> bytes_leidos{0};
-  std::atomic<uint64_t> us_lecturas{0};
-  std::atomic<uint64_t> us_lectura_peor{0};
+struct CountersIo {
+  std::atomic<uint64_t> opens_ok{0};
+  std::atomic<uint64_t> opens_miss{0};
+  std::atomic<uint64_t> us_opens{0};
+  std::atomic<uint64_t> us_open_worst{0};
+  std::atomic<uint64_t> reads{0};
+  std::atomic<uint64_t> bytes_read_total{0};
+  std::atomic<uint64_t> us_reads{0};
+  std::atomic<uint64_t> us_read_worst{0};
 };
 
-ContadoresIo g_io;
-std::atomic<uint32_t> g_io_avisos{0};
-std::atomic<uint64_t> g_io_proximo_resumen{0};
+CountersIo g_io;
+std::atomic<uint32_t> g_io_warnings{0};
+std::atomic<uint64_t> g_io_next_summary{0};
 
 /*
  * Which part of what is read had already been read, and whether it is read sequentially.
@@ -93,23 +93,23 @@ std::atomic<uint64_t> g_io_proximo_resumen{0};
  *
  * It costs a hash of the name and a lock per read. That is 1,290 reads in 435 s: nothing.
  */
-struct EstadoRangos {
-  static constexpr size_t kRanuras = 8192;  // power of two
-  static constexpr size_t kFicheros = 64;
-  static constexpr size_t kSondeos = 8;
+struct StateRanges {
+  static constexpr size_t kSlots = 8192;  // power of two
+  static constexpr size_t kFiles = 64;
+  static constexpr size_t kPolls = 8;
 
   std::mutex mutex;
-  uint64_t clave[kRanuras] = {};
-  uint64_t fich[kFicheros] = {};
-  uint64_t fin[kFicheros] = {};
+  uint64_t key[kSlots] = {};
+  uint64_t file_entry[kFiles] = {};
+  uint64_t fin[kFiles] = {};
   // Totals for the whole session; the summary reports the difference from the previous snapshot.
-  uint64_t relecturas = 0, bytes_relectura = 0;
-  uint64_t distintos = 0, bytes_distintos = 0;
-  uint64_t seguidas = 0, desalojos = 0;
+  uint64_t rereads = 0, bytes_reread = 0;
+  uint64_t different = 0, bytes_different = 0;
+  uint64_t consecutive = 0, window_evictions = 0;
 };
-EstadoRangos g_rangos;
+StateRanges g_ranges;
 
-inline uint64_t HashRuta(const std::string_view s) {
+inline uint64_t HashPath(const std::string_view s) {
   uint64_t h = 1469598103934665603ull;
   for (unsigned char c : s) {
     h ^= c;
@@ -119,190 +119,190 @@ inline uint64_t HashRuta(const std::string_view s) {
 }
 
 // Records the range read. Returns true if that exact range had already been read before.
-bool AnotarRango(const std::string_view ruta, uint64_t desplazamiento, uint32_t bytes) {
+bool NoteRange(const std::string_view path, uint64_t displacement, uint32_t bytes) {
   if (!bytes) {
     return false;
   }
-  const uint64_t hr = HashRuta(ruta);
-  uint64_t clave = hr ^ (desplazamiento * 0x9E3779B97F4A7C15ull) ^ (uint64_t(bytes) << 1);
-  if (clave == 0) {
-    clave = 1;  // 0 marks a free slot
+  const uint64_t hr = HashPath(path);
+  uint64_t key = hr ^ (displacement * 0x9E3779B97F4A7C15ull) ^ (uint64_t(bytes) << 1);
+  if (key == 0) {
+    key = 1;  // 0 marks a free slot
   }
 
-  std::lock_guard<std::mutex> lock(g_rangos.mutex);
+  std::lock_guard<std::mutex> lock(g_ranges.mutex);
 
   // Sequential read: it starts exactly where the previous read of this same file ended.
-  const size_t fi = static_cast<size_t>(hr % EstadoRangos::kFicheros);
-  if (g_rangos.fich[fi] == hr && g_rangos.fin[fi] == desplazamiento) {
-    ++g_rangos.seguidas;
+  const size_t fi = static_cast<size_t>(hr % StateRanges::kFiles);
+  if (g_ranges.file_entry[fi] == hr && g_ranges.fin[fi] == displacement) {
+    ++g_ranges.consecutive;
   }
-  g_rangos.fich[fi] = hr;
-  g_rangos.fin[fi] = desplazamiento + bytes;
+  g_ranges.file_entry[fi] = hr;
+  g_ranges.fin[fi] = displacement + bytes;
 
   // Repeated range. Open addressing with a few probes: if it does not fit, a slot is overwritten
   // and that is counted.
-  const size_t base = static_cast<size_t>((clave >> 17) & (EstadoRangos::kRanuras - 1));
-  for (size_t p = 0; p < EstadoRangos::kSondeos; ++p) {
-    const size_t j = (base + p) & (EstadoRangos::kRanuras - 1);
-    if (g_rangos.clave[j] == clave) {
-      ++g_rangos.relecturas;
-      g_rangos.bytes_relectura += bytes;
+  const size_t base = static_cast<size_t>((key >> 17) & (StateRanges::kSlots - 1));
+  for (size_t p = 0; p < StateRanges::kPolls; ++p) {
+    const size_t j = (base + p) & (StateRanges::kSlots - 1);
+    if (g_ranges.key[j] == key) {
+      ++g_ranges.rereads;
+      g_ranges.bytes_reread += bytes;
       return true;
     }
-    if (g_rangos.clave[j] == 0) {
-      g_rangos.clave[j] = clave;
-      ++g_rangos.distintos;
-      g_rangos.bytes_distintos += bytes;
+    if (g_ranges.key[j] == 0) {
+      g_ranges.key[j] = key;
+      ++g_ranges.different;
+      g_ranges.bytes_different += bytes;
       return false;
     }
   }
-  g_rangos.clave[base] = clave;
-  ++g_rangos.distintos;
-  g_rangos.bytes_distintos += bytes;
-  ++g_rangos.desalojos;  // if this grows, the table is too small and the figures fall short too
+  g_ranges.key[base] = key;
+  ++g_ranges.different;
+  g_ranges.bytes_different += bytes;
+  ++g_ranges.window_evictions;  // if this grows, the table is too small and the figures fall short too
   return false;
 }
 
 // Snapshot of the previous summary, to report the interval and not the whole-session total.
-struct FotoIo {
-  uint64_t aperturas_ok = 0, aperturas_fallo = 0, us_aperturas = 0;
-  uint64_t lecturas = 0, bytes_leidos = 0, us_lecturas = 0;
-  uint64_t misses_en_seco = 0, stats_en_sd = 0, barridos_en_sd = 0;
-  uint64_t aciertos = 0, rellenos = 0, directas = 0, bytes_ram = 0;
-  uint64_t relecturas = 0, bytes_relectura = 0, distintos = 0, bytes_distintos = 0, seguidas = 0;
+struct PhotoIo {
+  uint64_t opens_ok = 0, opens_miss = 0, us_opens = 0;
+  uint64_t reads = 0, bytes_read_total = 0, us_reads = 0;
+  uint64_t misses_in_dry = 0, stats_en_sd = 0, scans_in_sd = 0;
+  uint64_t hits = 0, fills = 0, direct = 0, bytes_ram = 0;
+  uint64_t rereads = 0, bytes_reread = 0, different = 0, bytes_different = 0, consecutive = 0;
 };
-FotoIo g_io_foto;
-std::mutex g_io_foto_mutex;
+PhotoIo g_io_photo;
+std::mutex g_io_photo_mutex;
 
-inline uint64_t AhoraUs() {
+inline uint64_t NowUs() {
   return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                    std::chrono::steady_clock::now().time_since_epoch())
                                    .count());
 }
 
-inline void MaxAtomico(std::atomic<uint64_t>& destino, uint64_t valor) {
-  uint64_t visto = destino.load(std::memory_order_relaxed);
-  while (valor > visto &&
-         !destino.compare_exchange_weak(visto, valor, std::memory_order_relaxed)) {
+inline void MaxAtomic(std::atomic<uint64_t>& target, uint64_t input_value) {
+  uint64_t seen = target.load(std::memory_order_relaxed);
+  while (input_value > seen &&
+         !target.compare_exchange_weak(seen, input_value, std::memory_order_relaxed)) {
   }
 }
 
 // A single thread writes the summary: whichever wins the exchange of the next deadline.
-void QuizaResumenIo(uint64_t ahora_us) {
-  const int32_t periodo_s = REXCVAR_GET(nfsmw_io_resumen_s);
-  if (periodo_s <= 0) {
+void MaybeSummaryIo(uint64_t now_us) {
+  const int32_t period_s = REXCVAR_GET(nfsc_io_summary_s);
+  if (period_s <= 0) {
     return;
   }
-  uint64_t proximo = g_io_proximo_resumen.load(std::memory_order_relaxed);
-  const uint64_t paso = static_cast<uint64_t>(periodo_s) * 1000000ull;
-  if (proximo == 0) {
+  uint64_t next = g_io_next_summary.load(std::memory_order_relaxed);
+  const uint64_t step = static_cast<uint64_t>(period_s) * 1000000ull;
+  if (next == 0) {
     // First call: only the timer is armed, nothing is written yet.
-    g_io_proximo_resumen.compare_exchange_strong(proximo, ahora_us + paso,
+    g_io_next_summary.compare_exchange_strong(next, now_us + step,
                                                  std::memory_order_relaxed);
     return;
   }
-  if (ahora_us < proximo) {
+  if (now_us < next) {
     return;
   }
-  if (!g_io_proximo_resumen.compare_exchange_strong(proximo, ahora_us + paso,
+  if (!g_io_next_summary.compare_exchange_strong(next, now_us + step,
                                                     std::memory_order_relaxed)) {
     return;
   }
 
-  const auto rutas = rex::filesystem::LeerEstadisticasRutas();
-  const auto ventana = rex::filesystem::LeerEstadisticasVentana();
+  const auto paths = rex::filesystem::ReadStatisticsPaths();
+  const auto window = rex::filesystem::ReadStatisticsWindow();
 
-  FotoIo ahora;
-  ahora.aperturas_ok = g_io.aperturas_ok.load(std::memory_order_relaxed);
-  ahora.aperturas_fallo = g_io.aperturas_fallo.load(std::memory_order_relaxed);
-  ahora.us_aperturas = g_io.us_aperturas.load(std::memory_order_relaxed);
-  ahora.lecturas = g_io.lecturas.load(std::memory_order_relaxed);
-  ahora.bytes_leidos = g_io.bytes_leidos.load(std::memory_order_relaxed);
-  ahora.us_lecturas = g_io.us_lecturas.load(std::memory_order_relaxed);
-  ahora.misses_en_seco = rutas.misses_en_seco;
-  ahora.stats_en_sd = rutas.stats_en_sd;
-  ahora.barridos_en_sd = rutas.barridos_en_sd;
-  ahora.aciertos = ventana.aciertos;
-  ahora.rellenos = ventana.rellenos;
-  ahora.directas = ventana.directas;
-  ahora.bytes_ram = ventana.bytes_ram;
-  uint64_t desalojos = 0;
+  PhotoIo now;
+  now.opens_ok = g_io.opens_ok.load(std::memory_order_relaxed);
+  now.opens_miss = g_io.opens_miss.load(std::memory_order_relaxed);
+  now.us_opens = g_io.us_opens.load(std::memory_order_relaxed);
+  now.reads = g_io.reads.load(std::memory_order_relaxed);
+  now.bytes_read_total = g_io.bytes_read_total.load(std::memory_order_relaxed);
+  now.us_reads = g_io.us_reads.load(std::memory_order_relaxed);
+  now.misses_in_dry = paths.misses_in_dry;
+  now.stats_en_sd = paths.stats_en_sd;
+  now.scans_in_sd = paths.scans_in_sd;
+  now.hits = window.hits;
+  now.fills = window.fills;
+  now.direct = window.direct;
+  now.bytes_ram = window.bytes_ram;
+  uint64_t window_evictions = 0;
   {
-    std::lock_guard<std::mutex> lock(g_rangos.mutex);
-    ahora.relecturas = g_rangos.relecturas;
-    ahora.bytes_relectura = g_rangos.bytes_relectura;
-    ahora.distintos = g_rangos.distintos;
-    ahora.bytes_distintos = g_rangos.bytes_distintos;
-    ahora.seguidas = g_rangos.seguidas;
-    desalojos = g_rangos.desalojos;
+    std::lock_guard<std::mutex> lock(g_ranges.mutex);
+    now.rereads = g_ranges.rereads;
+    now.bytes_reread = g_ranges.bytes_reread;
+    now.different = g_ranges.different;
+    now.bytes_different = g_ranges.bytes_different;
+    now.consecutive = g_ranges.consecutive;
+    window_evictions = g_ranges.window_evictions;
   }
 
-  FotoIo d;
+  PhotoIo d;
   {
-    std::lock_guard<std::mutex> lock(g_io_foto_mutex);
-    d.aperturas_ok = ahora.aperturas_ok - g_io_foto.aperturas_ok;
-    d.aperturas_fallo = ahora.aperturas_fallo - g_io_foto.aperturas_fallo;
-    d.us_aperturas = ahora.us_aperturas - g_io_foto.us_aperturas;
-    d.lecturas = ahora.lecturas - g_io_foto.lecturas;
-    d.bytes_leidos = ahora.bytes_leidos - g_io_foto.bytes_leidos;
-    d.us_lecturas = ahora.us_lecturas - g_io_foto.us_lecturas;
-    d.misses_en_seco = ahora.misses_en_seco - g_io_foto.misses_en_seco;
-    d.stats_en_sd = ahora.stats_en_sd - g_io_foto.stats_en_sd;
-    d.barridos_en_sd = ahora.barridos_en_sd - g_io_foto.barridos_en_sd;
-    d.aciertos = ahora.aciertos - g_io_foto.aciertos;
-    d.rellenos = ahora.rellenos - g_io_foto.rellenos;
-    d.directas = ahora.directas - g_io_foto.directas;
-    d.bytes_ram = ahora.bytes_ram - g_io_foto.bytes_ram;
-    d.relecturas = ahora.relecturas - g_io_foto.relecturas;
-    d.bytes_relectura = ahora.bytes_relectura - g_io_foto.bytes_relectura;
-    d.distintos = ahora.distintos - g_io_foto.distintos;
-    d.bytes_distintos = ahora.bytes_distintos - g_io_foto.bytes_distintos;
-    d.seguidas = ahora.seguidas - g_io_foto.seguidas;
-    g_io_foto = ahora;
+    std::lock_guard<std::mutex> lock(g_io_photo_mutex);
+    d.opens_ok = now.opens_ok - g_io_photo.opens_ok;
+    d.opens_miss = now.opens_miss - g_io_photo.opens_miss;
+    d.us_opens = now.us_opens - g_io_photo.us_opens;
+    d.reads = now.reads - g_io_photo.reads;
+    d.bytes_read_total = now.bytes_read_total - g_io_photo.bytes_read_total;
+    d.us_reads = now.us_reads - g_io_photo.us_reads;
+    d.misses_in_dry = now.misses_in_dry - g_io_photo.misses_in_dry;
+    d.stats_en_sd = now.stats_en_sd - g_io_photo.stats_en_sd;
+    d.scans_in_sd = now.scans_in_sd - g_io_photo.scans_in_sd;
+    d.hits = now.hits - g_io_photo.hits;
+    d.fills = now.fills - g_io_photo.fills;
+    d.direct = now.direct - g_io_photo.direct;
+    d.bytes_ram = now.bytes_ram - g_io_photo.bytes_ram;
+    d.rereads = now.rereads - g_io_photo.rereads;
+    d.bytes_reread = now.bytes_reread - g_io_photo.bytes_reread;
+    d.different = now.different - g_io_photo.different;
+    d.bytes_different = now.bytes_different - g_io_photo.bytes_different;
+    d.consecutive = now.consecutive - g_io_photo.consecutive;
+    g_io_photo = now;
   }
 
-  const uint64_t peor_abrir = g_io.us_apertura_peor.exchange(0, std::memory_order_relaxed);
-  const uint64_t peor_leer = g_io.us_lectura_peor.exchange(0, std::memory_order_relaxed);
-  const uint64_t aperturas = d.aperturas_ok + d.aperturas_fallo;
+  const uint64_t worst_open = g_io.us_open_worst.exchange(0, std::memory_order_relaxed);
+  const uint64_t worst_read = g_io.us_read_worst.exchange(0, std::memory_order_relaxed);
+  const uint64_t opens = d.opens_ok + d.opens_miss;
 
   REXKRNL_INFO(
-      "[io] {} s: {} aperturas ({} fallan) {:.1f} ms en total, peor {:.1f} ms, media {:.2f} ms; "
-      "{} lecturas {:.1f} MB en {:.1f} ms, peor {:.1f} ms",
-      periodo_s, aperturas, d.aperturas_fallo, d.us_aperturas / 1000.0, peor_abrir / 1000.0,
-      aperturas ? (d.us_aperturas / 1000.0) / double(aperturas) : 0.0, d.lecturas,
-      d.bytes_leidos / (1024.0 * 1024.0), d.us_lecturas / 1000.0, peor_leer / 1000.0);
+      "[io] {} s: {} opens ({} fallan) {:.1f} ms en total, worst {:.1f} ms, media {:.2f} ms; "
+      "{} reads {:.1f} MB en {:.1f} ms, worst {:.1f} ms",
+      period_s, opens, d.opens_miss, d.us_opens / 1000.0, worst_open / 1000.0,
+      opens ? (d.us_opens / 1000.0) / double(opens) : 0.0, d.reads,
+      d.bytes_read_total / (1024.0 * 1024.0), d.us_reads / 1000.0, worst_read / 1000.0);
   REXKRNL_INFO(
-      "[io] rutas: {} resueltas sin tocar la SD, {} stats, {} barridos de directorio ({} entradas "
-      "en el arbol); ventana: {} aciertos / {} rellenos / {} directas, {:.1f} MB desde RAM, {} "
-      "ficheros con ventana",
-      d.misses_en_seco, d.stats_en_sd, d.barridos_en_sd, rutas.entradas_en_arbol, d.aciertos,
-      d.rellenos, d.directas, d.bytes_ram / (1024.0 * 1024.0), ventana.ventanas_vivas);
+      "[io] paths: {} resolved_2 sin touch la SD, {} stats, {} scans de directorio ({} entries "
+      "en el tree); window: {} hits / {} fills / {} direct, {:.1f} MB since RAM, {} "
+      "files con window",
+      d.misses_in_dry, d.stats_en_sd, d.scans_in_sd, paths.entries_in_tree, d.hits,
+      d.fills, d.direct, d.bytes_ram / (1024.0 * 1024.0), window.windows_live);
 
   /*
    * The line that tells whether a block cache is worth it and whether the window has anything to do.
    *  - "releidas"  = reads whose exact range (file+offset+size) had already been read before.
    *                  A cache would remove those bytes entirely; not the rest.
-   *  - "seguidas"  = reads that start exactly where the previous one of the same file ended. If
+   *  - "consecutive"  = reads that start exactly where the previous one of the same file ended. If
    *                  this is high, read-ahead helps; if it is low, the game jumps around and the
    *                  window only gets in the way.
-   *  - "desalojos" = times the range table ran out of room. If it grows, the figures fall short.
+   *  - "window_evictions" = times the range table ran out of room. If it grows, the figures fall short.
    */
-  const uint64_t lecturas_tramo = d.relecturas + d.distintos;
+  const uint64_t reads_range = d.rereads + d.different;
   REXKRNL_INFO(
-      "[io] rangos: {} releidas de {} ({:.0f} %), {:.1f} MB ya leidos antes de {:.1f} MB ({:.0f} %); {} "
-      "seguidas ({:.0f} %); {} desalojos",
-      d.relecturas, lecturas_tramo,
-      lecturas_tramo ? 100.0 * double(d.relecturas) / double(lecturas_tramo) : 0.0,
-      d.bytes_relectura / (1024.0 * 1024.0),
-      (d.bytes_relectura + d.bytes_distintos) / (1024.0 * 1024.0),
-      (d.bytes_relectura + d.bytes_distintos)
-          ? 100.0 * double(d.bytes_relectura) / double(d.bytes_relectura + d.bytes_distintos)
+      "[io] ranges: {} releidas de {} ({:.0f} %), {:.1f} MB ya read before de {:.1f} MB ({:.0f} %); {} "
+      "consecutive ({:.0f} %); {} window_evictions",
+      d.rereads, reads_range,
+      reads_range ? 100.0 * double(d.rereads) / double(reads_range) : 0.0,
+      d.bytes_reread / (1024.0 * 1024.0),
+      (d.bytes_reread + d.bytes_different) / (1024.0 * 1024.0),
+      (d.bytes_reread + d.bytes_different)
+          ? 100.0 * double(d.bytes_reread) / double(d.bytes_reread + d.bytes_different)
           : 0.0,
-      d.seguidas, lecturas_tramo ? 100.0 * double(d.seguidas) / double(lecturas_tramo) : 0.0,
-      desalojos);
+      d.consecutive, reads_range ? 100.0 * double(d.consecutive) / double(reads_range) : 0.0,
+      window_evictions);
 
   /*
-   * The cache of large reads by exact range (nfsmw_io_rangos_mb).
+   * The cache of large reads by exact range (nfsc_io_ranges_mb).
    *
    * It is accumulated since startup, not per interval: there are few events and what matters is
    * the session total. And it is always printed, whether it is on or not and whether there was
@@ -310,59 +310,59 @@ void QuizaResumenIo(uint64_t ahora_us) {
    * the line there is no way to tell whether it works.
    *
    * How to read it:
-   *  - "expulsiones" at 0 is what is expected. If it grows, the cap is too small and the LRU
+   *  - "cache_evictions" at 0 is what is expected. If it grows, the cap is too small and the LRU
    *    drops entries before reusing them, which is exactly how the block cache died.
-   *  - "de la SD" against "desde RAM" is the amplification. By exact range it must be 1:1 on
+   *  - "de la SD" against "since RAM" is the amplification. By exact range it must be 1:1 on
    *    the first lap and go down from there; if more SD were read than delivered, something is
    *    wrong (the block cache read 318 for 304 delivered, and that is why it was turned off).
    */
-  const auto rangos = rex::filesystem::LeerEstadisticasRangos();
-  const uint64_t rangos_total = rangos.aciertos + rangos.fallos;
+  const auto ranges = rex::filesystem::ReadStatisticsRanges();
+  const uint64_t ranges_total = ranges.hits + ranges.misses;
   REXKRNL_INFO(
-      "[io] rangos-cache: {} aciertos / {} fallos ({:.0f} %), {:.1f} MB desde RAM contra {:.1f} MB "
-      "de la SD; {} entradas vivas ({:.1f} MB de {} tope), {} expulsiones; no cacheadas: {} bajo el "
-      "suelo de {} KB, {} sobre el techo, {} del barrido de carga ({:.1f} MB){}",
-      rangos.aciertos, rangos.fallos,
-      rangos_total ? 100.0 * double(rangos.aciertos) / double(rangos_total) : 0.0,
-      rangos.bytes_ram / (1024.0 * 1024.0), rangos.bytes_disco / (1024.0 * 1024.0), rangos.entradas,
-      rangos.bytes_vivos / (1024.0 * 1024.0), rangos.tope_mb, rangos.expulsiones, rangos.bajo_suelo,
-      rangos.suelo_kb, rangos.sobre_techo, rangos.secuenciales,
-      rangos.secuenciales_bytes / (1024.0 * 1024.0), rangos.sin_memoria ? " [APAGADA: sin memoria]" : "");
+      "[io] ranges-cache: {} hits / {} misses ({:.0f} %), {:.1f} MB since RAM contra {:.1f} MB "
+      "de la SD; {} entries live ({:.1f} MB de {} cap), {} cache_evictions; no cached: {} low el "
+      "floor de {} KB, {} over el ceiling, {} del scan de load ({:.1f} MB){}",
+      ranges.hits, ranges.misses,
+      ranges_total ? 100.0 * double(ranges.hits) / double(ranges_total) : 0.0,
+      ranges.bytes_ram / (1024.0 * 1024.0), ranges.bytes_disco / (1024.0 * 1024.0), ranges.entries,
+      ranges.bytes_live / (1024.0 * 1024.0), ranges.cap_mb, ranges.cache_evictions, ranges.low_floor,
+      ranges.floor_kb, ranges.over_ceiling, ranges.sequential,
+      ranges.sequential_bytes / (1024.0 * 1024.0), ranges.without_memory ? " [OFF: sin memory_block]" : "");
 }
 
 // Always measured: reading the monotonic clock on Horizon is a processor register read, not a system call.
-inline void AnotarApertura(uint64_t us, bool ok, const std::string_view ruta) {
+inline void NoteOpen(uint64_t us, bool ok, const std::string_view path) {
   if (ok) {
-    g_io.aperturas_ok.fetch_add(1, std::memory_order_relaxed);
+    g_io.opens_ok.fetch_add(1, std::memory_order_relaxed);
   } else {
-    g_io.aperturas_fallo.fetch_add(1, std::memory_order_relaxed);
+    g_io.opens_miss.fetch_add(1, std::memory_order_relaxed);
   }
-  g_io.us_aperturas.fetch_add(us, std::memory_order_relaxed);
-  MaxAtomico(g_io.us_apertura_peor, us);
+  g_io.us_opens.fetch_add(us, std::memory_order_relaxed);
+  MaxAtomic(g_io.us_open_worst, us);
 
-  const int32_t aviso_ms = REXCVAR_GET(nfsmw_io_aviso_ms);
-  if (aviso_ms > 0 && us >= static_cast<uint64_t>(aviso_ms) * 1000ull &&
-      g_io_avisos.fetch_add(1, std::memory_order_relaxed) < 300) {
-    REXKRNL_WARN("[io] LENTO: abrir '{}' tardo {:.1f} ms ({})", ruta, us / 1000.0,
-                 ok ? "abierto" : "no existe");
+  const int32_t warning_ms = REXCVAR_GET(nfsc_io_warning_ms);
+  if (warning_ms > 0 && us >= static_cast<uint64_t>(warning_ms) * 1000ull &&
+      g_io_warnings.fetch_add(1, std::memory_order_relaxed) < 300) {
+    REXKRNL_WARN("[io] SLOW: open '{}' tardo {:.1f} ms ({})", path, us / 1000.0,
+                 ok ? "open" : "no existe");
   }
 }
 
-inline void AnotarLectura(uint64_t us, uint32_t bytes, const std::string_view ruta,
-                          uint64_t desplazamiento) {
-  g_io.lecturas.fetch_add(1, std::memory_order_relaxed);
-  g_io.bytes_leidos.fetch_add(bytes, std::memory_order_relaxed);
-  g_io.us_lecturas.fetch_add(us, std::memory_order_relaxed);
-  MaxAtomico(g_io.us_lectura_peor, us);
+inline void NoteRead(uint64_t us, uint32_t bytes, const std::string_view path,
+                          uint64_t displacement) {
+  g_io.reads.fetch_add(1, std::memory_order_relaxed);
+  g_io.bytes_read_total.fetch_add(bytes, std::memory_order_relaxed);
+  g_io.us_reads.fetch_add(us, std::memory_order_relaxed);
+  MaxAtomic(g_io.us_read_worst, us);
 
-  const bool releida = AnotarRango(ruta, desplazamiento, bytes);
+  const bool reread = NoteRange(path, displacement, bytes);
 
-  const int32_t aviso_ms = REXCVAR_GET(nfsmw_io_aviso_ms);
-  if (aviso_ms > 0 && us >= static_cast<uint64_t>(aviso_ms) * 1000ull &&
-      g_io_avisos.fetch_add(1, std::memory_order_relaxed) < 300) {
+  const int32_t warning_ms = REXCVAR_GET(nfsc_io_warning_ms);
+  if (warning_ms > 0 && us >= static_cast<uint64_t>(warning_ms) * 1000ull &&
+      g_io_warnings.fetch_add(1, std::memory_order_relaxed) < 300) {
     // The offset is included. Without it a sequential sweep cannot be told apart from a reread.
-    REXKRNL_WARN("[io] LENTO: leer {} bytes de '{}' en {} tardo {:.1f} ms{}", bytes, ruta,
-                 desplazamiento, us / 1000.0, releida ? " (RELEIDA)" : "");
+    REXKRNL_WARN("[io] SLOW: read {} bytes de '{}' en {} tardo {:.1f} ms{}", bytes, path,
+                 displacement, us / 1000.0, reread ? " (REREAD)" : "");
   }
 }
 
@@ -373,33 +373,33 @@ inline void AnotarLectura(uint64_t us, uint32_t bytes, const std::string_view ru
 // Switch.
 namespace {
 std::mutex g_nfsmw_wmv_mutex;
-std::string g_nfsmw_ultimo_wmv;
-std::vector<std::pair<const rex::filesystem::Entry*, std::string>> g_nfsmw_wmv_abiertos;
-std::string g_nfsmw_ultimo_wmv_leido;
+std::string g_nfsc_last_wmv;
+std::vector<std::pair<const rex::filesystem::Entry*, std::string>> g_nfsc_wmv_open;
+std::string g_nfsc_last_wmv_read;
 
-void NfsmwAnotarApertura(const rex::filesystem::Entry* entrada, const std::string& ruta) {
+void NfscNoteOpen(const rex::filesystem::Entry* entry, const std::string& path) {
   std::lock_guard<std::mutex> lock(g_nfsmw_wmv_mutex);
-  g_nfsmw_ultimo_wmv = ruta;
-  for (auto& [e, r] : g_nfsmw_wmv_abiertos) {
-    if (e == entrada) {
-      r = ruta;
+  g_nfsc_last_wmv = path;
+  for (auto& [e, r] : g_nfsc_wmv_open) {
+    if (e == entry) {
+      r = path;
       return;
     }
   }
-  if (g_nfsmw_wmv_abiertos.size() >= 64) {
-    g_nfsmw_wmv_abiertos.erase(g_nfsmw_wmv_abiertos.begin());
+  if (g_nfsc_wmv_open.size() >= 64) {
+    g_nfsc_wmv_open.erase(g_nfsc_wmv_open.begin());
   }
-  g_nfsmw_wmv_abiertos.emplace_back(entrada, ruta);
-  REXLOG_INFO("[video] el juego abre '{}'", ruta);
+  g_nfsc_wmv_open.emplace_back(entry, path);
+  REXLOG_INFO("[video] el game abre '{}'", path);
 }
 
-void NfsmwAnotarLectura(const rex::filesystem::Entry* entrada) {
+void NfscNoteRead(const rex::filesystem::Entry* entry) {
   std::lock_guard<std::mutex> lock(g_nfsmw_wmv_mutex);
-  for (const auto& [e, r] : g_nfsmw_wmv_abiertos) {
-    if (e == entrada) {
-      if (r != g_nfsmw_ultimo_wmv_leido) {
-        g_nfsmw_ultimo_wmv_leido = r;
-        REXLOG_INFO("[video] el juego lee '{}'", r);
+  for (const auto& [e, r] : g_nfsc_wmv_open) {
+    if (e == entry) {
+      if (r != g_nfsc_last_wmv_read) {
+        g_nfsc_last_wmv_read = r;
+        REXLOG_INFO("[video] el game reads '{}'", r);
       }
       return;
     }
@@ -407,15 +407,15 @@ void NfsmwAnotarLectura(const rex::filesystem::Entry* entrada) {
 }
 }  // namespace
 
-std::string NfsmwUltimoWmvAbierto() {
+std::string NfscLastWmvOpen() {
   std::lock_guard<std::mutex> lock(g_nfsmw_wmv_mutex);
-  return g_nfsmw_ultimo_wmv;
+  return g_nfsc_last_wmv;
 }
 
 // NFSMW: last .wmv movie read by the game: the one being played.
-std::string NfsmwUltimoWmvLeido() {
+std::string NfscLastWmvRead() {
   std::lock_guard<std::mutex> lock(g_nfsmw_wmv_mutex);
-  return g_nfsmw_ultimo_wmv_leido;
+  return g_nfsc_last_wmv_read;
 }
 
 struct CreateOptions {
@@ -531,14 +531,14 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
   // Attempt open (or create).
   rex::filesystem::File* vfs_file;
   rex::filesystem::FileAction file_action;
-  const uint64_t io_inicio_us = AhoraUs();
+  const uint64_t io_start_us = NowUs();
   X_STATUS result = REX_KERNEL_FS()->OpenFile(
       root_entry, target_path, rex::filesystem::FileDisposition((uint32_t)creation_disposition),
       desired_access, (create_options & CreateOptions::FILE_DIRECTORY_FILE) != 0,
       (create_options & CreateOptions::FILE_NON_DIRECTORY_FILE) != 0, &vfs_file, &file_action);
-  const uint64_t io_fin_us = AhoraUs();
-  AnotarApertura(io_fin_us - io_inicio_us, XSUCCEEDED(result), target_path);
-  QuizaResumenIo(io_fin_us);
+  const uint64_t io_fin_us = NowUs();
+  NoteOpen(io_fin_us - io_start_us, XSUCCEEDED(result), target_path);
+  MaybeSummaryIo(io_fin_us);
   object_ref<XFile> file = nullptr;
 
   X_HANDLE handle = X_INVALID_HANDLE_VALUE;
@@ -551,14 +551,14 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
     // Handle ref is incremented, so return that.
     handle = file->handle();
 
-    // NFSMW: records the .wmv movies (see NfsmwUltimoWmvAbierto).
+    // NFSMW: records the .wmv movies (see NfscLastWmvOpen).
     if (target_path.size() > 4) {
       std::string extension(target_path.substr(target_path.size() - 4));
       for (char& c : extension) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
       }
       if (extension == ".wmv") {
-        NfsmwAnotarApertura(vfs_file->entry(), std::string(target_path));
+        NfscNoteOpen(vfs_file->entry(), std::string(target_path));
       }
     }
   }
@@ -607,9 +607,9 @@ u32 NtReadFile_entry(u32 file_handle, u32 event_handle, mapped_void apc_routine_
   X_STATUS result = X_STATUS_SUCCESS;
   bool apc_queued = false;
 
-  // NFSMW: last .wmv movie read (see NfsmwUltimoWmvLeido).
-  if (auto leido = REX_KERNEL_OBJECTS()->LookupObject<XFile>(file_handle)) {
-    NfsmwAnotarLectura(leido->entry());
+  // NFSMW: last .wmv movie read (see NfscLastWmvRead).
+  if (auto read = REX_KERNEL_OBJECTS()->LookupObject<XFile>(file_handle)) {
+    NfscNoteRead(read->entry());
   }
 
   bool signal_event = false;
@@ -653,15 +653,15 @@ u32 NtReadFile_entry(u32 file_handle, u32 event_handle, mapped_void apc_routine_
       // Synchronous.
       uint32_t bytes_read = 0;
       // Where the read starts. If no offset is given, the game reads from the file position.
-      const uint64_t desplazamiento =
+      const uint64_t displacement =
           byte_offset_ptr ? static_cast<uint64_t>(*byte_offset_ptr) : file->position();
-      const uint64_t io_inicio_us = AhoraUs();
+      const uint64_t io_start_us = NowUs();
       result = file->Read(buffer.guest_address(), buffer_length,
                           byte_offset_ptr ? static_cast<uint64_t>(*byte_offset_ptr) : -1,
                           &bytes_read, apc_context.guest_address());
-      const uint64_t io_fin_us = AhoraUs();
-      AnotarLectura(io_fin_us - io_inicio_us, bytes_read, file->path(), desplazamiento);
-      QuizaResumenIo(io_fin_us);
+      const uint64_t io_fin_us = NowUs();
+      NoteRead(io_fin_us - io_start_us, bytes_read, file->path(), displacement);
+      MaybeSummaryIo(io_fin_us);
       if (io_status_block) {
         io_status_block->status = result;
         io_status_block->information = bytes_read;
@@ -1050,7 +1050,7 @@ u32 NtQueryDirectoryFile_entry(u32 file_handle, u32 event_handle, u32 apc_routin
  * nobody honors it, what was written is at the mercy of whenever the file system decides to flush
  * it, and on the Switch that means that leaving through the HOME menu or turning the console off
  * right after saving can leave the save half written on the SD. It shows up as the game's
- * damaged-profile message ("Parece que <perfil> esta danado y no puede utilizarse" in the Spanish
+ * damaged-profile message ("Parece que <profile> esta danado y no can utilizarse" in the Spanish
  * edition).
  */
 u32 NtFlushBuffersFile_entry(u32 file_handle, ppc_ptr_t<X_IO_STATUS_BLOCK> io_status_block_ptr) {
@@ -1061,9 +1061,9 @@ u32 NtFlushBuffersFile_entry(u32 file_handle, ppc_ptr_t<X_IO_STATUS_BLOCK> io_st
     result = X_STATUS_INVALID_HANDLE;
   } else {
     result = file->Flush();
-    static std::atomic<uint32_t> avisos{0};
-    if (avisos.fetch_add(1, std::memory_order_relaxed) < 16) {
-      REXKRNL_INFO("[guardado] NtFlushBuffersFile: {} bajado al disco (resultado {:08X})",
+    static std::atomic<uint32_t> warnings{0};
+    if (warnings.fetch_add(1, std::memory_order_relaxed) < 16) {
+      REXKRNL_INFO("[guardado] NtFlushBuffersFile: {} bajado al disco (result {:08X})",
                    file->path(), uint32_t(result));
     }
   }

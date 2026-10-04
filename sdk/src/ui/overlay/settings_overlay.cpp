@@ -25,21 +25,21 @@
 
 namespace rex::ui {
 
-// nfsmw: cvars the app removes from the menu (OcultarAjustesEnMenu).
+// nfsmw: cvars the app removes from the menu (HideSettingsInMenu).
 namespace {
-std::mutex& MutexAjustesOcultos() {
+std::mutex& MutexSettingsHidden() {
   static std::mutex mutex;
   return mutex;
 }
-std::set<std::string>& AjustesOcultos() {
-  static std::set<std::string> ocultos;
-  return ocultos;
+std::set<std::string>& SettingsHidden() {
+  static std::set<std::string> hidden;
+  return hidden;
 }
 }  // namespace
 
-void OcultarAjustesEnMenu(const std::vector<std::string>& nombres) {
-  std::lock_guard<std::mutex> cerrojo(MutexAjustesOcultos());
-  AjustesOcultos().insert(nombres.begin(), nombres.end());
+void HideSettingsInMenu(const std::vector<std::string>& names) {
+  std::lock_guard<std::mutex> lock(MutexSettingsHidden());
+  SettingsHidden().insert(names.begin(), names.end());
 }
 
 SettingsDialog::SettingsDialog(ImGuiDrawer* imgui_drawer, std::filesystem::path config_path)
@@ -177,16 +177,16 @@ static rex::ui::VirtualKey ImGuiKeyToVirtualKey(ImGuiKey key) {
 void SettingsDialog::OnDraw(ImGuiIO& /*io*/) {
   auto& registry = rex::cvar::GetRegistry();
   // nfsmw: hidden cvars are not listed, and a category with nothing visible does not show either.
-  std::set<std::string> ocultos;
+  std::set<std::string> hidden;
   {
-    std::lock_guard<std::mutex> cerrojo(MutexAjustesOcultos());
-    ocultos = AjustesOcultos();
+    std::lock_guard<std::mutex> lock(MutexSettingsHidden());
+    hidden = SettingsHidden();
   }
 
   // Collect sorted unique category paths.
   std::set<std::string> category_set;
   for (auto& entry : registry) {
-    if (ocultos.count(entry.name)) {
+    if (hidden.count(entry.name)) {
       continue;
     }
     category_set.insert(entry.category);
@@ -323,8 +323,8 @@ void SettingsDialog::OnDraw(ImGuiIO& /*io*/) {
   ImGui::PushID(selected_category_.c_str());
   ImGui::BeginChild("##cvars", ImVec2(0, -30.0f), false);
   for (auto& entry : registry) {
-    if (ocultos.count(entry.name)) {
-      continue;  // nfsmw: OcultarAjustesEnMenu
+    if (hidden.count(entry.name)) {
+      continue;  // nfsmw: HideSettingsInMenu
     }
     // Filter by category (unless searching).
     if (!searching) {

@@ -19,7 +19,7 @@ echo === translator
 call em++ -std=c++23 -O1 "-I%R%" "-I%R%\XenosRecomp" "-I%SDK%\thirdparty\fmt\include" "-I%MESA%\src\util" -include "%R%\pch_min.h" -DFMT_HEADER_ONLY -DXXH_INLINE_ALL -DNFSMW_RECOMP "%R%\nfsmw_hlsl.cpp" "%R%\XenosRecomp\shader_recompiler.cpp" -o "%OUT%\hlsl.mjs" -sEXPORT_NAME=createHlslModule %COMMON% || exit /b 1
 
 echo === packer
-call em++ -std=c++23 -O2 "-I%SDK%\thirdparty\xxHash" "%R%\nfsmw_empaquetar.cpp" "%APP%\nfsmw_shader_library.cpp" -o "%OUT%\pack.mjs" -sEXPORT_NAME=createPackModule %COMMON% || exit /b 1
+call em++ -std=c++23 -O2 "-I%SDK%\thirdparty\xxHash" "%R%\nfsmw_pack_library.cpp" "%APP%\nfsc_shader_library.cpp" -o "%OUT%\pack.mjs" -sEXPORT_NAME=createPackModule %COMMON% || exit /b 1
 
 echo === lzx
 set "MS=%SDK%\thirdparty\libmspack\libmspack\mspack"

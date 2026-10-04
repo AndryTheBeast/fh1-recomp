@@ -77,12 +77,12 @@ You will not find it written in the patch or in any header, because Mesa's build
 There are two ways:
 
 - **The port's own settings.** ZCULL, the faster draws and the set 4 by differences are requested by the port, with
-  settings in `nfsmw.toml` (also in the Debug Menu), all on: `nfsmw_nativo_zcull`, `nfsmw_nativo_set4_diferencias`
-  and, for the faster draws, `nfsmw_nativo_nvk_emision`, `nfsmw_nativo_nvk_cbufs`, `nfsmw_nativo_nvk_dinamico` and
-  `nfsmw_nativo_nvk_precarga`. The faster draws and the set 4 by differences also check themselves: on some draws they
+  settings in `nfsmw.toml` (also in the Debug Menu), all on: `nfsc_native_zcull`, `nfsc_native_set4_differences`
+  and, for the faster draws, `nfsc_native_nvk_emission`, `nfsc_native_nvk_cbufs`, `nfsc_native_nvk_dynamic` and
+  `nfsc_native_nvk_preload`. The faster draws and the set 4 by differences also check themselves: on some draws they
   compare their result with the normal way, and if they ever see a difference, they turn off.
 - **Environment variables for the driver.** You do not set them in Windows: write them in `nfsmw.toml`, in the setting
-  `nfsmw_mesa_entorno`, separated by `;`, for example `nfsmw_mesa_entorno = "NVK_COPY_ENGINE=1;NVK_SHADER_STATS=1"`.
+  `nfsc_mesa_environment`, separated by `;`, for example `nfsc_mesa_environment = "NVK_COPY_ENGINE=1;NVK_SHADER_STATS=1"`.
   Empty, as released, means the driver's normal behavior.
 
 | Variable | Normally | What it does |

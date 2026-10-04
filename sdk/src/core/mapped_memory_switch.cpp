@@ -102,8 +102,8 @@ class SwitchMappedMemory : public MappedMemory {
 
 std::unique_ptr<MappedMemory> MappedMemory::Open(const std::filesystem::path& path, Mode mode,
                                                  size_t offset, size_t length) {
-  const std::string ruta = path.string();
-  FILE* f = fopen(ruta.c_str(), mode == Mode::kRead ? "rb" : "r+b");
+  const std::string path = path.string();
+  FILE* f = fopen(path.c_str(), mode == Mode::kRead ? "rb" : "r+b");
   if (!f) {
     return nullptr;
   }
@@ -129,30 +129,30 @@ std::unique_ptr<MappedMemory> MappedMemory::Open(const std::filesystem::path& pa
   }
 
   if (len > kMaxInMemoryFile) {
-    REXLOG_ERROR("MappedMemory: '{}' pide {} MB y en Switch no hay mmap de ficheros, asi que "
-                 "habria que leerlo entero a RAM. Si es la ISO del juego, usa los ficheros "
-                 "EXTRAIDOS (carpeta game_root) en su lugar.",
-                 ruta, len >> 20);
+    REXLOG_ERROR("MappedMemory: '{}' asks {} MB y en Switch no there_is mmap de files, asi que "
+                 "habria que leerlo whole a RAM. Si es la ISO del game, usa los files "
+                 "EXTRAIDOS (folder game_root) en su lugar.",
+                 path, len >> 20);
     fclose(f);
     return nullptr;
   }
 
-  const size_t reservado = (len + kPage - 1) & ~(kPage - 1);
-  uint8_t* datos = static_cast<uint8_t*>(memalign(kPage, reservado));
-  if (!datos) {
-    REXLOG_ERROR("MappedMemory: sin memoria para leer '{}' ({} MB)", ruta, len >> 20);
+  const size_t reserved = (len + kPage - 1) & ~(kPage - 1);
+  uint8_t* data = static_cast<uint8_t*>(memalign(kPage, reserved));
+  if (!data) {
+    REXLOG_ERROR("MappedMemory: sin memory_block para read '{}' ({} MB)", path, len >> 20);
     fclose(f);
     return nullptr;
   }
 
-  size_t leido = 0;
+  size_t read = 0;
   if (fseeko(f, static_cast<off_t>(offset), SEEK_SET) == 0) {
-    leido = fread(datos, 1, len, f);
+    read = fread(data, 1, len, f);
   }
   // Reading past the end with mmap gives zeros up to the end of the page; here
   // the tail is zero-filled the same way instead of being left as garbage.
-  if (leido < reservado) {
-    std::memset(datos + leido, 0, reservado - leido);
+  if (read < reserved) {
+    std::memset(data + read, 0, reserved - read);
   }
 
   // For reading the file is no longer needed; for writing it is kept for the flush.
@@ -161,7 +161,7 @@ std::unique_ptr<MappedMemory> MappedMemory::Open(const std::filesystem::path& pa
     f = nullptr;
   }
 
-  return std::make_unique<SwitchMappedMemory>(datos, len, f, mode, offset);
+  return std::make_unique<SwitchMappedMemory>(data, len, f, mode, offset);
 }
 
 std::unique_ptr<ChunkedMappedMemoryWriter> ChunkedMappedMemoryWriter::Open(

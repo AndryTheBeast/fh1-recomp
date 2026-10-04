@@ -282,7 +282,7 @@ class VulkanPresenter final : public Presenter {
       ~Submission();
 
       VkSemaphore acquire_semaphore() const { return acquire_semaphore_; }
-      // present_esperar_adquisicion_en_cpu (vulkan_presenter.cpp).
+      // present_wait_acquire_on_cpu (vulkan_presenter.cpp).
       VkFence acquire_fence() const { return acquire_fence_; }
       VkSemaphore present_semaphore() const { return present_semaphore_; }
       VkCommandPool draw_command_pool() const { return draw_command_pool_; }
@@ -413,13 +413,13 @@ class VulkanPresenter final : public Presenter {
      * kSubmissionCount + 1 and rotation, the semaphore in use was last used kSubmissionCount + 1 frames
      * ago, and AwaitSubmissionCompletion has already guaranteed completion up to kSubmissionCount back.
      */
-    std::array<VkSemaphore, kSubmissionCount + 1> semaforos_anticipados{};
-    uint32_t anticipado_siguiente = 0;
-    uint32_t imagen_anticipada = UINT32_MAX;
-    VkSemaphore semaforo_anticipado = VK_NULL_HANDLE;
-    bool anticipada_valida = false;
-    uint64_t anticipadas_aciertos = 0;
-    uint64_t anticipadas_fallos = 0;
+    std::array<VkSemaphore, kSubmissionCount + 1> semaphores_early{};
+    uint32_t early_next = 0;
+    uint32_t image_early = UINT32_MAX;
+    VkSemaphore semaphore_early = VK_NULL_HANDLE;
+    bool early_valid = false;
+    uint64_t early_hits = 0;
+    uint64_t early_misses = 0;
 
     std::array<GuestOutputPaintPipeline, size_t(GuestOutputPaintEffect::kCount)>
         guest_output_paint_pipelines;
@@ -489,9 +489,9 @@ class VulkanPresenter final : public Presenter {
    * waits for the GPU to reach that point. This used to be done once per frame at the end of
    * RefreshGuestOutputImpl; now it is only called where it is really needed: when the guest image has
    * to be destroyed (frontbuffer size change) and at shutdown. It does nothing if there has been no
-   * refresh since the last seal. See present_refresco_sellado_perezoso in vulkan_presenter.cpp.
+   * refresh since the last seal. See present_lazy_refresh_seal in vulkan_presenter.cpp.
    */
-  void SellarRefrescosYEsperar();
+  void SealRefreshesYWait();
 
   [[nodiscard]] VkPipeline CreateGuestOutputPaintPipeline(GuestOutputPaintEffect effect,
                                                           VkRenderPass render_pass);
@@ -532,12 +532,12 @@ class VulkanPresenter final : public Presenter {
   std::array<GuestOutputImageInstance, kGuestOutputMailboxSize> guest_output_images_;
   VulkanSubmissionTracker guest_output_image_refresher_submission_tracker_;
   /*
-   * With present_refresco_sellado_perezoso, instead of sealing with an empty submission on every
+   * With present_lazy_refresh_seal, instead of sealing with an empty submission on every
    * refresh, this only marks that there are unsealed refresh commands. The refreshing thread (the
    * ring) sets it and the UI thread also reads it in the destructor, hence the atomic; relaxed is
    * enough because the queue submission itself provides the real synchronization.
    */
-  std::atomic<bool> refrescos_sin_sellar_{false};
+  std::atomic<bool> refreshes_without_seal_{false};
 
   // UI submission tracker with the submission index that can be given to UI
   // drawers (accessible from the UI thread only, at any time).

@@ -39,163 +39,163 @@
 namespace rex::ui::switch_saltynx {
 namespace {
 
-constexpr uint32_t kMagicFps = 0x465053;          // «SPF»: bloque de NX-FPS
+constexpr uint32_t kMagicFps = 0x465053;          // «SPF»: block de NX-FPS
 constexpr uint32_t kMagicReverseNx = 0x5452584E;  // «NXRT» en little-endian
-constexpr size_t kTamanoCompartido = 0x1000;      // SaltyNX maps one page
+constexpr size_t kSharedPageSize = 0x1000;      // SaltyNX maps one page
 
 /* Resolution calls as the overlay reads them: width, height and how many times. */
-struct ResolucionLlamadas {
-  uint16_t ancho;
-  uint16_t alto;
-  uint16_t llamadas;
+struct ResolutionCalls {
+  uint16_t width;
+  uint16_t height;
+  uint16_t calls;
 } __attribute__((packed));
 
 /* SaltyNX's struct NxFpsSharedBlock. The overlay checks that it is 174 bytes. */
-struct BloqueFps {
+struct BlockFps {
   uint32_t magic;
   uint8_t fps;
   float fps_media;
-  bool plugin_activo;
-  uint8_t fps_bloqueados;
-  uint8_t modo_fps;
+  bool plugin_active;
+  uint8_t fps_blocked;
+  uint8_t mode_fps;
   uint8_t zero_sync;
-  uint8_t parche_aplicado;
+  uint8_t patch_applied;
   uint8_t api;
   uint32_t ticks[10];
   uint8_t buffers;
-  uint8_t buffers_puestos;
-  uint8_t buffers_activos;
-  uint8_t buffers_activos_puestos;
+  uint8_t buffers_set;
+  uint8_t buffers_active;
+  uint8_t buffers_active_set;
   uint8_t display_sync;
-  ResolucionLlamadas render[8];
-  ResolucionLlamadas viewport[8];
-  bool forzar_refresco_original;
-  bool no_forzar_60_en_base;
-  bool forzar_suspension;
-  uint8_t refresco_actual;
-  float lectura_por_segundo;
-  uint8_t fps_bloqueados_base;
-  uint64_t numero_fotograma;
-  int8_t buffers_esperados;
+  ResolutionCalls render[8];
+  ResolutionCalls viewport[8];
+  bool force_refresh_original;
+  bool no_force_60_in_base;
+  bool force_suspension;
+  uint8_t refresh_current;
+  float read_by_second;
+  uint8_t fps_blocked_base;
+  uint64_t number_frame;
+  int8_t buffers_expected;
 } __attribute__((packed));
 
-static_assert(sizeof(BloqueFps) == 174, "el overlay espera 174 bytes");
+static_assert(sizeof(BlockFps) == 174, "el overlay wait 174 bytes");
 
 /* struct Shared de ReverseNX-RT (9 bytes). */
-struct BloqueReverseNx {
+struct BlockReverseNx {
   uint32_t magic;
   bool en_base;
-  bool por_defecto;
-  bool plugin_activo;
-  uint8_t resoluciones;
-  bool uso_ddr;
+  bool by_default;
+  bool plugin_active;
+  uint8_t resolutions;
+  bool use_ddr;
 } __attribute__((packed));
 
-static_assert(sizeof(BloqueReverseNx) == 9, "ReverseNX-RT usa 9 bytes");
+static_assert(sizeof(BlockReverseNx) == 9, "ReverseNX-RT usa 9 bytes");
 
 /* API declared by the block: 0 unknown, 1 NVN, 2 GL, 3 Vulkan. */
 constexpr uint8_t kApiVulkan = 3;
 
 /* Warnings to stderr, which on the console ends up in rex_stderr.log. */
-void Aviso(const char* texto) { std::fprintf(stderr, "%s\n", texto); }
-void AvisoNum(const char* texto, long long numero) {
-  std::fprintf(stderr, "%s 0x%llX (%lld)\n", texto, (unsigned long long)numero, numero);
+void Warning(const char* text) { std::fprintf(stderr, "%s\n", text); }
+void WarningNum(const char* text, long long number) {
+  std::fprintf(stderr, "%s 0x%llX (%lld)\n", text, (unsigned long long)number, number);
 }
-void AvisoDos(const char* texto, long long a, long long b) {
-  std::fprintf(stderr, "%s %lld / %lld\n", texto, a, b);
+void WarningTwo(const char* text, long long a, long long b) {
+  std::fprintf(stderr, "%s %lld / %lld\n", text, a, b);
 }
 
-SharedMemory g_memoria{};
-bool g_mapeada = false;
+SharedMemory g_memory{};
+bool g_mapped = false;
 uint8_t* g_base = nullptr;   // start of the shared area, whether from IPC or from the scan
 size_t g_bytes = 0;
 /*
- * Written by the profiler thread (Iniciar/Actualizar) and read by the ring thread on every present
- * (Latir), hence atomic.
+ * Written by the profiler thread (Start/Update) and read by the ring thread on every present
+ * (Beat), hence atomic.
  */
-std::atomic<BloqueFps*> g_fps{nullptr};
-uint64_t g_tick_previo = 0;   // ring thread only
+std::atomic<BlockFps*> g_fps{nullptr};
+uint64_t g_tick_previous = 0;   // ring thread only
 unsigned g_tick_pos = 0;      // idem
-uint64_t g_fotogramas = 0;    // idem
-std::atomic<BloqueReverseNx*> g_reverse{nullptr};
+uint64_t g_frames = 0;    // idem
+std::atomic<BlockReverseNx*> g_reverse{nullptr};
 std::atomic<bool> g_reverse_en_base{false};
-std::atomic<bool> g_reverse_activo{false};
-/* Turned on by the game (cvar nfsmw_switch_saltynx). On by default. */
-std::atomic<int> g_habilitado{1};
+std::atomic<bool> g_reverse_active{false};
+/* Turned on by the game (cvar nfsc_switch_saltynx). On by default. */
+std::atomic<int> g_enabled{1};
 /*
  * Connection attempts left. The sysmodule may take longer than us to start, so if it is not there at
  * first, it is retried once per second during the first minute.
  */
-int g_intentos = 0;  // how many attempts so far
+int g_attempts = 0;  // how many attempts so far
 
 /*
  * The last values published. If the block appears late (because the overlay was opened later,
  * SaltyNX was slow to hand out the memory, or the first allocation did not fit), it has to be seeded
  * right away with these values: otherwise the overlay shows no FPS until the next second and no
  * resolution until the next present, and during loading there may be neither for several seconds.
- * Only the profiler thread touches them (Actualizar / Iniciar).
+ * Only the profiler thread touches them (Update / Start).
  */
-uint8_t g_ultimo_fps = 0;
-float g_ultima_media = 0.0f;
-uint16_t g_ultimo_ancho = 0;
-uint16_t g_ultimo_alto = 0;
-uint64_t g_ultimos_fotogramas = 0;
+uint8_t g_last_fps = 0;
+float g_last_average = 0.0f;
+uint16_t g_last_width = 0;
+uint16_t g_last_height = 0;
+uint64_t g_last_frames = 0;
 
 /*
- * Tick of the first attempt. The profiler thread calls Iniciar() right at startup (it does not wait
+ * Tick of the first attempt. The profiler thread calls Start() right at startup (it does not wait
  * for the 8 s of kStartDelayNs), so it serves as the "startup" reference for the success message.
  */
-uint64_t g_tick_primer_intento = 0;
+uint64_t g_tick_first_attempt = 0;
 /* warnings issued only once; repeating them on every retry filled the log. */
-bool g_avisado_publicado = false;
-bool g_avisado_conexion = false;
-bool g_avisado_bloque = false;
-bool g_avisado_sin_sitio = false;
-bool g_avisado_reverse = false;
-bool g_avisado_sin_memoria = false;
+bool g_warned_published = false;
+bool g_warned_connection = false;
+bool g_warned_block = false;
+bool g_warned_without_room = false;
+bool g_warned_reverse = false;
+bool g_warned_without_memory = false;
 
 /*
  * --- SaltySD IPC. Modern libnx no longer ships the old ipc.h API, but the service speaks plain
  * CMIF, so serviceDispatch works: the header carries the same SFCI and the body the same fields. ---
  */
 
-Result ReservarMemoria(Service* s, uint64_t tamano, uint64_t* desplazamiento) {
-  return serviceDispatchInOut(s, 6, tamano, *desplazamiento, .in_send_pid = true);
+Result ReserveMemory(Service* s, uint64_t size, uint64_t* displacement) {
+  return serviceDispatchInOut(s, 6, size, *displacement, .in_send_pid = true);
 }
 
-Result PedirManejador(Service* s, Handle* salida) {
+Result RequestHandler(Service* s, Handle* output) {
   return serviceDispatch(s, 7, .in_send_pid = true,
-                         .out_handle_attrs = {SfOutHandleAttr_HipcCopy}, .out_handles = salida);
+                         .out_handle_attrs = {SfOutHandleAttr_HipcCopy}, .out_handles = output);
 }
 
-Result Terminar(Service* s) {
-  const uint64_t cero = 0;
-  return serviceDispatchIn(s, 0, cero, .in_send_pid = true);
+Result Finish(Service* s) {
+  const uint64_t zero = 0;
+  return serviceDispatchIn(s, 0, zero, .in_send_pid = true);
 }
 
 /* Looks for a magic by scanning the page 4 bytes at a time, which is how the overlay does it. */
-void* BuscarMarcaEn(uint8_t* base, size_t bytes, uint32_t marca) {
+void* FindMarkIn(uint8_t* base, size_t bytes, uint32_t mark) {
   if (!base) {
     return nullptr;
   }
   for (size_t offset = 0; offset + sizeof(uint32_t) <= bytes; offset += 4) {
-    uint32_t leido = 0;
-    std::memcpy(&leido, base + offset, sizeof(leido));
-    if (leido == marca) {
+    uint32_t read = 0;
+    std::memcpy(&read, base + offset, sizeof(read));
+    if (read == mark) {
       return base + offset;
     }
   }
   return nullptr;
 }
 
-void* BuscarMarca(uint32_t marca) { return BuscarMarcaEn(g_base, g_bytes, marca); }
+void* FindMark(uint32_t mark) { return FindMarkIn(g_base, g_bytes, mark); }
 
 /*
  * The block is only valid while it keeps its magic. The SaltySD page is shared by several clients
  * and its allocation is not reset when we start, so a good pointer can go bad. Checking it is a
  * 4-byte read, and it is done on every use.
  */
-bool BloqueValido(const BloqueFps* bloque) { return bloque != nullptr && bloque->magic == kMagicFps; }
+bool BlockValid(const BlockFps* block) { return block != nullptr && block->magic == kMagicFps; }
 
 /*
  * Writes into the block, right away, everything the overlay needs to show its two rows (FPS and
@@ -203,28 +203,28 @@ bool BloqueValido(const BloqueFps* bloque) { return bloque != nullptr && bloque-
  * row until the corresponding field has something, so seeding it as soon as the block exists is
  * what makes the data appear without restarting the game.
  */
-void SembrarBloque(BloqueFps* bloque) {
-  bloque->plugin_activo = true;  // the overlay sets it to false to check that we are still alive
-  bloque->api = kApiVulkan;
-  bloque->fps = g_ultimo_fps;
-  bloque->fps_media = g_ultima_media;
-  bloque->numero_fotograma = g_ultimos_fotogramas;
-  if (g_ultimo_ancho && g_ultimo_alto) {
-    // `llamadas` cannot be 0xFFFF: that is the mark the overlay uses to ask whether we know the resolution.
-    const uint16_t cuantas = g_ultimo_fps ? uint16_t(g_ultimo_fps) : uint16_t(1);
-    const ResolucionLlamadas r = {g_ultimo_ancho, g_ultimo_alto, cuantas};
-    bloque->render[0] = r;
-    bloque->viewport[0] = r;
+void SeedBlock(BlockFps* block) {
+  block->plugin_active = true;  // the overlay sets it to false to check that we are still alive
+  block->api = kApiVulkan;
+  block->fps = g_last_fps;
+  block->fps_media = g_last_average;
+  block->number_frame = g_last_frames;
+  if (g_last_width && g_last_height) {
+    // `calls` cannot be 0xFFFF: that is the mark the overlay uses to ask whether we know the resolution.
+    const uint16_t how_many = g_last_fps ? uint16_t(g_last_fps) : uint16_t(1);
+    const ResolutionCalls r = {g_last_width, g_last_height, how_many};
+    block->render[0] = r;
+    block->viewport[0] = r;
   }
   // The overlay computes its average from ticks[], not from fps_media: with the array at zero it shows
   // "inf". A freshly created block has it at zero, so if a rate has already been measured it is
-  // filled in by hand. Latir corrects it with real times as soon as there are two presents.
-  if (g_ultimo_fps != 0 && bloque->ticks[0] == 0) {
+  // filled in by hand. Beat corrects it with real times as soon as there are two presents.
+  if (g_last_fps != 0 && block->ticks[0] == 0) {
     // By index, not by reference: the block is packed and ticks[] sits at an odd offset; taking the
     // address of an element would give an unaligned pointer (-Waddress-of-packed-member).
-    const uint32_t por_fotograma = uint32_t(armGetSystemTickFreq() / g_ultimo_fps);
+    const uint32_t by_frame = uint32_t(armGetSystemTickFreq() / g_last_fps);
     for (unsigned i = 0; i < 10; ++i) {
-      bloque->ticks[i] = por_fotograma;
+      block->ticks[i] = by_frame;
     }
   }
 }
@@ -233,20 +233,20 @@ void SembrarBloque(BloqueFps* bloque) {
  * A single log line when publishing succeeds, with the seconds since startup. Without it there is
  * no way to know whether the overlay is late because of us or because of it.
  */
-void AvisarPublicado(const BloqueFps* bloque) {
-  if (g_avisado_publicado) {
+void NotifyPublished(const BlockFps* block) {
+  if (g_warned_published) {
     return;
   }
-  g_avisado_publicado = true;
+  g_warned_published = true;
   const uint64_t freq = armGetSystemTickFreq();
-  const double segundos =
-      freq ? double(armGetSystemTick() - g_tick_primer_intento) / double(freq) : 0.0;
-  const unsigned desplazamiento =
-      g_base ? unsigned(reinterpret_cast<const uint8_t*>(bloque) - static_cast<const uint8_t*>(g_base)) : 0u;
+  const double seconds =
+      freq ? double(armGetSystemTick() - g_tick_first_attempt) / double(freq) : 0.0;
+  const unsigned displacement =
+      g_base ? unsigned(reinterpret_cast<const uint8_t*>(block) - static_cast<const uint8_t*>(g_base)) : 0u;
   std::fprintf(stderr,
-               "[saltynx] PUBLICADO a los %.2f s del arranque: FPS=%u y RES=%ux%u en el desplazamiento 0x%X\n",
-               segundos, unsigned(g_ultimo_fps), unsigned(g_ultimo_ancho), unsigned(g_ultimo_alto),
-               desplazamiento);
+               "[saltynx] PUBLISHED a los %.2f s del arranque: FPS=%u y RES=%ux%u en el displacement 0x%X\n",
+               seconds, unsigned(g_last_fps), unsigned(g_last_width), unsigned(g_last_height),
+               displacement);
 }
 
 /*
@@ -254,50 +254,50 @@ void AvisarPublicado(const BloqueFps* bloque) {
  * of 4 bytes on memory that is already there) and uses no port session, so it can be repeated every
  * second while the block is missing. Returns true if there is an FPS block.
  */
-bool Enganchar() {
-  auto* bloque = static_cast<BloqueFps*>(BuscarMarca(kMagicFps));
-  if (bloque) {
-    g_fps.store(bloque, std::memory_order_release);
-    SembrarBloque(bloque);
-    AvisarPublicado(bloque);
+bool Hook() {
+  auto* block = static_cast<BlockFps*>(FindMark(kMagicFps));
+  if (block) {
+    g_fps.store(block, std::memory_order_release);
+    SeedBlock(block);
+    NotifyPublished(block);
   }
   if (!g_reverse.load(std::memory_order_acquire)) {
-    if (auto* reverse = static_cast<BloqueReverseNx*>(BuscarMarca(kMagicReverseNx))) {
+    if (auto* reverse = static_cast<BlockReverseNx*>(FindMark(kMagicReverseNx))) {
       g_reverse.store(reverse, std::memory_order_release);
     }
   }
-  return bloque != nullptr;
+  return block != nullptr;
 }
 
 /*
  * If SaltyNX was injected into this process, its shared memory is already mapped here. The memory
  * map is walked with svcQueryMemory, looking inside the readable shared memory regions.
  */
-bool BuscarMemoriaCompartidaPropia() {
-  uint64_t direccion = 0;
-  for (int regiones = 0; regiones < 4096; ++regiones) {
+bool FindMemorySharedOwn() {
+  uint64_t address = 0;
+  for (int regions = 0; regions < 4096; ++regions) {
     MemoryInfo info{};
-    u32 paginas = 0;
-    if (R_FAILED(svcQueryMemory(&info, &paginas, direccion))) {
+    u32 pages = 0;
+    if (R_FAILED(svcQueryMemory(&info, &pages, address))) {
       return false;
     }
     if (info.size == 0) {
       return false;
     }
-    if (info.type == MemType_SharedMem && (info.perm & Perm_R) != 0 && info.size >= kTamanoCompartido) {
+    if (info.type == MemType_SharedMem && (info.perm & Perm_R) != 0 && info.size >= kSharedPageSize) {
       auto* base = reinterpret_cast<uint8_t*>(uintptr_t(info.addr));
       const size_t bytes = size_t(info.size) < 0x10000 ? size_t(info.size) : 0x10000;
-      if (BuscarMarcaEn(base, bytes, kMagicFps) || BuscarMarcaEn(base, bytes, kMagicReverseNx)) {
+      if (FindMarkIn(base, bytes, kMagicFps) || FindMarkIn(base, bytes, kMagicReverseNx)) {
         g_base = base;
         g_bytes = bytes;
         return true;
       }
     }
-    const uint64_t siguiente = info.addr + info.size;
-    if (siguiente <= direccion) {
+    const uint64_t next = info.addr + info.size;
+    if (next <= address) {
       return false;
     }
-    direccion = siguiente;
+    address = next;
   }
   return false;
 }
@@ -311,31 +311,31 @@ bool BuscarMemoriaCompartidaPropia() {
  * sessions. If "sm:" fails too, the limit is ours; and the used sessions and the process cap are
  * printed right there.
  */
-void Diagnostico(Result rc_saltysd) {
+void Diagnostic(Result rc_saltysd) {
   if (rc_saltysd == 0) {
-    Aviso("[saltynx] ni se ha intentado: el proceso no tiene sitio para otra sesion de puerto");
+    Warning("[saltynx] ni se ha intentado: el process no has room para other session de puerto");
   } else {
-    AvisoNum("[saltynx] no conecta con los puertos de SaltyNX. Ultimo error", rc_saltysd);
+    WarningNum("[saltynx] no conecta con los ports de SaltyNX. Last error", rc_saltysd);
   }
 
   // Our own title ID: SaltyNX rejects those above 0x01FFFFFFFFFFFFFF ("is a homebrew application"),
   // which is exactly the range forwarders fall in. Knowing it saves a question.
-  u64 titulo = 0;
-  if (R_SUCCEEDED(svcGetInfo(&titulo, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0))) {
-    std::fprintf(stderr, "[saltynx] nuestro TID: %016llX (SaltyNX admite <= 01FFFFFFFFFFFFFF y sin 0x1F00)\n",
-                 (unsigned long long)titulo);
+  u64 title = 0;
+  if (R_SUCCEEDED(svcGetInfo(&title, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0))) {
+    std::fprintf(stderr, "[saltynx] nuestro TID: %016llX (SaltyNX accepts <= 01FFFFFFFFFFFFFF y sin 0x1F00)\n",
+                 (unsigned long long)title);
   }
 
   // Each port separately: "does not exist" (0xF201, not installed) is not the same as "resource exhausted".
-  static const char* const kDosPuertos[2] = {"InjectServ", "SaltySD"};
-  for (const char* p : kDosPuertos) {
+  static const char* const kTwoPorts[2] = {"InjectServ", "SaltySD"};
+  for (const char* p : kTwoPorts) {
     Handle h = INVALID_HANDLE;
     const Result rc = svcConnectToNamedPort(&h, p);
     if (R_SUCCEEDED(rc)) {
       svcCloseHandle(h);
-      Aviso(p[0] == 'I' ? "[saltynx] puerto InjectServ: SI conecta" : "[saltynx] puerto SaltySD: SI conecta");
+      Warning(p[0] == 'I' ? "[saltynx] puerto InjectServ: SI conecta" : "[saltynx] puerto SaltySD: SI conecta");
     } else {
-      AvisoNum(p[0] == 'I' ? "[saltynx] puerto InjectServ: error" : "[saltynx] puerto SaltySD: error", rc);
+      WarningNum(p[0] == 'I' ? "[saltynx] puerto InjectServ: error" : "[saltynx] puerto SaltySD: error", rc);
     }
   }
 
@@ -343,46 +343,46 @@ void Diagnostico(Result rc_saltysd) {
   const Result rc_sm = svcConnectToNamedPort(&control, "sm:");
   if (R_SUCCEEDED(rc_sm)) {
     svcCloseHandle(control);
-    Aviso("[saltynx] control: 'sm:' SI da sesion nueva, asi que el limite es del puerto de SaltyNX");
+    Warning("[saltynx] control: 'sm:' SI da session new_entry, asi que el limit es del puerto de SaltyNX");
   } else {
-    AvisoNum("[saltynx] control: 'sm:' tampoco da sesion, asi que el limite es NUESTRO. Error", rc_sm);
+    WarningNum("[saltynx] control: 'sm:' tampoco da session, asi que el limit es NUESTRO. Error", rc_sm);
   }
 
-  u64 bruto = 0;
-  Result rc_lim = svcGetInfo(&bruto, InfoType_ResourceLimit, INVALID_HANDLE, 0);
+  u64 raw = 0;
+  Result rc_lim = svcGetInfo(&raw, InfoType_ResourceLimit, INVALID_HANDLE, 0);
   if (R_FAILED(rc_lim)) {
-    rc_lim = svcGetInfo(&bruto, InfoType_ResourceLimit, CUR_PROCESS_HANDLE, 0);
+    rc_lim = svcGetInfo(&raw, InfoType_ResourceLimit, CUR_PROCESS_HANDLE, 0);
   }
   if (R_FAILED(rc_lim)) {
-    AvisoNum("[saltynx] no se pueden leer los limites del proceso. Error", rc_lim);
+    WarningNum("[saltynx] no se pueden read los limites del process. Error", rc_lim);
     return;
   }
-  const Handle limite = static_cast<Handle>(bruto);
-  struct Recurso {
-    const char* nombre;
-    LimitableResource cual;
+  const Handle limit = static_cast<Handle>(raw);
+  struct Resource {
+    const char* name;
+    LimitableResource which;
   };
-  const Recurso kRecursos[] = {
-      {"[saltynx] sesiones usadas / tope:", LimitableResource_Sessions},
-      {"[saltynx] eventos usados / tope:", LimitableResource_Events},
-      {"[saltynx] hilos usados / tope:", LimitableResource_Threads},
-      {"[saltynx] memorias transferibles usadas / tope:", LimitableResource_TransferMemories},
+  const Resource kResources[] = {
+      {"[saltynx] sessions used / cap:", LimitableResource_Sessions},
+      {"[saltynx] eventos used / cap:", LimitableResource_Events},
+      {"[saltynx] threads used / cap:", LimitableResource_Threads},
+      {"[saltynx] memorias transferibles used / cap:", LimitableResource_TransferMemories},
   };
-  for (const Recurso& r : kRecursos) {
-    s64 ahora = 0;
-    s64 tope = 0;
-    if (R_SUCCEEDED(svcGetResourceLimitCurrentValue(&ahora, limite, r.cual)) &&
-        R_SUCCEEDED(svcGetResourceLimitLimitValue(&tope, limite, r.cual))) {
-      AvisoDos(r.nombre, (long long)ahora, (long long)tope);
+  for (const Resource& r : kResources) {
+    s64 now = 0;
+    s64 cap = 0;
+    if (R_SUCCEEDED(svcGetResourceLimitCurrentValue(&now, limit, r.which)) &&
+        R_SUCCEEDED(svcGetResourceLimitLimitValue(&cap, limit, r.which))) {
+      WarningTwo(r.name, (long long)now, (long long)cap);
     }
   }
-  svcCloseHandle(limite);
+  svcCloseHandle(limit);
 }
 
 /*
  * --- Making room for a session. ---------------------------------------------------------------------
- * Measured on the console: this process (forwarder + hbloader) has a resource limit with "sesiones
- * usadas / tope: 1 / 1". A single port session, and libnx already uses it for "sm:". That is why
+ * Measured on the console: this process (forwarder + hbloader) has a resource limit with "sessions
+ * used / cap: 1 / 1". A single port session, and libnx already uses it for "sm:". That is why
  * both SaltyNX ports and also the "sm:" control failed, all three with 0x10801 (resource
  * exhausted). It is not SaltyNX's fault.
  *
@@ -395,79 +395,79 @@ void Diagnostico(Result rc_saltysd) {
  *      is only needed once: the shared memory handle stays with us even if the session is closed.
  */
 
-Handle AbrirLimiteDeRecursos() {
-  u64 bruto = 0;
-  if (R_SUCCEEDED(svcGetInfo(&bruto, InfoType_ResourceLimit, INVALID_HANDLE, 0))) {
-    return static_cast<Handle>(bruto);
+Handle OpenLimitOfResources() {
+  u64 raw = 0;
+  if (R_SUCCEEDED(svcGetInfo(&raw, InfoType_ResourceLimit, INVALID_HANDLE, 0))) {
+    return static_cast<Handle>(raw);
   }
-  if (R_SUCCEEDED(svcGetInfo(&bruto, InfoType_ResourceLimit, CUR_PROCESS_HANDLE, 0))) {
-    return static_cast<Handle>(bruto);
+  if (R_SUCCEEDED(svcGetInfo(&raw, InfoType_ResourceLimit, CUR_PROCESS_HANDLE, 0))) {
+    return static_cast<Handle>(raw);
   }
   return INVALID_HANDLE;
 }
 
-bool HaySitioParaUnaSesion(Handle limite) {
-  s64 ahora = 0;
-  s64 tope = 0;
-  if (R_FAILED(svcGetResourceLimitCurrentValue(&ahora, limite, LimitableResource_Sessions)) ||
-      R_FAILED(svcGetResourceLimitLimitValue(&tope, limite, LimitableResource_Sessions))) {
+bool ThereIsRoomForOneSession(Handle limit) {
+  s64 now = 0;
+  s64 cap = 0;
+  if (R_FAILED(svcGetResourceLimitCurrentValue(&now, limit, LimitableResource_Sessions)) ||
+      R_FAILED(svcGetResourceLimitLimitValue(&cap, limit, LimitableResource_Sessions))) {
     return true;  // if it cannot be read, try anyway
   }
-  return ahora < tope;
+  return now < cap;
 }
 
 /*
- * Sets *sm_cerrado to true if "sm:" had to be released (it has to be brought back later).
+ * Sets *sm_closed to true if "sm:" had to be released (it has to be brought back later).
  * Releasing "sm:" is not tried on every attempt: it is a window of a few milliseconds without the
  * name service and should not be repeated once per second forever. Raising the cap, on the other
  * hand, is permanent and done only once.
  */
-bool HacerSitio(bool* sm_cerrado, bool permitir_soltar_sm) {
-  *sm_cerrado = false;
-  const Handle limite = AbrirLimiteDeRecursos();
-  if (limite == INVALID_HANDLE) {
+bool DoRoom(bool* sm_closed, bool allow_release_sm) {
+  *sm_closed = false;
+  const Handle limit = OpenLimitOfResources();
+  if (limit == INVALID_HANDLE) {
     return true;
   }
-  bool sitio = HaySitioParaUnaSesion(limite);
+  bool room = ThereIsRoomForOneSession(limit);
 
-  if (!sitio) {
+  if (!room) {
     if (envIsSyscallHinted(0x7E)) {  // svcSetResourceLimitLimitValue
-      s64 tope = 0;
-      svcGetResourceLimitLimitValue(&tope, limite, LimitableResource_Sessions);
-      const Result rc = svcSetResourceLimitLimitValue(limite, LimitableResource_Sessions,
-                                                      static_cast<u64>(tope + 4));
+      s64 cap = 0;
+      svcGetResourceLimitLimitValue(&cap, limit, LimitableResource_Sessions);
+      const Result rc = svcSetResourceLimitLimitValue(limit, LimitableResource_Sessions,
+                                                      static_cast<u64>(cap + 4));
       if (R_SUCCEEDED(rc)) {
-        sitio = HaySitioParaUnaSesion(limite);
-        AvisoDos("[saltynx] subido el tope de sesiones del proceso:", (long long)tope, (long long)(tope + 4));
+        room = ThereIsRoomForOneSession(limit);
+        WarningTwo("[saltynx] subido el cap de sessions del process:", (long long)cap, (long long)(cap + 4));
       } else {
-        AvisoNum("[saltynx] no deja subir el tope de sesiones. Error", rc);
+        WarningNum("[saltynx] no leaves needs_upload el cap de sessions. Error", rc);
       }
     } else {
-      Aviso("[saltynx] el cargador no permite svcSetResourceLimitLimitValue (SVC 0x7E)");
+      Warning("[saltynx] el cargador no permite svcSetResourceLimitLimitValue (SVC 0x7E)");
     }
   }
 
-  if (!sitio && permitir_soltar_sm) {
+  if (!room && allow_release_sm) {
     smExit();  // libnx reference-counts it; if it really closes, there is room
-    if (HaySitioParaUnaSesion(limite)) {
-      *sm_cerrado = true;
-      sitio = true;
-      Aviso("[saltynx] soltado 'sm:' un momento para tener sitio");
+    if (ThereIsRoomForOneSession(limit)) {
+      *sm_closed = true;
+      room = true;
+      Warning("[saltynx] soltado 'sm:' un momento para tener room");
     } else {
       smInitialize();  // it did not close: restore the count and leave it as it was
-      Aviso("[saltynx] ni soltando 'sm:' hay sitio para una sesion");
+      Warning("[saltynx] ni releasing 'sm:' there_is room para one session");
     }
   }
 
-  svcCloseHandle(limite);
-  return sitio;
+  svcCloseHandle(limit);
+  return room;
 }
 
 /* Brings "sm:" back on exit, whatever happens. */
-struct DevolverSm {
-  bool activo = false;
-  ~DevolverSm() {
-    if (activo) {
+struct ReturnSm {
+  bool active = false;
+  ~ReturnSm() {
+    if (active) {
       smInitialize();
     }
   }
@@ -475,23 +475,23 @@ struct DevolverSm {
 
 }  // namespace
 
-void Iniciar() {
-  if (!g_habilitado.load(std::memory_order_relaxed)) {
+void Start() {
+  if (!g_enabled.load(std::memory_order_relaxed)) {
     return;
   }
-  if (g_tick_primer_intento == 0) {
-    g_tick_primer_intento = armGetSystemTick();
+  if (g_tick_first_attempt == 0) {
+    g_tick_first_attempt = armGetSystemTick();
   }
 
   /*
    * The exit condition is not "the page is mapped" but "we have a good block". Otherwise, if
    * mapping succeeded but there was no room for the block (or the magic disappeared because another
-   * client rewrote the page), g_mapeada stayed true and this was never retried: the only way out was
+   * client rewrote the page), g_mapped stayed true and this was never retried: the only way out was
    * restarting the game with the overlay already on. The magic is checked and, if missing, the block
    * is attached again.
    */
-  BloqueFps* ya = g_fps.load(std::memory_order_acquire);
-  if (!BloqueValido(ya)) {
+  BlockFps* ya = g_fps.load(std::memory_order_acquire);
+  if (!BlockValid(ya)) {
     g_fps.store(nullptr, std::memory_order_release);
   } else if (g_reverse.load(std::memory_order_acquire) != nullptr) {
     return;  // both in place: nothing to do
@@ -499,27 +499,27 @@ void Iniciar() {
 
   // The cheap part first: if the page is already mapped, it is enough to search for the magics again.
   // It uses no sessions and no IPC, so it can be done once per second forever.
-  if (g_mapeada && Enganchar()) {
+  if (g_mapped && Hook()) {
     return;
   }
 
   // Path 1: IPC. SaltyNX creates two ports and each accepts a single session, so both are tried, with
   // a few retries: the sysmodule may take longer than us to start.
   // First there has to be room: this process only allows one port session and libnx uses it for "sm:".
-  DevolverSm devolver;
+  ReturnSm to_return;
   // Raising the cap is tried from the very start (it is permanent and bothers nobody). Releasing "sm:"
   // only from the third attempt on, when startup has already opened its services.
   // That window used to close at attempt 15 and never reopen: if the port was busy during that quarter
   // of a minute, the only option was restarting the game. After the window, it is retried once per
   // minute: it is still a pause of a few milliseconds without the name service, but it is no longer
   // abandoned.
-  const bool soltar_sm = g_intentos >= 3 && (g_intentos < 15 || (g_intentos % 60) == 0);
-  const bool con_sitio = HacerSitio(&devolver.activo, soltar_sm);
+  const bool release_sm = g_attempts >= 3 && (g_attempts < 15 || (g_attempts % 60) == 0);
+  const bool with_room = DoRoom(&to_return.active, release_sm);
   // With "sm:" closed it has to be quick: a single pass. On the first attempt it insists (the
   // sysmodule may be starting up); in the per-second retries two passes are enough, since the overlay
   // also needs the port's only session.
-  const int vueltas = devolver.activo ? 1 : (g_intentos == 0 ? 20 : 2);
-  bool listo = false;
+  const int laps = to_return.active ? 1 : (g_attempts == 0 ? 20 : 2);
+  bool ready = false;
 
   /*
    * "SaltySD" first. Both ports accept connections, but the one that serves commands 6 and 7 (shared
@@ -529,25 +529,25 @@ void Iniciar() {
    * second, until by chance it was busy and the right one was used. Now, if a port connects but does
    * not give the memory, it is closed and the next one is tried in the same pass.
    */
-  static const char* const kPuertos[2] = {"SaltySD", "InjectServ"};
+  static const char* const kPorts[2] = {"SaltySD", "InjectServ"};
 
-  uint64_t desplazamiento = 0;
-  bool reservada = false;
-  uint64_t desplazamiento_nx = 0;
-  bool reservada_nx = false;
+  uint64_t displacement = 0;
+  bool reserved = false;
+  uint64_t offset_nx = 0;
+  bool reserved_nx = false;
   Result rc_puerto = 0;
-  Result rc_manejador = 0;
-  const char* nombre = nullptr;
+  Result rc_handler = 0;
+  const char* name = nullptr;
 
-  for (int i = 0; i < vueltas && !listo && con_sitio; ++i) {
-    for (const char* candidato : kPuertos) {
+  for (int i = 0; i < laps && !ready && with_room; ++i) {
+    for (const char* candidate : kPorts) {
       Handle puerto = INVALID_HANDLE;
-      rc_puerto = svcConnectToNamedPort(&puerto, candidato);
+      rc_puerto = svcConnectToNamedPort(&puerto, candidate);
       if (R_FAILED(rc_puerto)) {
         continue;
       }
-      Service servicio{};
-      servicio.session = puerto;
+      Service service{};
+      service.session = puerto;
 
       // First the handle and the mapping, and only then allocate what is missing. SaltySD hands out the
       // page with a counter that it only resets when it injects into a game (hijack_bootstrap), and it
@@ -555,107 +555,107 @@ void Iniciar() {
       // checking first whether the block is already there, later boots reuse the same slot.
       // If the page was already mapped by an earlier attempt, the handle is not requested again (that
       // would map the same memory twice): it goes straight to allocating what is missing.
-      bool tenemos_pagina = g_mapeada;
-      if (!tenemos_pagina) {
-        Handle memoria = INVALID_HANDLE;
-        rc_manejador = PedirManejador(&servicio, &memoria);
-        if (R_SUCCEEDED(rc_manejador)) {
-          shmemLoadRemote(&g_memoria, memoria, kTamanoCompartido, Perm_Rw);
-          if (R_SUCCEEDED(shmemMap(&g_memoria))) {
-            g_base = static_cast<uint8_t*>(shmemGetAddr(&g_memoria));
-            g_bytes = kTamanoCompartido;
-            g_mapeada = true;
-            tenemos_pagina = true;
+      bool tenemos_page = g_mapped;
+      if (!tenemos_page) {
+        Handle memory_block = INVALID_HANDLE;
+        rc_handler = RequestHandler(&service, &memory_block);
+        if (R_SUCCEEDED(rc_handler)) {
+          shmemLoadRemote(&g_memory, memory_block, kSharedPageSize, Perm_Rw);
+          if (R_SUCCEEDED(shmemMap(&g_memory))) {
+            g_base = static_cast<uint8_t*>(shmemGetAddr(&g_memory));
+            g_bytes = kSharedPageSize;
+            g_mapped = true;
+            tenemos_page = true;
           }
         }
       }
-      if (tenemos_pagina) {
-        listo = true;
-        nombre = candidato;
-        if (!BuscarMarca(kMagicFps)) {
-          reservada = R_SUCCEEDED(ReservarMemoria(&servicio, sizeof(BloqueFps), &desplazamiento));
+      if (tenemos_page) {
+        ready = true;
+        name = candidate;
+        if (!FindMark(kMagicFps)) {
+          reserved = R_SUCCEEDED(ReserveMemory(&service, sizeof(BlockFps), &displacement));
         }
-        if (!BuscarMarca(kMagicReverseNx)) {
-          reservada_nx = R_SUCCEEDED(ReservarMemoria(&servicio, sizeof(BloqueReverseNx), &desplazamiento_nx));
+        if (!FindMark(kMagicReverseNx)) {
+          reserved_nx = R_SUCCEEDED(ReserveMemory(&service, sizeof(BlockReverseNx), &offset_nx));
         }
       }
 
-      Terminar(&servicio);  // command 0: the server closes its side
+      Finish(&service);  // command 0: the server closes its side
       // And our end has to be released too. The port accepts a single session
       // (svcManageNamedPort(..., 1)), so leaving the handle open would keep the overlay from ever
       // connecting again. The shared memory handle is already ours and does not depend on the session.
       svcCloseHandle(puerto);
-      if (listo) {
+      if (ready) {
         break;
       }
     }
-    if (!listo) {
+    if (!ready) {
       svcSleepThread(10 * 1000 * 1000);  // 10 ms
     }
   }
 
-  if (devolver.activo) {  // room again: bring "sm:" back without waiting for the end
+  if (to_return.active) {  // room again: bring "sm:" back without waiting for the end
     smInitialize();
-    devolver.activo = false;
+    to_return.active = false;
   }
 
-  if (nombre && !g_avisado_conexion) {
-    g_avisado_conexion = true;  // once; this is retried every second and used to fill the log
-    Aviso(nombre[0] == 'S' ? "[saltynx] conectado por SaltySD" : "[saltynx] conectado por InjectServ");
+  if (name && !g_warned_connection) {
+    g_warned_connection = true;  // once; this is retried every second and used to fill the log
+    Warning(name[0] == 'S' ? "[saltynx] connected por SaltySD" : "[saltynx] connected por InjectServ");
   }
-  if (!g_mapeada) {
-    if (R_FAILED(rc_manejador) && !g_avisado_sin_memoria) {
+  if (!g_mapped) {
+    if (R_FAILED(rc_handler) && !g_warned_without_memory) {
       // A port connected but did not serve the memory. The attempt is not lost: the other one has already
       // been tried. Only once: this is retried every second for the whole session and used to fill the log.
-      g_avisado_sin_memoria = true;
-      AvisoNum("[saltynx] algun puerto conecta pero no da la memoria compartida; error", rc_manejador);
+      g_warned_without_memory = true;
+      WarningNum("[saltynx] algun puerto conecta pero no da la memory_block shared; error", rc_handler);
     }
     // Path 2: no free session. If SaltyNX was injected into this process, its shared memory is already mapped here.
-    if (!BuscarMemoriaCompartidaPropia()) {
+    if (!FindMemorySharedOwn()) {
       // It is retried for the whole session, not just one minute. Error 0x10801 (LimitReached) says
       // that the port exists but its only session is busy, so it may be freed later.
-      ++g_intentos;
+      ++g_attempts;
       // The first diagnosis is done on attempt 5, not 1: the first attempt happens at second zero of
       // startup, and it makes no sense to diagnose before having tried releasing "sm:".
-      if (g_intentos == 5 || g_intentos == 30) {
-        Diagnostico(rc_puerto);
-      } else if (g_intentos % 600 == 0) {
-        AvisoNum("[saltynx] se sigue reintentando sin exito. Error", rc_puerto);
+      if (g_attempts == 5 || g_attempts == 30) {
+        Diagnostic(rc_puerto);
+      } else if (g_attempts % 600 == 0) {
+        WarningNum("[saltynx] se sigue reintentando sin exito. Error", rc_puerto);
       }
       return;
     }
-    g_mapeada = true;
-    Aviso("[saltynx] sin sesion en los puertos, pero su memoria compartida ya estaba mapeada aqui");
+    g_mapped = true;
+    Warning("[saltynx] sin session en los ports, pero su memory_block shared ya was_writable mapped here");
   }
 
   // The FPS block: if SaltyNX already left one in this process it is overwritten (its fields would be
   // 0, since it has nothing to hook); otherwise the slot allocated through IPC is used.
-  auto* existente = static_cast<BloqueFps*>(BuscarMarca(kMagicFps));
-  if (existente) {
-    g_fps.store(existente, std::memory_order_release);
-    if (!g_avisado_bloque) {
-      g_avisado_bloque = true;
-      Aviso("[saltynx] bloque de FPS ya presente: se escribe encima");
+  auto* existing = static_cast<BlockFps*>(FindMark(kMagicFps));
+  if (existing) {
+    g_fps.store(existing, std::memory_order_release);
+    if (!g_warned_block) {
+      g_warned_block = true;
+      Warning("[saltynx] block de FPS ya present: se writes encima");
     }
-  } else if (reservada) {
-    auto* bloque = reinterpret_cast<BloqueFps*>(g_base + desplazamiento);
-    std::memset(bloque, 0, sizeof(*bloque));
-    bloque->magic = kMagicFps;
-    g_fps.store(bloque, std::memory_order_release);
-    AvisoNum("[saltynx] bloque de FPS creado en el desplazamiento", (long long)desplazamiento);
-  } else if (!g_avisado_sin_sitio) {
-    g_avisado_sin_sitio = true;
-    Aviso("[saltynx] sin sitio para el bloque de FPS; se sigue intentando una vez por segundo");
+  } else if (reserved) {
+    auto* block = reinterpret_cast<BlockFps*>(g_base + displacement);
+    std::memset(block, 0, sizeof(*block));
+    block->magic = kMagicFps;
+    g_fps.store(block, std::memory_order_release);
+    WarningNum("[saltynx] block de FPS created_2 en el displacement", (long long)displacement);
+  } else if (!g_warned_without_room) {
+    g_warned_without_room = true;
+    Warning("[saltynx] sin room para el block de FPS; se sigue intentando one time por second");
   }
-  if (BloqueFps* bloque = g_fps.load(std::memory_order_acquire)) {
+  if (BlockFps* block = g_fps.load(std::memory_order_acquire)) {
     // FPS and resolution at once, without waiting for the next second or the next present.
-    SembrarBloque(bloque);
-    AvisarPublicado(bloque);
-    g_intentos = 0;
+    SeedBlock(block);
+    NotifyPublished(block);
+    g_attempts = 0;
   } else {
     // Mapped but without a block. This is not taken as success: the counter keeps going up so the next
     // tick can ask for room and a session again.
-    ++g_intentos;
+    ++g_attempts;
   }
 
   /*
@@ -664,18 +664,18 @@ void Iniciar() {
    * running!". We create it here like the FPS one and its overlay starts working: the player picks
    * handheld or docked and the game obeys. The overlay requires no handshake for this (it only looks
    * for the "NXRT" magic), but it does require `pluginActive` to show the controls, and that means
-   * "the game has asked for the mode": it is set in ModoBase.
+   * "the game has asked for the mode": it is set in ModeBase.
    */
-  auto* reverse = static_cast<BloqueReverseNx*>(BuscarMarca(kMagicReverseNx));
-  if (!reverse && reservada_nx) {
-    reverse = reinterpret_cast<BloqueReverseNx*>(g_base + desplazamiento_nx);
+  auto* reverse = static_cast<BlockReverseNx*>(FindMark(kMagicReverseNx));
+  if (!reverse && reserved_nx) {
+    reverse = reinterpret_cast<BlockReverseNx*>(g_base + offset_nx);
     std::memset(reverse, 0, sizeof(*reverse));
     reverse->magic = kMagicReverseNx;
-    reverse->por_defecto = true;  // the system decides until the player says otherwise
-    AvisoNum("[saltynx] bloque de Reverse-NX creado en el desplazamiento", (long long)desplazamiento_nx);
-  } else if (!g_avisado_reverse) {
-    g_avisado_reverse = true;  // once, since this is retried every second
-    Aviso(reverse ? "[saltynx] bloque de Reverse-NX ya presente" : "[saltynx] sin sitio para el bloque de Reverse-NX");
+    reverse->by_default = true;  // the system decides until the player says otherwise
+    WarningNum("[saltynx] block de Reverse-NX created_2 en el displacement", (long long)offset_nx);
+  } else if (!g_warned_reverse) {
+    g_warned_reverse = true;  // once, since this is retried every second
+    Warning(reverse ? "[saltynx] block de Reverse-NX ya present" : "[saltynx] sin room para el block de Reverse-NX");
   }
   // Only stored if there is one. Otherwise a retry would write nullptr over a good pointer.
   if (reverse) {
@@ -683,17 +683,17 @@ void Iniciar() {
   }
 }
 
-void Actualizar(double fps_segundo, double fps_media, uint32_t ancho, uint32_t alto, uint64_t fotogramas) {
+void Update(double fps_second, double fps_media, uint32_t width, uint32_t height, uint64_t frames) {
   // Remembered before publishing. If the block appears later (overlay opened afterwards, or SaltyNX
   // slow to hand out the memory), it is seeded with these values the moment it exists.
-  const double tope = fps_segundo < 0.0 ? 0.0 : (fps_segundo > 255.0 ? 255.0 : fps_segundo);
-  g_ultimo_fps = uint8_t(tope + 0.5);
-  g_ultima_media = float(fps_media);
-  if (ancho && alto) {
-    g_ultimo_ancho = uint16_t(ancho);
-    g_ultimo_alto = uint16_t(alto);
+  const double cap = fps_second < 0.0 ? 0.0 : (fps_second > 255.0 ? 255.0 : fps_second);
+  g_last_fps = uint8_t(cap + 0.5);
+  g_last_average = float(fps_media);
+  if (width && height) {
+    g_last_width = uint16_t(width);
+    g_last_height = uint16_t(height);
   }
-  g_ultimos_fotogramas = fotogramas;
+  g_last_frames = frames;
 
   /*
    * The block may be missing (SaltyNX was not handing out memory yet, or the allocation did not fit)
@@ -702,28 +702,28 @@ void Actualizar(double fps_segundo, double fps_media, uint32_t ancho, uint32_t a
    * opened at any time without restarting the game: retrying only while the page was unmapped meant
    * that once mapped it was never looked at again.
    */
-  BloqueFps* bloque = g_fps.load(std::memory_order_acquire);
+  BlockFps* block = g_fps.load(std::memory_order_acquire);
   // This starts at second zero, before the game applies its cvars, so the switch has to be checked here
-  // too: if it is off, the block is released and Latir stops writing as well. Turning it back on
+  // too: if it is off, the block is released and Beat stops writing as well. Turning it back on
   // recovers it on the next tick.
-  if (!g_habilitado.load(std::memory_order_relaxed)) {
-    if (bloque) {
-      bloque->plugin_activo = false;
+  if (!g_enabled.load(std::memory_order_relaxed)) {
+    if (block) {
+      block->plugin_active = false;
       g_fps.store(nullptr, std::memory_order_release);
     }
     return;
   }
-  if (!BloqueValido(bloque)) {
-    Iniciar();
-    bloque = g_fps.load(std::memory_order_acquire);
+  if (!BlockValid(block)) {
+    Start();
+    block = g_fps.load(std::memory_order_acquire);
   }
-  if (bloque) {
-    // Both values, always: FPS and resolution. Leaving the resolution to Latir is not enough, because
-    // Latir only runs while the game is presenting: during loading the overlay was left without the RES row.
-    SembrarBloque(bloque);
+  if (block) {
+    // Both values, always: FPS and resolution. Leaving the resolution to Beat is not enough, because
+    // Beat only runs while the game is presenting: during loading the overlay was left without the RES row.
+    SeedBlock(block);
   }
-  if (BloqueReverseNx* reverse = g_reverse.load(std::memory_order_acquire)) {
-    g_reverse_activo.store(!reverse->por_defecto, std::memory_order_relaxed);
+  if (BlockReverseNx* reverse = g_reverse.load(std::memory_order_acquire)) {
+    g_reverse_active.store(!reverse->by_default, std::memory_order_relaxed);
     g_reverse_en_base.store(reverse->en_base, std::memory_order_relaxed);
   }
 }
@@ -742,78 +742,78 @@ void Actualizar(double fps_segundo, double fps_media, uint32_t ancho, uint32_t a
  * ticks), so with the array at zero it showed "inf". Here it is filled with the real time between
  * presents.
  */
-void Latir(uint32_t ancho, uint32_t alto) {
-  BloqueFps* bloque = g_fps.load(std::memory_order_acquire);
+void Beat(uint32_t width, uint32_t height) {
+  BlockFps* block = g_fps.load(std::memory_order_acquire);
   // If the magic is gone, the pointer is not valid. It is dropped and the profiler thread's one-second
   // tick recovers it: this runs on the ring thread on every frame, so no IPC and no searching here.
-  if (!BloqueValido(bloque)) {
-    if (bloque) {
+  if (!BlockValid(block)) {
+    if (block) {
       g_fps.store(nullptr, std::memory_order_release);
     }
     return;
   }
-  bloque->plugin_activo = true;
-  bloque->api = kApiVulkan;
+  block->plugin_active = true;
+  block->api = kApiVulkan;
 
   // If the block is a different one (just attached because the overlay was opened now), the previous
   // time is minutes old: that first measurement is discarded, or the overlay would show a very long
   // frame in the average.
-  static const BloqueFps* ultimo_visto = nullptr;  // only the ring thread touches it
-  if (ultimo_visto != bloque) {
-    ultimo_visto = bloque;
-    g_tick_previo = 0;
+  static const BlockFps* last_seen = nullptr;  // only the ring thread touches it
+  if (last_seen != block) {
+    last_seen = block;
+    g_tick_previous = 0;
   }
 
-  const uint64_t ahora = armGetSystemTick();
-  if (g_tick_previo != 0) {
-    const uint64_t salto = ahora - g_tick_previo;
-    bloque->ticks[g_tick_pos] = uint32_t(salto > 0xFFFFFFFFull ? 0xFFFFFFFFull : salto);
+  const uint64_t now = armGetSystemTick();
+  if (g_tick_previous != 0) {
+    const uint64_t jump = now - g_tick_previous;
+    block->ticks[g_tick_pos] = uint32_t(jump > 0xFFFFFFFFull ? 0xFFFFFFFFull : jump);
     g_tick_pos = (g_tick_pos + 1) % 10;
-    ++g_fotogramas;
-    bloque->numero_fotograma = g_fotogramas;
+    ++g_frames;
+    block->number_frame = g_frames;
   }
-  g_tick_previo = ahora;
+  g_tick_previous = now;
 
-  if (ancho && alto) {
+  if (width && height) {
     // `calls` cannot be 0xFFFF: that is the mark the overlay asks with. It is set to the frames of the
     // last second, which is what NX-FPS counts.
-    const uint16_t cuantas = bloque->fps ? bloque->fps : uint16_t(1);
-    const ResolucionLlamadas r = {uint16_t(ancho), uint16_t(alto), cuantas};
-    bloque->render[0] = r;
-    bloque->viewport[0] = r;
+    const uint16_t how_many = block->fps ? block->fps : uint16_t(1);
+    const ResolutionCalls r = {uint16_t(width), uint16_t(height), how_many};
+    block->render[0] = r;
+    block->viewport[0] = r;
   }
 }
 
-void Habilitar(bool habilitado) { g_habilitado.store(habilitado ? 1 : 0, std::memory_order_relaxed); }
+void Enable(bool enabled) { g_enabled.store(enabled ? 1 : 0, std::memory_order_relaxed); }
 
-bool ModoBase(bool real) {
-  BloqueReverseNx* reverse = g_reverse.load(std::memory_order_acquire);
+bool ModeBase(bool real) {
+  BlockReverseNx* reverse = g_reverse.load(std::memory_order_acquire);
   if (!reverse) {
     return real;
   }
   // In Reverse-NX, `pluginActive` means "the game has asked for the mode"; without it its overlay says
   // "Game didn't check any mode!" and does not show the controls.
-  reverse->plugin_activo = true;
-  if (reverse->por_defecto) {
+  reverse->plugin_active = true;
+  if (reverse->by_default) {
     reverse->en_base = real;  // the system decides: mirror it so the overlay shows the real mode
     return real;
   }
   return reverse->en_base;
 }
 
-EstadoReverseNx EstadoReverse() {
-  const BloqueReverseNx* reverse = g_reverse.load(std::memory_order_acquire);
+StateReverseNx StateReverse() {
+  const BlockReverseNx* reverse = g_reverse.load(std::memory_order_acquire);
   if (!reverse) {
     return {false, false, false, false};
   }
-  return {true, reverse->en_base, reverse->por_defecto, reverse->plugin_activo};
+  return {true, reverse->en_base, reverse->by_default, reverse->plugin_active};
 }
 
 }  // namespace rex::ui::switch_saltynx
 
 /* Switch from the game, before the profiler thread starts. */
-extern "C" void RexSwitchSaltyNxHabilitar(int habilitado) {
-  rex::ui::switch_saltynx::Habilitar(habilitado != 0);
+extern "C" void RexSwitchSaltyNxEnable(int enabled) {
+  rex::ui::switch_saltynx::Enable(enabled != 0);
 }
 
 #endif  // REX_PLATFORM_SWITCH
