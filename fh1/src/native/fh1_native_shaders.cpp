@@ -247,6 +247,42 @@ const char* Read(const fh1::native::Shader& shader, EntryShader& e) {
     sampler.map_shadows = NameIs(c, base + size_t(c.U32(p)), "SHADOWMAP_SAMPLER");
     e.samplers.push_back(sampler);
   }
+  // FH1: some shaders fetch from texture registers their constant table does not list (the translator names them
+  // s<N>): the UI's two-layer shader reads its second layer that way, and unbound it read as transparent black,
+  // which made every box behind the menu and loading-screen text invisible. The microcode says which registers
+  // are fetched: walk the control flow (pairs of 48-bit instructions in three words) and, in each exec block,
+  // the instructions its sequence bits mark as fetches.
+  {
+    const std::vector<uint32_t>& m = e.microcode_shader;
+    size_t first_instruction = m.size() / 3;
+    for (size_t pair = 0; pair < first_instruction && pair * 3 + 2 < m.size(); ++pair) {
+      const uint32_t w0 = m[pair * 3], w1 = m[pair * 3 + 1], w2 = m[pair * 3 + 2];
+      const uint32_t low[2] = {w0, (w1 >> 16) | (w2 << 16)};
+      const uint32_t high[2] = {w1 & 0xFFFF, w2 >> 16};
+      for (uint32_t k = 0; k < 2; ++k) {
+        const uint32_t opcode = (high[k] >> 12) & 0xF;
+        // kExec 1, kExecEnd 2, kCondExec 3, kCondExecEnd 4, kCondExecPred 5, kCondExecPredEnd 6,
+        // kCondExecPredClean 13, kCondExecPredCleanEnd 14.
+        if (!((opcode >= 1 && opcode <= 6) || opcode == 13 || opcode == 14)) continue;
+        const uint32_t address = low[k] & 0xFFF, count = (low[k] >> 12) & 0x7, sequence = (low[k] >> 16) & 0xFFF;
+        if (count) first_instruction = std::min<size_t>(first_instruction, address);
+        for (uint32_t i = 0; i < count; ++i) {
+          const size_t p = (size_t(address) + i) * 3;
+          if (!((sequence >> (i * 2)) & 0x1) || p + 2 >= m.size()) continue;
+          if ((m[p] & 0x1F) != 1) continue;  // kTextureFetch
+          const uint16_t reg = uint16_t((m[p] >> 20) & 0x1F);
+          const uint32_t dimension = (m[p + 2] >> 14) & 0x3;
+          bool listed = false;
+          for (const SamplerShader& s : e.samplers) listed = listed || s.reg_entry == reg;
+          if (listed) continue;
+          SamplerShader sampler;
+          sampler.reg_entry = reg;
+          sampler.type = dimension == 3 ? 14 : dimension == 2 ? 13 : dimension == 0 ? 11 : 12;
+          e.samplers.push_back(sampler);
+        }
+      }
+    }
+  }
 
   e.fingerprint = XXH3_64bits(e.microcode.data(), e.microcode.size() * sizeof(uint32_t));
   e.microcode_compare = e.microcode;

@@ -783,6 +783,11 @@ struct Resolved {
   // map because TextureResolved is on the hot path (one call per texture and draw, ~8,000 per frame) and the
   // lookup of the resolved texture is done anyway.
   uint64_t reads = 0;
+  // FH1: fingerprint of the guest memory at this address when the game last resolved here, and whether the game
+  // has written other data there since (see TargetsVulkan::StampMemory).
+  uint64_t stamp_memory = 0;
+  uint64_t stamp_checked = UINT64_MAX;  // presentation count of the last check
+  bool overwritten = false;
 };
 
 // C2 report of readbacks per render target (base and size) and cadence of fh1_native_reads_every.
@@ -2045,6 +2050,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   bool Present(rex::ui::Presenter* presenter_value, const TextureSwap& swap, uint32_t width,
                  uint32_t height) override {
     fh1::reflection_demand::NoteSwap();  // fh1_reflection_low_demand
+    ++presentations_stamp_;  // see StampMemory
     // The per-draw diagnostic window opens here, on the PM4 ring thread, which is the one that records the
     // draws. Inside the paint call it would be another thread and the window would catch an arbitrary piece
     // of the frame (33 of 500 shadow draws were measured).
@@ -3091,6 +3097,20 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       ++lent_read_;
     }
     if (it == resolved_.end()) {
+      return nullptr;
+    }
+    // FH1: the game wrote its own data at this address after resolving there (StampMemory): read it from memory.
+    if (it->second.stamp_checked != presentations_stamp_) {
+      it->second.stamp_checked = presentations_stamp_;
+      if (!it->second.overwritten &&
+          StampMemory(address, it->second.image.width, it->second.image.height) != it->second.stamp_memory) {
+        it->second.overwritten = true;
+        REXLOG_INFO("[native] C2: the game wrote over the resolved texture at {:08X} ({}x{}): read from memory "
+                    "until the next resolve",
+                    address, it->second.image.width, it->second.image.height);
+      }
+    }
+    if (it->second.overwritten) {
       return nullptr;
     }
     // And how many times each address is requested, for the per-render-target copy report. A resolved
@@ -4314,8 +4334,52 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   std::chrono::steady_clock::time_point start_window_fps_{};  // NFSC: "[fps]" log line
   std::vector<float> times_window_fps_;
 
+  /*
+   * FH1: resolves here go image to image and never reach guest memory, so guest memory at a resolve address keeps
+   * whatever the game's CPU code put there. The game reuses such addresses for pictures it decodes itself: the
+   * loading-screen artwork is written over a 1280x720 screen copy made at the title screen, and the renderer kept
+   * sampling its own stale copy (a black or old-menu background behind the loading text). A small fingerprint of
+   * that memory (16 runs of 64 bytes) is taken at every resolve; when a draw asks for the address and the
+   * fingerprint has changed, the game has written a texture there, and the address is read from memory like any
+   * other texture until the next resolve.
+   */
+  uint64_t StampMemory(uint32_t base, uint32_t width, uint32_t height) const {
+    const uint64_t bytes = std::min<uint64_t>(uint64_t(width) * height * 4, 0x20000000ull - std::min<uint64_t>(base, 0x20000000ull));
+    if (bytes < 64 || !memory_) {
+      return 0;
+    }
+    const uint8_t* const data = memory_->TranslatePhysical(base);
+    uint64_t h = 0xCBF29CE484222325ull;
+    for (uint32_t run = 0; run < 16; ++run) {
+      const uint64_t start = ((bytes - 64) * run / 15) & ~uint64_t(7);
+      for (uint32_t i = 0; i < 64; i += 8) {
+        uint64_t word;
+        std::memcpy(&word, data + start + i, 8);
+        h = (h ^ word) * 0x100000001B3ull;
+        h ^= h >> 29;
+      }
+    }
+    return h;
+  }
+  uint64_t presentations_stamp_ = 0;  // advanced once per presented frame: the fingerprints are checked once per frame
+
   Resolved* GetResolved(uint32_t base, uint32_t width, uint32_t height, uint32_t format,
                             bool swap_rb, VkFormat format_host = kFormatColor) {
+    Resolved* const resolved = GetResolvedImage(base, width, height, format, swap_rb, format_host);
+    if (resolved) {
+      const bool was = resolved->overwritten;
+      resolved->stamp_memory = StampMemory(base, width, height);
+      resolved->stamp_checked = presentations_stamp_;
+      resolved->overwritten = false;
+      if (was && draws_) {
+        draws_->InvalidateTextures();  // the address is sampled from the resolved image again
+      }
+    }
+    return resolved;
+  }
+
+  Resolved* GetResolvedImage(uint32_t base, uint32_t width, uint32_t height, uint32_t format,
+                                 bool swap_rb, VkFormat format_host) {
     if (!width || !height) {
       Reject(9, "copy to a texture of size 0");
       return nullptr;

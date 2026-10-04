@@ -84,18 +84,23 @@ Grey tint, second round (2026-10-04 late, user: "only the Dolby intro has deep b
   with the smear / speckle glitches below, so re-measure after those; (c) loading screens: the dark / white boxes
   behind the text are missing on native.
 
-NEXT (user report 2026-10-04 ~17:45, session stopped by the usage limit): loading screens and menus.
-- Boxes behind the text missing (black box behind the title, white box behind the body text, so the dark body text
-  is nearly invisible), text edges ragged, and the loading-screen background picture is sometimes black (it was
-  there in one run at 40 s and black in the next; reproduced: build_logs	est-ld-*).
-- One-frame trace of the black loading screen (`--fh1_native_diag_frame_s=41`, build_logs	est-ld-*.log, lines
-  with `[trace]`): the UI is drawn into the 1280 target with guest format 10 (rt0 000A0000, shares the image of
-  format 2). Order: PS n716 (full-screen rectangle, the background composite: textures f54 x2, f6 x2), then the
-  boxes = VS n1089 / PS n1212 with a k_DXT5A texture (f59, swizzle 76D = RGB one, alpha from the texture), text =
-  VS n1683 / PS n1778 (geometry, no texture), icons = VS n1650 / PS n658. Blend 07060706, colorctl 8700000C
-  (alpha test on). Nothing is rejected, so the box draws run and produce nothing visible.
-- Not looked at yet: the HLSL of n1212 / n1089 (build_logs\shaders\hlsl), the alpha test value, the DXT5A
-  (BC4) upload for these textures, and why the background (n716 inputs) is black in some runs.
+Loading screens and menus (user report 2026-10-04 ~17:45, fixed the same evening):
+- Boxes behind the text missing (and the minimap frame in the festival). The UI's two-layer shader (PS n1212)
+  fetches a second texture from a register its constant table does not list (the translator calls it s1); the
+  renderer only bound the listed samplers, so the second layer read transparent black and the result had alpha 0.
+  fh1_native_shaders.cpp now also walks the microcode's control flow and adds every texture register a fetch
+  instruction uses (checked against the containers: n1212 -> registers 0 and 1).
+- Black (or old-menu) background on loading screens. The artwork is decoded by the game's CPU code into memory at
+  1D390000, an address where it resolved a 1280x720 screen copy at the title screen; resolves here never reach
+  guest memory, and the renderer kept sampling its own stale copy. Each resolved texture now keeps a small
+  fingerprint of the guest memory at its address (TargetsVulkan::StampMemory, taken at every resolve, checked once
+  per presented frame when a draw asks for it); when it changes, the address is read from memory until the next
+  resolve (log line "the game wrote over the resolved texture").
+- How the shader numbers of a trace map to files: the library is sorted by fingerprint; a small script that reads
+  fh1_shaders.nfsp and matches each entry's container bytes against build_logs\shaders\containers\*.bin gives the
+  file name (n1212 = p_b007f21b73842fc7). Read only the last ~60 lines of the .hlsl (the rest is the common header).
+- Still to check with the user: text edges ("the text looks strange"); the loading pictures look dark compared
+  with the one seen on the emulated GPU (a different picture each run, so not compared like for like yet).
 
 Known but not done:
 - Loading screens and menus: text on black now (not white). The emulated GPU may show a video or picture behind
