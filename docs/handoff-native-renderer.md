@@ -99,8 +99,14 @@ Loading screens and menus (user report 2026-10-04 ~17:45, fixed the same evening
 - How the shader numbers of a trace map to files: the library is sorted by fingerprint; a small script that reads
   fh1_shaders.nfsp and matches each entry's container bytes against build_logs\shaders\containers\*.bin gives the
   file name (n1212 = p_b007f21b73842fc7). Read only the last ~60 lines of the .hlsl (the rest is the common header).
-- Still to check with the user: text edges ("the text looks strange"); the loading pictures look dark compared
-  with the one seen on the emulated GPU (a different picture each run, so not compared like for like yet).
+- Jagged text and map roads (user report). The UI draws text and lines as curves (PS n1778 and 30 others) and
+  antialiases their edge with the microcode's getGradients instruction (screen-space derivatives of a register);
+  the translator dropped it. shaders/XenosRecomp/shader_recompiler.cpp now emits ddx_coarse / ddy_coarse for it
+  (same result layout as the SDK's translators). 31 pixel shaders changed; only those were recompiled (old ones in
+  build_logs/shaders/*_before_gradients) and the library repacked. To redo a partial rebuild like this:
+  re-translate into a second folder, compare with hlsl/, compile only the files that differ, repack.
+- Checked after the three fixes (build_logs/test-grad-*): menu selection box, loading-screen boxes, artwork and
+  smooth text all present.
 
 Known but not done:
 - Loading screens and menus: text on black now (not white). The emulated GPU may show a video or picture behind

@@ -303,8 +303,16 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
 
 void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicubic)
 {
+#ifdef NFSMW_RECOMP
+    // FH1: getGradients (screen-space derivatives of a register, no texture involved) is what the UI's curve
+    // shaders (menu text, map roads) use to antialias their edges; dropped, every edge came out hard.
+    if (instr.opcode != FetchOpcode::TextureFetch && instr.opcode != FetchOpcode::GetTextureWeights &&
+        !(instr.opcode == FetchOpcode::GetTextureGradients && isPixelShader))
+        return;
+#else
     if (instr.opcode != FetchOpcode::TextureFetch && instr.opcode != FetchOpcode::GetTextureWeights)
         return;
+#endif
 
     if (instr.isPredicated)
         openPredicate(instr.predCondition);
@@ -319,6 +327,26 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
             for (size_t i = 0; i < componentCount; i++)
                 out += SWIZZLES[((instr.srcSwizzle >> (i * 2))) & 0x3];
         };
+
+#ifdef NFSMW_RECOMP
+    if (instr.opcode == FetchOpcode::GetTextureGradients)
+    {
+        // Same result layout as the SDK's translators: x = d(src.x)/dx, y = d(src.x)/dy, z = d(src.y)/dx,
+        // w = d(src.y)/dy, with src.x and src.y the first two swizzled components of the source register.
+        const char a = SWIZZLES[instr.srcSwizzle & 0x3];
+        const char b = SWIZZLES[(instr.srcSwizzle >> 2) & 0x3];
+        indent();
+        print("r{}.", instr.dstRegister);
+        printDstSwizzle(instr.dstSwizzle, false);
+        print(" = float4(ddx_coarse(r{0}.{1}), ddy_coarse(r{0}.{1}), ddx_coarse(r{0}.{2}), ddy_coarse(r{0}.{2})).",
+              instr.srcRegister, a, b);
+        printDstSwizzle(instr.dstSwizzle, true);
+        out += ";\n";
+        printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
+        closeSiWritesPredicate(markPredicate);
+        return;
+    }
+#endif
 
     std::string constName;
     const char* constNamePtr = nullptr;
