@@ -37,4 +37,8 @@ nfsc-recomp stays a source of fixes, ported by hand when they work for FH1. To c
   other Most Wanted helpers.
 - Kept on purpose: the `REX_PLATFORM_SWITCH` / `__aarch64__` blocks (small, compiled out on Windows, and the
   Switch port will start from this code).
+- `fh1_native_targets.cpp`: k_8_8_8_8 and k_8_8_8_8_GAMMA render targets share one image (FH1's videos); a Swap
+  of a front buffer nobody resolved into shows the last screen-sized resolved texture (trademark screen).
+- `fh1_native_system.cpp`: the piecewise-linear gamma ramp (DC_LUT_PWL_DATA) is read and applied on the output;
+  vertex shaders get the vertex index (SDK feature shaderDrawParameters).
 - SDK: `rex/ui/vulkan/device.h` and `vulkan_device.cpp` enable VK_KHR_maintenance5 as nfsc-recomp does.

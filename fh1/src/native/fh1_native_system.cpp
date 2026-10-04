@@ -487,6 +487,7 @@ constexpr uint32_t kRegD1GrphPrimarySurface = 0x1844;
 constexpr uint32_t kRegRampFirst = 0x1921;
 constexpr uint32_t kRegRampIndex = 0x1922;
 constexpr uint32_t kRegRampSequential = 0x1923;
+constexpr uint32_t kRegRampPwl = 0x1924;  // DC_LUT_PWL_DATA
 constexpr uint32_t kRegRamp30 = 0x1925;
 constexpr uint32_t kRegRampMask = 0x1927;
 constexpr uint32_t kRegRampLast = 0x1927;
@@ -924,6 +925,38 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       }
       component_ramp_ = 0;
       registers_[kRegRampIndex] = (registers_[kRegRampIndex] & ~UINT32_C(0xFF)) | ((i + 1) & 0xFF);
+    } else if (index == kRegRampPwl) {
+      // FH1: the game loads the piecewise-linear ramp (DC_LUT_PWL_DATA: 128 segments of base and delta per color,
+      // red, green, blue in turn), not the 256-entry table. Same logic as the SDK's CommandProcessor::WriteRegister;
+      // the 256 entries the output uses are sampled from it: a 10-bit input picks the segment with its top 7 bits
+      // and goes `base + delta * low 3 bits / 8` (16-bit values with the low 6 bits zero).
+      const uint32_t i = registers_[kRegRampIndex] & 0x7F;  // bit 7 of the index is ignored for PWL
+      if (mask_ramp_ & (UINT32_C(1) << (2 - component_ramp_))) {
+        ramp_pwl_[i][component_ramp_] = {uint16_t(input_value & 0xFFC0), uint16_t((input_value >> 16) & 0xFFC0)};
+        ramp_pwl_dirty_ = true;
+      }
+      if (++component_ramp_ >= 3) {
+        component_ramp_ = 0;
+        registers_[kRegRampIndex] = (registers_[kRegRampIndex] & ~UINT32_C(0x7F)) | ((i + 1) & 0x7F);
+        // The table is rebuilt once per complete load (D3D writes all 128 segments in a row), and only if it changes.
+        if (i == 0x7F && ramp_pwl_dirty_) {
+          ramp_pwl_dirty_ = false;
+          bool changed = false;
+          for (uint32_t e = 0; e < 256; ++e) {
+            const uint32_t x = (e * 0x3FF + 127) / 0xFF;
+            for (uint32_t c = 0; c < 3; ++c) {
+              const RampPwl& segment = ramp_pwl_[x >> 3][c];
+              const uint32_t value_16 = uint32_t(segment.base) + ((uint32_t(segment.delta) * (x & 7)) >> 3);
+              const uint16_t value = uint16_t(std::min<uint32_t>(value_16 >> 6, 0x3FF));
+              changed |= ramp_gamma_[e][c] != value;
+              ramp_gamma_[e][c] = value;
+            }
+          }
+          if (changed) {
+            ++version_ramp_;
+          }
+        }
+      }
     }
   }
 
@@ -2268,6 +2301,10 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       }
       values += ")";
     }
+    // FH1: the boolean constants too (0x4900-0x4903 vertex, 0x4904-0x4907 pixel).
+    for (uint32_t i = 0; i < 8; ++i) {
+      values += fmt::format(" bool{}={:08X}", i, Register(0x4900 + i));
+    }
     REXLOG_INFO("[native] PS constants n{} (Swap {}):{}", ps_draw_->number, swaps_.load(), values);
     {  // NFSC: how many of the 224 pixel-shader constants (and 256 vertex-shader ones) are non-zero
       auto count = [&](uint32_t base, uint32_t total, std::string* list) {
@@ -2450,8 +2487,9 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         const uint32_t d1 = Register(base + 1);
         const uint32_t d3 = Register(base + 3);
         const uint32_t d5 = Register(base + 5);
-        textures += fmt::format(" t{}={:08X}/f{}/d{}/s{:03X}/e{}{}", s.reg_entry, d1 & 0xFFFFF000,
-                                d1 & 0x3F, (d5 >> 9) & 0x3, (d3 >> 1) & 0xFFF, (d1 >> 6) & 0x3,
+        textures += fmt::format(" t{}={:08X}/f{}/d{}/s{:03X}/e{}/sign{:02X}/exp{}{}", s.reg_entry, d1 & 0xFFFFF000,
+                                d1 & 0x3F, (d5 >> 9) & 0x3, (d3 >> 1) & 0xFFF, (d1 >> 6) & 0x3, (d0 >> 2) & 0xFF,
+                                int32_t(d3 << 13) >> 26,
                                 (d0 & 0x3) == 2 ? "" : "!");
       }
     }
@@ -4848,6 +4886,13 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     }
     return t;
   }();
+  // FH1: the piecewise-linear ramp as the game writes it (see NoteRampGamma).
+  struct RampPwl {
+    uint16_t base = 0;
+    uint16_t delta = 0;
+  };
+  std::array<std::array<RampPwl, 3>, 128> ramp_pwl_{};
+  bool ramp_pwl_dirty_ = false;
   uint32_t component_ramp_ = 0;
   uint32_t mask_ramp_ = 0b111;  // default DC_LUT_WRITE_EN_MASK (register_table.inc)
   uint64_t version_ramp_ = 0;

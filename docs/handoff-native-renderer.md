@@ -44,7 +44,38 @@ Those are best removed one at a time with a festival screenshot after each, not 
   first), copy next to fh1.exe as `fh1_shaders.nfsp`. The translator now writes the English names of
   shader_common.h, so HLSL generated before 2026-10-04 must be regenerated, not patched.
 
-## Open problems of the native picture, in the order to take them
+## The user's order of work (2026-10-04 evening)
+In the user's words: "Let's Fix the teal screen in the bigining, then the white video into, the white video
+backgrounds the loading screens etc... and then we fix rendering". And: "Don't give to much importance to the
+green thing now" (the user saw on the emulated GPU that a reflection is added to the car when evening starts,
+and expects the green to go once the rendering glitches are fixed).
+
+Done the same evening (commits 06ccc15 and the one after):
+- Teal screen at boot = the trademark / legal text screen. The game resolves it once into a texture (1DAC5000)
+  and then presents front buffers it never resolved into. Present now shows the last screen-sized resolved
+  texture in that case. The pulsing teal test color is behind `--fh1_native_swap_test_color` (default: black).
+- White videos (boot logos, intro, title background). FH1 draws videos into a k_8_8_8_8_GAMMA render target and
+  resolves with the color info set to plain k_8_8_8_8; the renderer kept one image per format, so the resolve
+  read an image nobody drew. Formats 1 and 0 now share one image (FormatTargetCanonical).
+- Grey tint on everything (user report). FH1 loads the piecewise-linear gamma ramp (DC_LUT_PWL_DATA, 128
+  segments), not the 256-entry table; the renderer ignored it and showed the picture with an identity ramp, so
+  dark tones were lifted in videos, menus and the festival. NoteRampGamma now reads it and samples it into
+  the 256 entries the output uses. Checked: Turn 10 logo background 14 on both renderers (was 28 native).
+- Diagnostics: one-frame trace up to 20,000 lines; trace lines show each texture's sign bits and exp adjust;
+  `--fh1_native_diag_constants_ps` also logs the boolean registers.
+
+Known but not done:
+- Loading screens and menus: text on black now (not white). The emulated GPU may show a video or picture behind
+  them: compare a loading screen and the pause/main menus on both renderers before calling this item finished.
+- Textures sampled with the gamma sign (log: "signed or gamma textures: read as unsigned (cause 31)") and writes
+  to the gamma render target format are both passed through raw. For the videos the two cancel; a texture that
+  is gamma-signed but was not written through a gamma target would come out too bright.
+
+What the user's driving run showed (build_logs/run-20261004-161606.log): 14 % of all draws rejected, all cause
+316 (packed positions); about 25,000 render-target copies rejected; two unsupported texture formats (causes 422
+and 458); frames of 185-230 ms while driving with the time inside the ring's own draw work.
+
+## Rendering problems, in the order to take them (after the items above)
 (Details and the planned fix for 1 are in docs/handoff-english-rename.md, "State of the native renderer".)
 1. Packed (k_10_11_11) POSITIONS: draws that use them are still rejected by default (mask 0xFFFE), so vegetation,
    billboards and whatever else uses them are missing. With `--fh1_vertices_10_11_11_mask=65535` the festival still
@@ -72,7 +103,7 @@ Those are best removed one at a time with a festival screenshot after each, not 
    compare its constants and sampler formats day vs evening.
 2. Speckled edges: depth/stencil fills drawn at 640 pitch 4x MSAA and used by the 1280x720 1x passes
    (`--fh1_msaa_4x_as_1x=true` turned the picture pink/black; needs `--fh1_dump_resolved_at_s=N`).
-3. White title / menu background: the frame composite pixel shader outputs white.
+3. (done 2026-10-04: white title / menu background, see above)
 4. 2x MSAA reflection targets and resolves; strong glare; frame drops since the wide resolves.
 Debug switches: `--fh1_native_diag_frame_s=N`, `--fh1_native_diag_resolved=true`, `--fh1_dump_resolved_at_s=N`,
 `--fh1_dump_ring_shaders=DIR` + tools/fh1_synth_containers.py.
