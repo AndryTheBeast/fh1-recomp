@@ -18,8 +18,8 @@ Status (2026-10-04): **playable on PC** - boot, festival, free roam, races, gara
 repainting cars (photos correct), saving. Legion Go (Ryzen Z1 Extreme): 30 fps (game cap) in
 normal play, 26-28 in the busiest spots. Default graphics = the SDK's emulated Xbox 360 GPU: D3D12
 (default) and Vulkan (`--gpu_backend=vulkan`), both correct. In progress: the native Vulkan renderer
-(`--fh1_renderer=native`): boot, videos, menus and loading screens match the emulated picture; the 3D
-scene still has glitches. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+(`--fh1_renderer=native`): boot, videos, menus and loading screens match the emulated picture; the festival
+in daylight is close to it (sharp, shadows, crowd); evening look and driving are still to do. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
 docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
 the frame time goes and what to cut for the Switch.
 
@@ -227,8 +227,15 @@ lists the actions and saves the render targets as PNG.
 **Read docs/native-renderer-status.md first.** User decision 2026-10-04: the native renderer must be FH1's own
 (`--fh1_renderer=native`), taking from nfsc-recomp the fixes that work for FH1 instead of running his renderer
 as is; done the same day. Boot, videos, menus and loading screens were fixed on 2026-10-04 and checked by the
-user. Next (user, 2026-10-04): the rendering glitches of the 3D scene, in the order of that document (smear and
-speckled edges first, then packed positions). ROADMAP.md and docs/native-renderer-fh1.md have the phases (N0-N5).
+user. The same night the 3D scene got its first fixes (smear, shadows, crowd and trees; the user also saw the
+giant polygon flashes gone). Next: the open list of that document, starting with a driving check by the user,
+then the evening look (green car, glare) and daylight brightness / bloom. ROADMAP.md is the checklist of
+everything done and still open (keep it that way: one line per item, `[x]` / `[ ]`, details in
+docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0-N5).
+
+- Do not edit sources while a build is running: a header changed in the middle gives a mixed build (it happened on
+  2026-10-04; rebuild after the last edit). `build_windows.ps1 -SkipCodegen` still runs the code generator when
+  rexglue.exe was relinked.
 
 Local folder layout (2026-10-04): `build_logs\reference\` = the screenshots, traces and logs the documents
 refer to; `build_logs\archive-2026-10-04\` = every earlier test, run and build log (nothing there is needed

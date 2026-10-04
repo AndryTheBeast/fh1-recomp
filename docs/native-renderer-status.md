@@ -1,7 +1,6 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session: **the rendering glitches in the
-festival and while driving**. State as of 2026-10-04 (evening).
+Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-04 (night).
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
 GoatHonks' nfsc-recomp renderer; his later fixes are ported by hand when they work for FH1
@@ -11,41 +10,41 @@ for the correct picture.
 ## What works (checked against the emulated GPU)
 
 - Boot: trademark screen, logo videos, intro, title screen with its video background.
-- Menus and loading screens: text, the boxes behind it, artwork, map screen (user checked 2026-10-04: "looks
-  fine to me now").
-- Brightness of videos, menus and loading screens: same levels as the emulated GPU.
-- Festival and driving: drawn at 30 fps, playable, **with the glitches below**.
+- Menus and loading screens: text, the boxes behind it, artwork, map screen (user, 2026-10-04: "looks fine to me
+  now").
+- Festival in daylight, car standing still: sharp scene, shadows, crowd, trees on the hills, 30 fps. Compare
+  `build_logs\reference\test-a2m-*-53s.png` (native) with `test-festX-*-53s.png` (emulated).
+- User, 2026-10-04 night: the random giant polygon flashes seen before are gone (not targeted by a specific fix;
+  most likely the half-covered clears, see below).
 
 ## Open problems, in the order to take them
 
-The user's words (2026-10-04): "then we fix rendering". Compare `build_logs\reference\test-festX-*-53s.png`
-(emulated, correct) with any native festival shot.
+Compare `build_logs\reference\test-festX-*` (emulated, correct) with `test-a2m-*` (native, same seconds).
 
-1. **Smear over the whole scene** (looks like heavy motion blur with the car standing still) and **speckled
-   edges** around the car and structures. Not investigated yet beyond this: the scene depth / stencil is filled
-   at 640 pitch with 4x MSAA and used by the 1280x720 1x passes; `--fh1_msaa_4x_as_1x=true` (draw the 4x passes
-   into the 1x image at twice the scale) turned the picture pink / black on its first try. Start with
-   `--fh1_dump_resolved_at_s=N` (every resolved image of one frame) and the one-frame trace, find the first
-   image that is already wrong, and work forward from there. The smear is probably the motion-blur / velocity
-   input being wrong rather than the blur itself.
-2. **Packed (k_10_11_11) positions**: 14 % of all draws are rejected while driving (cause 316): vegetation,
-   billboards and more are missing. With `--fh1_vertices_10_11_11_mask=65535` they are drawn but the festival
-   turns black (`build_logs\reference\test-vid-packed-*-95s.png`). The vertex index in r0.x is done (library
-   built with it); next: one-frame trace with the mask on, take the first draw with a packed position and compare
-   its decoded positions with the emulated GPU's (sign / integer modes of the fetch, `remapInput` in
-   shader_common.h), and check whether those shaders also fetch from guest memory (`fh1Fetch` returns 0 while
-   `g_GuestBase` is 0). Earlier analysis: docs/history/handoff-english-rename.md, "State of the native renderer".
-3. **Festival brighter than the emulated picture**: mid tones 64 against 40 (darkest tones equal, 4). Measure
-   again after 1 and 2; candidates: the gamma curve (sRGB is only close to the console's piecewise-linear one),
-   exposure / glare inputs.
-4. **2x MSAA reflection targets and resolves**, strong glare, and frames of 185-230 ms while driving (time inside
-   the ring thread's own draw work; about 25,000 render-target copies rejected in a driving run).
-5. **Green car in the evening** (low priority, user: expect it to go with the other fixes). From ~100 s after
-   launch the car's upward-facing panels turn green (emulated: stays orange, `build_logs\reference\test-eveXenos-*`).
-   Ruled out: texture cache across frames, vertex dedupe, glow sprites n3325/n2933/n3285, the vertex index. Next:
-   compare the car paint shader's constants and textures day against evening.
-6. Small: two texture formats not supported (causes 422 = k_24_8 not coming from a resolve, 458 = k_DXT3A), 1D
-   textures (cause 30), textures with other sign modes than gamma (cause 31).
+1. **Driving has not been checked since the fixes of 2026-10-04 night.** The user drives by hand: ask for a short
+   drive first. To look at: motion blur while moving (the velocity pass now gets real depth and stencil; the car's
+   own stencil value, 21, picks its matrix), frame drops (185-230 ms frames were seen before), anything that
+   flashes.
+2. **Evening look** (from ~90 s after launch, `test-a2m-*-95s.png` against `test-eveXenos-*-130s.png`): the car
+   turns green / chrome, strong white glare and light beams over the scene. Next: compare the car paint shader's
+   constants and textures day against evening; check the 2x MSAA reflection cube map (6 faces 256x256, drawn at one
+   sample, resolves not scaled) and the glare / light-beam draws (additive, they may need the depth they test).
+3. **Brightness and glow in daylight**: the native picture is brighter and more contrasted (sunlit dome, crowd,
+   car paint more metallic), and the tail lights have no red glow around them (bloom). Candidates: the bloom chain
+   (`frame_*_320x192` dumps), the gamma curve (sRGB is only close to the console's piecewise-linear one), the
+   reflection cube map again. Measure with brightness percentiles on the same second of both renderers.
+4. **Thin light outlines on edges** (car, tower, stage rigging) and **stair-stepped shadow edges** on the ground.
+   The scene is drawn with one sample where the console uses 4x MSAA; the game's FXAA pass (PS n2283) runs. Check
+   what the emulated picture does at the same pixels (crop enlarged with NEAREST) before changing anything.
+5. **Crowd brighter than the emulated one** and with hard cut-out edges: alpha to mask is a plain "alpha >= 0.5"
+   test here (`--fh1_native_alpha_to_mask`); the console dithers coverage over 4 samples.
+6. **Computed vertex index outside quad lists** (log cause 317): rejected. Billboards in quad lists work (each
+   stored vertex repeated four times); find which draws these are (one-frame trace) and what their index is.
+7. Small: two texture formats not supported (causes 422 = k_24_8 not coming from a resolve, 458 = k_DXT3A), 1D
+   textures (cause 30), textures with other sign modes than gamma (cause 31), vertex element without a free
+   location (cause 22).
+8. Performance while driving (about 25,000 render-target copies rejected in a driving run before today; measure
+   again).
 
 ## How to run and test
 
@@ -59,26 +58,74 @@ The user's words (2026-10-04): "then we fix rendering". Compare `build_logs\refe
   Without `-ExtraArgs` the same run uses the emulated GPU: take both and compare the same seconds. Timeline of
   that run: logo videos 2-26 s, title from ~28 s, menu ~36 s, loading screen ~38-45 s, festival from ~47 s.
   Evening lighting starts ~90 s.
-- Build: `tools\build_windows.ps1 -SkipFetch -SkipCodegen` (app only, ~5 min). Run it in the background; never
-  wait for it with an open-ended loop.
+- Build: `tools\build_windows.ps1 -SkipFetch -SkipCodegen` (app only, ~5 min; it still runs the code generator
+  when rexglue.exe was relinked). Run it in the background or with a bounded wait; never wait with an open-ended
+  loop. Do not edit sources while a build is running (a header change in the middle gives a mixed build).
 - Shader library: `fh1_shaders.nfsp` next to fh1.exe (copy of `build_logs\shaders\fh1_shaders.nfsp`, game-derived,
   not in git). After changing the translator (`shaders/XenosRecomp`): `tools\build_shader_tools.ps1`, then
   `python tools\fh1_retranslate_changed.py --apply` (recompiles only the shaders whose HLSL changes), repack and
   copy (steps in that script's header).
+- The renderer's own small shaders (not game-derived, committed as SPIR-V headers): `python tools\fh1_make_rect_gs.py`
+  (rectangle lists) and `python tools\fh1_make_depth_pack.py` (depth as bytes); both use `..\tools_dxc`.
 
 ## Diagnostics that paid off
 
+- `--fh1_dump_resolved_at_s=N`: at second N, every resolved image, render target and depth-as-bytes image
+  (`dump_resolved\NN_<address>_<size>.png` next to fh1.exe), and **for the following frame every color image right
+  after its copy** (`frame_NN_dest<address>_<size>.png`, with `alpha_` twins): the post-processing chain step by
+  step. This found the empty velocity image in minutes. The dumps are upside down.
 - `--fh1_native_diag_frame_s=N`: every draw and copy of one frame in the log (`[trace]` lines: shaders, render
   target, blend, each texture with format / signs / exponent). Shader numbers to files:
   `python tools\fh1_shader_name.py 1212` -> `build_logs\shaders\hlsl\<name>.hlsl` (read only the last ~60 lines).
-- `--fh1_native_diag_constants_ps=1212 --fh1_native_diag_constants_ms=0`: the pixel constants a shader gets.
-- `--fh1_dump_resolved_at_s=N`, `--fh1_native_diag_resolved=true`: the resolved images of a frame.
-- The log's `(cause N)` lines: everything the renderer rejects or replaces, once per kind.
+- `--fh1_native_diag_constants_ps=2520 --fh1_native_diag_constants_ms=0`: the pixel constants a shader gets
+  (c0-c11, c32-c43, c132-c135).
+- `--fh1_debug_no_cull=true`: all face culling off (how the dropped rectangles were found).
+- The log's `(cause N)` lines: everything the renderer rejects or replaces, once per kind. `[fh1] rect-list draw`
+  lines: the three corners of each kind of rectangle draw.
 - Same seconds on both renderers + brightness percentiles of the picture area (a 20-line PIL script) settles
   "is it brighter / darker" questions quickly; pixel-level crops enlarged with NEAREST settle edge questions.
 - `--fh1_dump_ring_shaders=DIR` + `tools/fh1_synth_containers.py`: shaders the game uploads that the library lacks.
 
+## FH1's frame, as the native renderer sees it (festival)
+
+1. Shadow maps (depth, 1040 pitch) resolved as depth textures. 2. Depth pre-pass 1280x720, resolved to 1DAC5000.
+3. Shadow mask into 1CE2D000 (boxes drawn with the stencil test). 4. Reflection cube map (2x MSAA, 256x256).
+5. Main scene: 4x MSAA at 1280 pitch in **three strips** of 256 rows (window offset 0 / -256 / -512), each resolved
+into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. Bloom chain (320x192 down to
+20x12). 7. Motion-blur velocity 640x360 (PS n2520, then n2368) from the depth texture fetched as k_8_8_8_8. 8. FXAA
+(PS n2283). 9. Final composite in two halves (PS n716: blur, depth of field, bloom, color grading). 10. UI.
+
+Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
+target they clear (the same EDRAM, four samples per pixel drawn).
+
 ## What was fixed on 2026-10-04, and why (so the same causes are recognised again)
+
+Night session (the 3D scene):
+
+- **Smear over the whole scene, speckled edges**: the motion-blur velocity texture was empty, so every pixel
+  "moved" by the maximum. Three causes, all fixed:
+  - Rectangle lists were culled like triangles. The console never culls them (`key.rasterization`).
+  - A resolved depth fetched as k_8_8_8_8 gave the depth value in every channel; the shaders rebuild the 24-bit
+    float depth from three bytes and take the stencil from the fourth. A small pass now writes those bytes into a
+    color image after each resolve, when a draw asks (`TargetsVulkan::TextureResolvedBytes`,
+    `--fh1_native_depth_bytes`). Depth resolves also copy the stencil.
+  - The rectangle geometry shader assumed the corner was the first vertex; FH1's clears send top-left, top-right,
+    bottom-right, so they covered half of the target (a diagonal). The corner is now the vertex opposite the
+    longest edge.
+- **No shadows**: Direct3D's 4x clears went to an image of their own, so the stencil the shadow-mask passes test
+  was never reset. 4x passes of 640 pitch or less now draw into the 1x target of twice the pitch at twice the
+  scale (`--fh1_msaa_4x_clears_as_1x`). The scene itself (4x at 1280 pitch) stays at one sample;
+  `--fh1_msaa_4x_as_1x` (every 4x pass) still turns the picture pink and stays off.
+- **Crowd, trees, vegetation missing (cause 316), and the black festival with packed positions on**: those draws
+  are quad lists with one stored vertex per quad; the shader fetches vertex `index / 4` (fetch source r0.y, not
+  r0.x) and builds the corners from the index. Fetched by the plain index they read past their data and drew
+  screen-sized garbage. Each stored vertex is now repeated four times in the vertex copy
+  (`EntryVertices::index_computed`); k_10_11_11 positions are on by default. The packed decoding itself was right.
+- **Crowd as solid rectangles**: alpha to mask (RB_COLORCONTROL bit 4) was ignored; now an alpha test at 0.5.
+- A pass C2 records itself in the work command buffer must call `DrawsVulkan::ForgetStateBound` afterwards, or
+  the draws reuse a pipeline and descriptor sets that are no longer bound (black scene).
+
+Day session (UI, videos):
 
 - **Teal boot screen**: the game resolves the trademark screen once and then presents front buffers it never
   resolved into; Present shows the last screen-sized resolved texture then.

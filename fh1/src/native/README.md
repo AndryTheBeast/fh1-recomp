@@ -41,4 +41,12 @@ nfsc-recomp stays a source of fixes, ported by hand when they work for FH1. To c
   of a front buffer nobody resolved into shows the last screen-sized resolved texture (trademark screen).
 - `fh1_native_system.cpp`: the piecewise-linear gamma ramp (DC_LUT_PWL_DATA) is read and applied on the output;
   vertex shaders get the vertex index (SDK feature shaderDrawParameters).
+- 2026-10-04 night, the 3D scene (details: `docs/native-renderer-status.md`):
+  - `fh1_rect_gs_spirv.h` (generator `tools/fh1_make_rect_gs.py`): the rectangle's corner is the vertex opposite the
+    longest edge; rectangle lists are never culled.
+  - `fh1_depth_pack_spirv.h` (generator `tools/fh1_make_depth_pack.py`) and `TextureResolvedBytes`: a resolved depth
+    fetched as a color texture gives the console's bytes (24-bit depth + stencil); depth resolves copy the stencil.
+  - 4x MSAA passes of 640 pitch or less (Direct3D's clears) draw into the 1x target of twice the pitch.
+  - Vertex fetches with a computed index in quad lists (billboards): each stored vertex repeated four times;
+    k_10_11_11 positions on by default; alpha to mask as an alpha test.
 - SDK: `rex/ui/vulkan/device.h` and `vulkan_device.cpp` enable VK_KHR_maintenance5 as nfsc-recomp does.
