@@ -257,7 +257,7 @@ static inline bool RexDecodeAccess(const ThreadExceptionDump* ctx, uint32_t insn
         return false;
     }
 
-    return false;  /* no reconocido: atomicos, vectoriales con list, etc. */
+    return false;  /* not recognised: atomics, vector ones with a list, etc. */
 }
 
 /*

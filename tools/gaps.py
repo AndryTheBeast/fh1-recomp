@@ -106,7 +106,7 @@ def main():
     p.add_argument("--min", type=int, default=4,
                    help="minimum gap size to list (default 4)")
     p.add_argument("--should_check", nargs="*", default=[],
-                   help="addresses concretas a localizar, p.ej. 0x8215FEA8")
+                   help="specific addresses to locate, e.g. 0x8215FEA8")
     p.add_argument("--output", default="docs/gaps.txt")
     p.add_argument("--toml", default="tools/gaps_functions.toml")
     args = p.parse_args()
@@ -194,7 +194,7 @@ def main():
         w("  0x%08X  %5d bytes   (after 0x%08X, before 0x%08X)"
           % (fin, tam, ini, sig))
     if len(large) > 60:
-        w("  ... y %d mas" % (len(large) - 60))
+        w("  ... and %d more" % (len(large) - 60))
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
     with open(args.output, "w", encoding="utf-8") as fh:

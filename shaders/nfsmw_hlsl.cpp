@@ -85,7 +85,7 @@ int main(int argc, char** argv) try {
 
   const std::vector<uint8_t> common = ReadAll(argv[3]);
   if (common.empty()) {
-    std::printf("no pude read %s\n", argv[3]);
+    std::printf("could not read %s\n", argv[3]);
     return 1;
   }
   const std::string_view include(reinterpret_cast<const char*>(common.data()), common.size());
@@ -106,7 +106,7 @@ int main(int argc, char** argv) try {
     const std::vector<uint8_t> data = ReadAll(e.path());
     ++total;
     if (data.size() < 24) {
-      std::printf("  %s: file ilegible o header truncada\n", e.path().filename().string().c_str());
+      std::printf("  %s: unreadable file or truncated header\n", e.path().filename().string().c_str());
       ++skipped;
       continue;
     }
@@ -143,12 +143,12 @@ int main(int argc, char** argv) try {
     try {
       recompiler.recompile(conv.data(), include);
     } catch (const std::exception& error) {
-      std::printf("  %s: translation rechazada: %s\n", e.path().filename().string().c_str(), error.what());
+      std::printf("  %s: translation rejected: %s\n", e.path().filename().string().c_str(), error.what());
       ++skipped;
       continue;
     }
     if (recompiler.out.empty()) {
-      std::printf("  %-20s no produced nothing\n", e.path().filename().string().c_str());
+      std::printf("  %-20s produced nothing\n", e.path().filename().string().c_str());
       ++skipped;
       continue;
     }
@@ -166,7 +166,7 @@ int main(int argc, char** argv) try {
     }
   }
 
-  std::printf("\n%zu shaders: %zu traducidos, %zu skipped\n", total, ok, skipped);
+  std::printf("\n%zu shaders: %zu translated, %zu skipped\n", total, ok, skipped);
   return total > 0 && ok == total ? 0 : 2;
 } catch (const std::exception& error) {
   std::fprintf(stderr, "error: %s\n", error.what());

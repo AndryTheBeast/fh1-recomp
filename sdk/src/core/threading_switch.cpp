@@ -111,7 +111,7 @@ int pthread_setaffinity_np(pthread_t thread, size_t size, const cpu_set_t* set) 
     if (set->bits & (1ull << i)) { preferred = i; break; }
   }
   if (preferred < 0)
-    return EINVAL;  /* mask empty_2: POSIX tampoco lo permite */
+    return EINVAL;  /* empty mask: POSIX does not allow it either */
 
   /*
    * Only 4 cores exist. Asking for more is not a caller error (the SDK

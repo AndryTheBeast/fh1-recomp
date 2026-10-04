@@ -323,7 +323,7 @@ class PosixConditionBase {
         if (now >= deadline) {
           return WaitResult::kTimeout;
         }
-        // Sleep permite advance al propietario aunque tenga smaller priority.
+        // Sleep lets the owner advance even if it has a lower priority.
         const auto remaining = std::chrono::ceil<std::chrono::microseconds>(deadline - now);
         std::this_thread::sleep_for(std::min(remaining, std::chrono::microseconds(100)));
       }

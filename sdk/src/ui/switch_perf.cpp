@@ -400,7 +400,7 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                RexGmCommittedBytes() >> 20, RexGmMappedBytes() >> 20,
                (u64)lim_used, (u64)lim_cap, (u64)proc_used, (u64)proc_total, g_sample_count,
                 (RexGmModeProtection() == 1   ? "permissions (pages legibles)"
-                 : RexGmModeProtection() == 2 ? "desmapeo (every read falla)"
+                 : RexGmModeProtection() == 2 ? "unmapping (every read fails)"
                                               : "untested"),
                 double(counters_now[20] - counters_last[20]) / seconds,
                 double(counters_now[19] - counters_last[19]) / seconds);

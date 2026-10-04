@@ -89,7 +89,7 @@ REXCVAR_DEFINE_BOOL(host_present_ignore_implicit_vsync, true, "UI/Presenter",
  *
  * Not deleted: the mechanism works, it is measured and the switch is still there. It would only pay off
  * if presenting cost the recording thread nothing, and that needs a separate Vulkan queue, not another
- * priority tweak (the priority is already applied: "aceptada por el kernel"). The device has a single
+ * priority tweak (the priority is already applied: "accepted by the kernel"). The device has a single
  * queue (see docs/platform-notes.md, Presentation).
  */
 REXCVAR_DEFINE_BOOL(present_own_thread, REX_PRESENT_THREAD_OWN_DEFAULT, "UI/Presenter",

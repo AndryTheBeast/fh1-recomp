@@ -42,7 +42,7 @@ def translate(name):
         shutil.move(produced, os.path.join(hlsl_dir, base + '.hlsl'))
     reason = ''
     if not ok:
-        lines = [l.strip() for l in (r.stdout + r.stderr).splitlines() if 'rechazada' in l or 'error' in l.lower()]
+        lines = [l.strip() for l in (r.stdout + r.stderr).splitlines() if 'rejected' in l or 'error' in l.lower()]
         reason = lines[-1] if lines else f'translator exit code {r.returncode}'
     shutil.rmtree(src_dir, ignore_errors=True)
     shutil.rmtree(out_dir, ignore_errors=True)

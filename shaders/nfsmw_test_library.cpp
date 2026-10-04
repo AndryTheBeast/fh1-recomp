@@ -82,7 +82,7 @@ int main(int argc, char** argv) try {
     const Shader* s = b.Find(data);
     Check(s && s->original == data, "An original container is not recovered");
     data.back() ^= 1;
-    Check(!b.Find(data), "Un container alterado selecciona un shader");
+    Check(!b.Find(data), "An altered container selects a shader");
     ++matches;
   }
   auto copy = b.shaders();

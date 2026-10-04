@@ -234,8 +234,8 @@ bool Memory::Initialize() {
   // five views the 360 has over physical memory (0x7F..., 0xA0..., 0xC0...,
   // 0xE0... and raw physical), so the process ends up accounting for more than
   // 2 GB and the kernel refuses the next allocation. Measured: the game stayed
-  // black after the EA logo with "no se pudo confirmar 0x6A0000 bytes; fallback
-  // 578 MB, mapped 2139 MB contando espejos" (2001-0103).
+  // black after the EA logo with "could not commit 0x6A0000 bytes; fallback
+  // 578 MB, mapped 2139 MB counting mirrors" (2001-0103).
   //
   // Instead, physical memory is committed as it is touched: the first access to an
   // uncommitted page lands in the exception handler, which commits 1 MB and

@@ -136,7 +136,7 @@ void LibraryShaders::Load(std::span<const uint8_t> file) {
     for (uint32_t j = 0; j < words; ++j) s.spirv.push_back(code.U32());
     Validate(s);
     Require(s.fingerprint == expected, "Wrong container fingerprint");
-    if (!new_items.empty()) Require(Smaller(new_items.back(), s), "Entries repetidas o desordenadas");
+    if (!new_items.empty()) Require(Smaller(new_items.back(), s), "Repeated or unordered entries");
     new_items.push_back(std::move(s));
   }
   Require(l.position == file.size(), "Leftover data in the shader package");

@@ -279,7 +279,7 @@ void MaybeSummaryIo(uint64_t now_us) {
 
   /*
    * The line that tells whether a block cache is worth it and whether the window has anything to do.
-   *  - "releidas"  = reads whose exact range (file+offset+size) had already been read before.
+   *  - "reread"  = reads whose exact range (file+offset+size) had already been read before.
    *                  A cache would remove those bytes entirely; not the rest.
    *  - "consecutive"  = reads that start exactly where the previous one of the same file ended. If
    *                  this is high, read-ahead helps; if it is low, the game jumps around and the

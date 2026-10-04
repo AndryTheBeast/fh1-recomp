@@ -733,7 +733,7 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
             RexSwitchPerfCount(3);
             RexResumeFromException(ctx);
           }
-          break;  // ni retryable ni emulable: sigue a SEH y a fatal
+          break;  // neither retryable nor emulable: goes on to SEH and fatal
         }
       }
       RexSwitchPerfCount(2);

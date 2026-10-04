@@ -11103,7 +11103,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const VkPipelineRasterizationStateCreateInfo& rb = b.rasterization;
     if (ra.polygonMode != rb.polygonMode || ra.lineWidth != rb.lineWidth ||
         ra.rasterizerDiscardEnable != rb.rasterizerDiscardEnable || ra.depthClampEnable != rb.depthClampEnable) {
-      return "polygonMode, lineWidth, rasterizerDiscardEnable o depthClampEnable";
+      return "polygonMode, lineWidth, rasterizerDiscardEnable or depthClampEnable";
     }
     if (ra.cullMode != rb.cullMode) {
       return "cullMode";

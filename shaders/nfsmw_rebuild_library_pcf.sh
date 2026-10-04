@@ -149,4 +149,4 @@ py "$OUTPUT/mark_shadow_minimum.py" "$OUTPUT" || { echo "The tfetch2DShadowMin m
 "$ROOT/nfsmw_test_library.exe" "$OUTPUT/nfsmw_shaders.nfsp" "$ENTRY" > "$OUTPUT/library.log" \
   || { echo "Library regression failure; see library.log"; exit 1; }
 ls -la "$OUTPUT/nfsmw_shaders.nfsp"
-echo "regeneracion completada"
+echo "rebuild complete"

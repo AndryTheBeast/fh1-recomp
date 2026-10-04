@@ -2206,7 +2206,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         ProcessMarker(data, words);
         break;
       default:
-        // Invalidaciones y demas: todavia no dibuja.
+        // Invalidations and the rest: nothing is drawn yet.
         break;
     }
   }

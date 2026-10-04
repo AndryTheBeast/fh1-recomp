@@ -57,7 +57,7 @@ namespace rex::ui::switch_sysclk {
 namespace {
 
 constexpr unsigned kModules = 3;   // CPU, GPU, MEM
-constexpr unsigned kProfiles = 5;  // handheld, +cargando, +cargando USB, +cargador oficial, docked
+constexpr unsigned kProfiles = 5;  // handheld, +charging, +charging USB, +official charger, docked
 constexpr unsigned kProfileDocked = 4;
 constexpr unsigned kProfileHandheld = 0;
 

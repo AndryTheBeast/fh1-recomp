@@ -81,7 +81,7 @@ bool HostPathDevice::Initialize() {
   REXFS_INFO("[io] mounted '{}' at {}: {} entries in {:.1f} ms ({})",
              rex::path_to_utf8(host_path_), mount_path_,
              g_entries_in_tree.load(std::memory_order_relaxed) - entries_before, ms,
-             read_only_ ? "solo read" : "write");
+             read_only_ ? "read-only" : "write");
 
   return true;
 }

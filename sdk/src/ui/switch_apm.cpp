@@ -22,8 +22,8 @@
  *
  * The three rounds it took, and what each one taught
  *
- *   1. It applied the configuration and read the clocks on the next line. The log said "la
- *      memory_block se queda en 1331.2" and the session profile recorded 1600.0 in every sample. They
+ *   1. It applied the configuration and read the clocks on the next line. The log said "the
+ *      memory stays at 1331.2" and the session profile recorded 1600.0 in every sample. They
  *      did not contradict each other: it was checked too early. apm hands the change to pcv and
  *      the clocks are applied later, so the immediate read returned the old value. The same bug
  *      left dead a fix that only lowered the EMC by hand "if it is detected that it went up": it
@@ -101,7 +101,7 @@ constexpr int kMaxCorrectionsEmc = 3;
 /*
  * What is watched after requesting the configuration, before accepting anything.
  *
- * Waiting 250 ms was still not enough: the log said "la memory_block se queda en 1331.2 MHz (comprobado
+ * Waiting 250 ms was still not enough: the log said "the memory stays at 1331.2 MHz (checked
  * 250 ms after)" and one second later the watchdog already found it at 1600. So the raise takes
  * between 0.25 and ~1 s. Now it polls every 150 ms for 1.5 s, and a single read that sees it moved
  * is enough to reject the configuration. It only costs that second and a half when the candidate is
@@ -333,7 +333,7 @@ extern "C" void RexSwitchApmWatch(void) {
   if (!g_warning_emc.exchange(true)) {
     std::fprintf(stderr,
                  "[apm] the memory went up on its own to %.1f MHz (t=%d s): lowering it to %.1f with clkrst (%s)\n",
-                 double(emc) / 1e6, tic, double(emc0) / 1e6, drop ? "aceptado" : "RECHAZADO");
+                 double(emc) / 1e6, tic, double(emc0) / 1e6, drop ? "accepted" : "REJECTED");
   }
   if (!drop || n >= kMaxCorrectionsEmc) {
     g_given_up_emc.store(true, std::memory_order_relaxed);

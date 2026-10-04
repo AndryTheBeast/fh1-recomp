@@ -21,7 +21,7 @@ int main(int argc, char** argv) try {
   if (std::filesystem::exists(output)) throw std::runtime_error("the output already exists");
   std::filesystem::create_directories(output);
   std::ofstream index(output / "procedencia.tsv");
-  index << "file\torigen\tdesplazamiento\tvirtual\tfisico\n";
+  index << "file\tsource\toffset\tvirtual\tphysical\n";
   size_t total = 0;
   for (const auto& entry : std::filesystem::recursive_directory_iterator(argv[1])) {
     if (!entry.is_regular_file()) continue;

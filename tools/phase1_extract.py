@@ -30,7 +30,7 @@ XDVDFS_MAGIC = b"MICROSOFT*XBOX*MEDIA"
 
 # Known offsets where the game partition starts, by disc type.
 KNOWN_BASES = [
-    (0x00000000, "particion raw_value / image ya recortada"),
+    (0x00000000, "raw partition / already trimmed image"),
     (0x0FD90000, "XGD2 (most 360 games)"),
     (0x02080000, "XGD3 (titulos late)"),
     (0x18300000, "XGD1 (Xbox original)"),
@@ -385,7 +385,7 @@ def main():
                    help="target folder of the extraction (default: assets/game_root)")
     p.add_argument("--list", action="store_true",
                    help="only list the content, extract nothing")
-    p.add_argument("--solo-xex", action="store_true",
+    p.add_argument("--only-xex", action="store_true",
                    help="extract only default.xex (and the .xexp if there is one)")
     p.add_argument("--info", action="store_true",
                    help="the input is a .xex: dump its header and exit")
@@ -427,7 +427,7 @@ def main():
             return
 
         targets = entries
-        if args.solo_xex:
+        if args.only_xex:
             targets = [(r, e) for r, e in entries
                          if not e["dir"] and
                          (r.lower().endswith(".xex") or r.lower().endswith(".xexp"))]
