@@ -2279,7 +2279,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       constants_vs_swap_ = swaps_.load();
     }
     std::string values;
-    for (uint32_t k = 128; k < 164; k = k == 131 ? 156 : k + 1) {
+    for (uint32_t k = 32; k < 164; k = k == 39 ? 128 : k == 131 ? 156 : k + 1) {
       values += fmt::format(" c{}=(", k);
       for (uint32_t c = 0; c < 4; ++c) {
         float f;
@@ -2289,7 +2289,13 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       }
       values += ")";
     }
-    values += fmt::format(" t0={:08X}", Register(0x4800) & 0xFFFFF000u);
+    for (const SamplerShader& sm : vs_draw_->samplers) {
+      if (sm.reg_entry >= 32) continue;
+      const uint32_t base = rex::graphics::XE_GPU_REG_SHADER_CONSTANT_FETCH_00_0 + uint32_t(sm.reg_entry) * 6;
+      values += fmt::format(" vt{}={:08X}/f{}/{}x{}/type{}", sm.reg_entry, Register(base + 1) & 0xFFFFF000u,
+                            Register(base + 1) & 0x3F, (Register(base + 2) & 0x1FFF) + 1,
+                            ((Register(base + 2) >> 13) & 0x1FFF) + 1, Register(base) & 0x3);
+    }
     values += fmt::format(" count={}", Register(0x21FC) >> 16);
     for (uint32_t slot = 0; slot < 96; ++slot) {
       const uint32_t d0 = Register(0x4800 + slot * 2), d1 = Register(0x4800 + slot * 2 + 1);

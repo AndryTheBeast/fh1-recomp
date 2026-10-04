@@ -780,6 +780,10 @@ REXCVAR_DEFINE_INT32(fh1_native_test_point_mip_toggle_s, 0, "FH1",
  *
  * If geometry ever looks stuck or stretched, this is the first thing to disable.
  */
+REXCVAR_DEFINE_BOOL(fh1_native_vs_textures, true, "FH1",
+                    "Native renderer: textures fetched by the vertex shader are bound too (the final composite reads "
+                    "the adapted luminance there to choose the exposure). false = only the pixel shader's")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(fh1_native_exp_bias, true, "FH1",
                     "Native renderer: texture fetches are scaled by the console's exponent bias (the fetch constant's "
                     "exp_adjust plus the exp_bias of the resolve that made the picture). The game's FXAA reads the scene "
@@ -3022,12 +3026,37 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       context_->ReadsOfDepthDead(true);
     }
     bool reads_reflection = false;  // fh1_reflection_visibility
-    for (const SamplerShader& sampler :
-         ps ? std::span<const SamplerShader>(ps->samplers) : std::span<const SamplerShader>()) {
-      if (sampler.reg_entry >= 16) {
-        continue;
+    // FH1: the vertex shader's textures too. Its sampler register N (0-3, what its constant table lists and the
+    // shader's s<N> slot) is fetch constant 16 + N. The final composite's vertex shader reads the adapted luminance
+    // that way and picks the exposure with it; left unbound it read black and the picture came out too bright. A
+    // slot the pixel shader also uses stays the pixel shader's.
+    std::array<SamplerShader, 32> samplers_draw;
+    std::array<uint8_t, 32> samplers_fetch;
+    size_t samplers_draw_n = 0;
+    if (ps) {
+      for (const SamplerShader& sampler : ps->samplers) {
+        if (sampler.reg_entry < 16 && samplers_draw_n < samplers_draw.size()) {
+          samplers_fetch[samplers_draw_n] = uint8_t(sampler.reg_entry);
+          samplers_draw[samplers_draw_n++] = sampler;
+        }
       }
-      const uint32_t* fetch = r + kRegFetch + uint32_t(sampler.reg_entry) * 6;
+    }
+    if (vs_textures_) {
+      const size_t of_ps = samplers_draw_n;
+      for (const SamplerShader& sampler : p.vs->samplers) {
+        bool listed = sampler.reg_entry >= 16;
+        for (size_t i = 0; i < of_ps && !listed; ++i) {
+          listed = samplers_draw[i].reg_entry == sampler.reg_entry;
+        }
+        if (!listed && samplers_draw_n < samplers_draw.size()) {
+          samplers_fetch[samplers_draw_n] = uint8_t(sampler.reg_entry + 16);
+          samplers_draw[samplers_draw_n++] = sampler;
+        }
+      }
+    }
+    for (size_t sampler_i = 0; sampler_i < samplers_draw_n; ++sampler_i) {
+      const SamplerShader& sampler = samplers_draw[sampler_i];
+      const uint32_t* fetch = r + kRegFetch + uint32_t(samplers_fetch[sampler_i]) * 6;
       // fh1_reflection_visibility. Here and not in TextureResolved, which, because of the caches, only sees
       // the first draw of each frame that samples it. Without checking the dimension: over-counting only
       // means the reflection gets drawn.
@@ -5217,6 +5246,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     diag_vertices_repeated_ = REXCVAR_GET(fh1_native_diag_repeated_vertices);
     dedupe_active_ = REXCVAR_GET(fh1_native_dedupe_vertices);
     exp_bias_ = REXCVAR_GET(fh1_native_exp_bias);
+    vs_textures_ = REXCVAR_GET(fh1_native_vs_textures);
     vertices_base_zero_ = REXCVAR_GET(fh1_native_zero_based_vertices) && !vertices_base_zero_off_;
     diag_statistics_draw_ = REXCVAR_GET(fh1_native_per_draw_statistics_s) > 0;
     area_util_ = REXCVAR_GET(fh1_native_pass_useful_area);
@@ -13626,6 +13656,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     float exp_scale = 1.0f;  // FH1: 2^(the fetch constant's exp_adjust + the resolve's exp_bias)
   };
   bool exp_bias_ = true;              // fh1_native_exp_bias
+  bool vs_textures_ = true;           // fh1_native_vs_textures
   bool cache_between_frames_ = true;  // fh1_native_texture_cache_across_frames
   bool mipmaps_ = true;                 // fh1_native_mipmaps
   bool gamma_textures_ = true;          // fh1_native_gamma_textures
