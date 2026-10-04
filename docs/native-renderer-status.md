@@ -1,6 +1,6 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-04 (night).
+Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-04 (late night).
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
 GoatHonks' nfsc-recomp renderer; his later fixes are ported by hand when they work for FH1
@@ -22,40 +22,31 @@ for the correct picture.
 Compare `build_logs\reference\test-festX-*` (emulated, correct) with `test-a2m-*` (native, same seconds).
 `build_logs\reference\user-native-20261004-night.webp` is the user's own screenshot after the night's fixes.
 
-**The user's order for the next session (2026-10-04 night, "we're doing good"): A, then B. The numbered list
-after them keeps its order.**
-
-A. **Crowd animations.** The crowd is drawn but does not animate as on the emulated GPU (user). Not investigated.
-   Where to start: the crowd is VS n583 with PS n1809 (quad list, texture atlas 14DE8000, k_DXT1). The vertex shader
-   picks the atlas cell from `NumAlongNumDownWidthHeight`, `UVScaleSizeScale` and values derived from the vertex
-   index and the stored vertex; look for a time or frame constant among its inputs and log the vertex constants on
-   both renderers over a few seconds (`--fh1_native_diag_constants_*` only covers pixel constants today: add the
-   vertex ones). Also check `r0.x`: the vertex index the shader gets must be the guest's (0..count-1 within the
-   draw, plus the index offset), because the corner and the cell come from it. Guesses, not findings.
-B. **Over-sharp picture.** Everything looks harder than on the emulated GPU: light outlines on edges, crisp
-   textures, hard crowd cut-outs, stair-stepped shadow edges, no soft glow. Likely several causes together, to be
-   separated with the per-copy dumps (`frame_NN_*`) of both the native run and RenderDoc captures of the emulated
-   one: (1) the scene is drawn with one sample where the console uses 4x MSAA and resolves it; (2) the final
-   composite's blur / depth-of-field inputs (PS n716 reads 1DE5D000 and the velocity texture: check the 320x192
-   images are not empty or stale, as the velocity one was); (3) bloom missing (item 3 below); (4) the FXAA pass
-   (PS n2283) and its constants; (5) texture filtering and mip bias (LOD bias from the fetch constants, anisotropy).
-   Start by measuring: the same crop of both renderers enlarged with NEAREST.
+**Items A (crowd animations) and B (over-sharp picture) were done on 2026-10-04 late night**: see "What was fixed"
+below. What is left of B is items 4 and 5 of this list (one sample instead of 4x MSAA).
 
 1. **Driving has not been checked since the fixes of 2026-10-04 night.** The user drives by hand: ask for a short
    drive first. To look at: motion blur while moving (the velocity pass now gets real depth and stencil; the car's
    own stencil value, 21, picks its matrix), frame drops (185-230 ms frames were seen before), anything that
    flashes.
-2. **Evening look** (from ~90 s after launch, `test-a2m-*-95s.png` against `test-eveXenos-*-130s.png`): the car
-   turns green / chrome, strong white glare and light beams over the scene. Next: compare the car paint shader's
-   constants and textures day against evening; check the 2x MSAA reflection cube map (6 faces 256x256, drawn at one
-   sample, resolves not scaled) and the glare / light-beam draws (additive, they may need the depth they test).
-3. **Brightness and glow in daylight**: the native picture is brighter and more contrasted (sunlit dome, crowd,
-   car paint more metallic), and the tail lights have no red glow around them (bloom). Candidates: the bloom chain
-   (`frame_*_320x192` dumps), the gamma curve (sRGB is only close to the console's piecewise-linear one), the
-   reflection cube map again. Measure with brightness percentiles on the same second of both renderers.
-4. **Thin light outlines on edges** (car, tower, stage rigging) and **stair-stepped shadow edges** on the ground.
-   The scene is drawn with one sample where the console uses 4x MSAA; the game's FXAA pass (PS n2283) runs. Check
-   what the emulated picture does at the same pixels (crop enlarged with NEAREST) before changing anything.
+2. **Evening look** (from ~90 s after launch, `test-latenight-*-95s.png` against `test-festX-*-95s.png`): after
+   the late-night fixes the sky, the light beams and the crowd match the emulated picture. Left: **the car's rear
+   panel is flat bright green** (the emulated one is dark with reflections), and the tail lights have no red glow.
+   What is known: the same shaders draw the car day and evening (same PS list with the cube map 1C879000); the 1D
+   texture that appears at that moment (132D9000, k_16, 256 wide) is bound now and changed nothing; the shadow mask
+   (1CE2D000) at evening is red = sun shadow, green = 1 on everything but the sky, and its passes differ from the
+   day ones (PS n800 clouds, PS n56 with color mask 0xE, blend 00080008). Next: a RenderDoc capture of the emulated
+   GPU at the same second (`auto_test.ps1 -RenderDoc`) to compare the mask's green channel and the cube map faces.
+   The float images (scene, bloom chain, cube faces) are not written by `--fh1_dump_resolved_at_s` yet (8-bit
+   only): add that first.
+3. **Brightness and glow in daylight**: the big difference is fixed (exposure). The native picture is now a
+   little darker than the emulated one (median 33 against 38 at 58 s) and the tail lights still have no red glow
+   (bloom). Candidates: the console cuts the resolved scene at 4.0 (10 bits after exp_bias -2) and the float
+   texture does not, so the measured luminance can be higher and the exposure lower; the bloom chain (not dumped
+   yet, see item 2); the gamma curve (sRGB is only close to the console's piecewise-linear one).
+4. **Stair-stepped edges** (car silhouette, shadow edges on the ground): the bright outlines are gone (exponent
+   bias), what is left is the scene drawn with one sample where the console uses 4x MSAA. `--fh1_msaa_4x_as_1x`
+   style tricks do not help here: the scene needs real multisampled targets (or supersampling) and a resolve.
 5. **Crowd brighter than the emulated one** and with hard cut-out edges: alpha to mask is a plain "alpha >= 0.5"
    test here (`--fh1_native_alpha_to_mask`); the console dithers coverage over 4 samples.
 6. **Computed vertex index outside quad lists** (log cause 317): rejected. Billboards in quad lists work (each
@@ -99,6 +90,9 @@ B. **Over-sharp picture.** Everything looks harder than on the emulated GPU: lig
   `python tools\fh1_shader_name.py 1212` -> `build_logs\shaders\hlsl\<name>.hlsl` (read only the last ~60 lines).
 - `--fh1_native_diag_constants_ps=2520 --fh1_native_diag_constants_ms=0`: the pixel constants a shader gets
   (c0-c11, c32-c43, c132-c135).
+- `--fh1_native_diag_constants_vs=3064`: the same for a vertex shader (c32-c39, c128-c131, c156-c163), its textures
+  (`vtN`) and the start of its vertex streams (`vf89`-`vf95` are Direct3D streams 6-0).
+- `[fh1] computed index:` log lines: the draws rejected with cause 317 (shader numbers, first indices, each fetch).
 - `--fh1_debug_no_cull=true`: all face culling off (how the dropped rectangles were found).
 - The log's `(cause N)` lines: everything the renderer rejects or replaces, once per kind. `[fh1] rect-list draw`
   lines: the three corners of each kind of rectangle draw.
@@ -119,6 +113,40 @@ Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surfac
 target they clear (the same EDRAM, four samples per pixel drawn).
 
 ## What was fixed on 2026-10-04, and why (so the same causes are recognised again)
+
+Late night session (crowd animation, over-sharp picture, brightness). Compare `build_logs\reference\test-latenight-*`
+(native after) with `test-festX-*` (emulated) and `test-a2m-*` (native before):
+
+- **Crowd not animated (item A)**: the people who move are not the billboards (VS n583, static) but 3D characters
+  (VS n2944 / PS n640, and n653 in the depth pass; ~255 draws per frame). Their bones are a vertex stream fetched at
+  `bone index + AnimInfo.x` (a register the shader computed), two bones blended. Every such draw was rejected (cause
+  317: 185,000 in 20 s). Now the translator turns a declared fetch whose index register is not r0 into a read from
+  memory (`fh1FetchRanked` in `shader_common.h`); the renderer uploads the stream once per frame (found again by the
+  vertex dedupe) and writes its place, stride, offset and format in the shared constants (words 180-243, numbered by
+  the rank of the fetch instruction among the declared fetches). Fetches indexed by r0.y (billboards) are unchanged.
+- **Bright outlines on every edge (item B, the main cause)**: the game's FXAA (PS n2283, the Xbox 360 variant of
+  FXAA 3.11) reads the scene through three fetch constants that differ only in their **exponent bias** (exp_adjust
+  +2, +1, 0: the picture at 1, 1/2 and 1/4) and adds the samples. With the bias ignored, each edge pixel came out
+  2-4 times too bright. Fetches are now multiplied by `2^(exp_adjust of the fetch constant + exp_bias of the resolve
+  that made the picture)` (`<sampler>_ExpScale`, shared words 164-179; `--fh1_native_exp_bias`).
+- **Highlights cut at white (no glow, flat reflections)**: the scene target is a float image, but its resolved
+  texture was 8-bit, so everything above 1.0 was lost before the bloom, the FXAA and the composite. The console
+  keeps it by resolving with exp_bias -2 (scene) or -4 (cube map) into 10 bits. A float target resolved to a 32-bit
+  format now keeps a float resolved texture (`--fh1_native_resolved_hdr`); the cube map takes float faces; the three
+  scene strips find their float container (`FindResolvedContainer` takes the format).
+- **Picture about a third too bright**: the final composite's vertex shader (VS n3064) reads the adapted luminance
+  (1FCA6000, 32x32 k_32_FLOAT) and picks the exposure with it. Only pixel-shader textures were bound, so it read
+  black and took the low-light exposure. Vertex sampler N is fetch constant 16 + N and uses the shader's slot N
+  (`--fh1_native_vs_textures`).
+- 1D textures are bound as one-row 2D textures (the shader samples them at v = 0.5); float color images get a color
+  view (they had a depth one).
+- Measured on the festival at 58 s (brightness percentiles 5/25/50/75/95 of the picture, and mean horizontal
+  gradient = sharpness): emulated 5/16/38/90/123, gradient 1.53; native before 4/20/52/121/167, gradient 2.24; native
+  after 4/12/33/80/114, gradient 1.35. So it is now slightly darker and softer than the emulated picture (was much
+  brighter and harder).
+- After any change to `shaders/XenosRecomp` or `shader_common.h` every shader changes: `fh1_retranslate_changed.py
+  --apply` takes ~6 minutes for all 3,850, then repack and copy. **The library and fh1.exe must match** (the shared
+  constants block grew: `Fh1BlockShared v[61]` = `kUboBytesShared`).
 
 Night session (the 3D scene):
 

@@ -17,7 +17,7 @@ play, 26-28 in the busiest spots.
 | --- | --- | --- |
 | Emulated Xbox 360 GPU, D3D12 (default) | `run_fh1.bat` | correct, 30 fps; F3 frame monitor |
 | Emulated Xbox 360 GPU, Vulkan | `run_fh1.bat --gpu_backend=vulkan` | correct, 28-30 fps |
-| **Native renderer** (Vulkan, in progress) | `run_fh1.bat --fh1_renderer=native` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps; evening look and driving still to do |
+| **Native renderer** (Vulkan, in progress) | `run_fh1.bat --fh1_renderer=native` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps (animated crowd, soft edges, right exposure); evening car color, bloom and driving still to do |
 
 ## Stage 1 — Translate the game (done)
 
@@ -123,8 +123,12 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [x] Shadows in the scene (Direct3D's 4x clears)
   - [x] Crowd, trees and vegetation (billboards fetched with index / 4; packed positions)
   - [x] Crowd cut-outs (alpha to mask)
-  - [ ] **Next (user, 2026-10-04): crowd animations** (the crowd is drawn but does not animate)
-  - [ ] **Next (user, 2026-10-04): over-sharp picture** (hard edges and outlines, no softness)
+  - [x] Crowd animations (the moving people are 3D characters whose bones are fetched by a computed index: read
+        from memory by the shader)
+  - [x] Over-sharp picture: bright outlines on edges (texture exponent bias, used by the game's FXAA), highlights
+        cut at white (float resolved textures)
+  - [x] Picture a third too bright (vertex-shader textures: the composite's exposure)
+  - [x] 1D textures (bound as one-row 2D textures)
   - [ ] Driving check after these fixes (motion blur while moving, frame drops) — the user drives
   - [ ] Evening: green / chrome car, strong glare and light beams
   - [ ] Daylight brightness and contrast; glow around lights (bloom)

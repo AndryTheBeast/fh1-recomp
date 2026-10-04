@@ -24,8 +24,13 @@ nfsc-recomp stays a source of fixes, ported by hand when they work for FH1. To c
 
 - `ring_progress.cpp`, `compat/rex/frame_stats.h`, `compat/rex/ring_progress.h`: nfsc-recomp's SDK additions,
   kept here so our SDK stays as it is (gpu_timing removed).
-- `fh1_native_draws.cpp`: the shared-constant block is 164 words / 41 float4 (FH1's `g_GuestBase` and
-  `g_FetchAddress` at words 154-163, after Carbon's loop constants; zero for now, so `fh1Fetch` returns 0).
+- `fh1_native_draws.cpp`: the shared-constant block is 244 words / 61 float4: FH1's `g_GuestBase` and
+  `g_FetchAddress` at words 154-163 (after Carbon's loop constants), the exponent scale of each texture slot at
+  164-179 (`<sampler>_ExpScale`) and the ranked fetches at 180-243 (`fh1FetchRanked`: vertex fetches indexed by a
+  computed register, read by the shader from a copy of the stream; `StreamInCache`). Textures of the vertex shader
+  are bound (vertex sampler N = fetch constant 16 + N). 1D textures as one-row 2D textures.
+- `fh1_native_targets.cpp`: a float target resolved to a 32-bit format keeps a float resolved texture; each
+  resolved image remembers the resolve's exp_bias (`ImageNative::exp_bias`).
   Packed 10_11_11 vertex formats (`--fh1_vertices_10_11_11_mask`).
 - `fh1_native_shaders.cpp`: 2008 microcode located through the shader header; tolerant vertex shader pass
   (FH1's Direct3D patches fetch swizzles and nulls exports).

@@ -228,9 +228,11 @@ lists the actions and saves the render targets as PNG.
 (`--fh1_renderer=native`), taking from nfsc-recomp the fixes that work for FH1 instead of running his renderer
 as is; done the same day. Boot, videos, menus and loading screens were fixed on 2026-10-04 and checked by the
 user. The same night the 3D scene got its first fixes (smear, shadows, crowd and trees; the user also saw the
-giant polygon flashes gone). Next (user, 2026-10-04 night): **crowd animations, then the over-sharp picture**
-(items A and B of that document), then the rest of its open list (driving check by the user, evening look,
-daylight brightness / bloom). ROADMAP.md is the checklist of
+giant polygon flashes gone). Late that night, unattended: **crowd animations and the over-sharp picture were
+fixed** (animated people, FXAA outlines, HDR resolved textures, exposure; the user has not seen them yet: ask).
+Next: the rest of that document's open list (driving check by the user, the green car at evening, bloom, the
+slightly dark picture, 4x MSAA). The shader library and fh1.exe must be built from the same sources (the shared
+constants block changed size that night). ROADMAP.md is the checklist of
 everything done and still open (keep it that way: one line per item, `[x]` / `[ ]`, details in
 docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0-N5).
 

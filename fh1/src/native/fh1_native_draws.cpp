@@ -2239,6 +2239,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (s.buffer != VK_NULL_HANDLE) dfn_.vkDestroyBuffer(device_, s.buffer, nullptr);
       if (s.memory_block != VK_NULL_HANDLE) dfn_.vkFreeMemory(device_, s.memory_block, nullptr);
     }
+    if (streams_data_) dfn_.vkUnmapMemory(device_, streams_memory_);
+    if (streams_buffer_ != VK_NULL_HANDLE) dfn_.vkDestroyBuffer(device_, streams_buffer_, nullptr);
+    if (streams_memory_ != VK_NULL_HANDLE) dfn_.vkFreeMemory(device_, streams_memory_, nullptr);
     for (const BufferUpload& s : uploads_) {
       if (s.data) dfn_.vkUnmapMemory(device_, s.memory_block);
       if (s.buffer != VK_NULL_HANDLE) dfn_.vkDestroyBuffer(device_, s.buffer, nullptr);
@@ -2870,6 +2873,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       uint32_t bytes = 0;
       uint64_t address = 0;
       uint32_t rank = 0;
+      uint32_t cached = 0;  // offset in the streams buffer (StreamInCache)
     };
     std::array<SourceMemory, 32> sources_memory{};
     size_t sources_memory_n = 0;
@@ -2891,7 +2895,18 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       sources_memory[sources_memory_n++] = {memory_->TranslatePhysical(uint32_t(address)),
                                             static_cast<xenos::Endian>(d1 & 0x3), uint32_t(available), address,
                                             m.rank};
-      bytes_vertices += available + 16;
+    }
+    // Kept across frames in a buffer of their own when they fit (the bones of the festival people are 2.4 MB that
+    // never change); otherwise copied to the upload buffer like any vertices.
+    bool streams_cached = sources_memory_n != 0;
+    for (size_t i = 0; i < sources_memory_n && streams_cached; ++i) {
+      SourceMemory& source = sources_memory[i];
+      streams_cached = StreamInCache(source.data, source.bytes, source.address, source.order, source.cached);
+    }
+    if (!streams_cached) {
+      for (size_t i = 0; i < sources_memory_n; ++i) {
+        bytes_vertices += sources_memory[i].bytes + 16;
+      }
     }
 
     {  // FH1 diagnostic: the first packed k_10_11_11 inputs, their fetch fields and first three vertices
@@ -3350,6 +3365,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     for (size_t i = 0; i < sources_memory_n; ++i) {
       const SourceMemory& source = sources_memory[i];
+      if (streams_cached) {
+        const uint64_t base = streams_address_;
+        std::memcpy(shared + 154, &base, sizeof(base));
+        shared[kWordFetchRankAddress + source.rank] = source.cached;
+        continue;
+      }
       VkDeviceSize offset;
       if (!(dedupe_active_ && dedupe_.Find(source.address, source.bytes, uint32_t(source.order), offset))) {
         if (upload_used_ < 16) {
@@ -8309,6 +8330,92 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                 kSharedConstantsSize >> 20);
   }
 
+  // FH1: vertex streams the shaders read from memory (EntryVertices::fetches_memory), kept across frames: copied
+  // once, in host byte order, and copied again (to a new place) only when the guest bytes change. offset = where
+  // the stream is in the buffer whose device address is streams_address_. false = no room or no buffer: the caller
+  // uses the upload buffer.
+  bool StreamInCache(const uint8_t* data, uint32_t bytes, uint64_t address, xenos::Endian order, uint32_t& offset) {
+    // Small streams are the game's per-frame ones (a new address or new bytes every frame: 1,800 of them in a
+    // minute of festival): they would only fill the buffer, and copying them is cheap.
+    if (streams_failed_ || bytes < 65536) {
+      return false;
+    }
+    if (streams_buffer_ == VK_NULL_HANDLE && !CreateBufferStreams()) {
+      streams_failed_ = true;
+      REXLOG_WARN("[native] C6: no buffer for the streams read by shaders: they go in the upload buffer");
+      return false;
+    }
+    StreamCached& e = streams_[(address << 26) ^ (uint64_t(bytes) << 2) ^ uint64_t(order)];
+    if (e.offset && e.frame == frame_) {
+      offset = e.offset;
+      return true;
+    }
+    const uint64_t fingerprint = XXH3_64bits(data, bytes);
+    if (e.offset && e.fingerprint == fingerprint) {
+      e.frame = frame_;
+      offset = e.offset;
+      return true;
+    }
+    const VkDeviceSize start = (streams_used_ + 15) & ~VkDeviceSize(15);
+    if (start + bytes > kSizeStreams) {
+      return false;
+    }
+    CopyVertices(WorkCopy{data, streams_data_ + start, bytes / 4, order});
+    streams_used_ = start + bytes;
+    if (!streams_coherent_) {
+      rex::ui::vulkan::util::FlushMappedMemoryRange(vulkan_device_, streams_memory_, streams_type_, 0,
+                                                    streams_size_real_, streams_used_);
+    }
+    REXLOG_INFO("[fh1] stream read by shaders {:08X} ({} bytes) kept at {} of the streams buffer ({} KB used)",
+                address, bytes, start, streams_used_ >> 10);
+    e.fingerprint = fingerprint;
+    e.offset = uint32_t(start);
+    e.frame = frame_;
+    offset = e.offset;
+    return true;
+  }
+
+  bool CreateBufferStreams() {
+    VkBufferCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    info.size = kSizeStreams;
+    info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (dfn_.vkCreateBuffer(device_, &info, nullptr, &streams_buffer_) != VK_SUCCESS) {
+      streams_buffer_ = VK_NULL_HANDLE;
+      return false;
+    }
+    VkMemoryRequirements requirements;
+    dfn_.vkGetBufferMemoryRequirements(device_, streams_buffer_, &requirements);
+    streams_type_ = rex::ui::vulkan::util::ChooseMemoryType(vulkan_device_->memory_types(), requirements.memoryTypeBits,
+                                                            rex::ui::vulkan::util::MemoryPurpose::kUpload);
+    if (streams_type_ == UINT32_MAX) {
+      return false;
+    }
+    streams_coherent_ = (vulkan_device_->memory_types().host_coherent >> streams_type_) & 0x1;
+    VkMemoryAllocateFlagsInfo flags{};
+    flags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+    VkMemoryAllocateInfo reserve{};
+    reserve.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    reserve.pNext = &flags;
+    reserve.allocationSize = requirements.size;
+    reserve.memoryTypeIndex = streams_type_;
+    void* mapped = nullptr;
+    if (dfn_.vkAllocateMemory(device_, &reserve, nullptr, &streams_memory_) != VK_SUCCESS ||
+        dfn_.vkBindBufferMemory(device_, streams_buffer_, streams_memory_, 0) != VK_SUCCESS ||
+        dfn_.vkMapMemory(device_, streams_memory_, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS) {
+      return false;
+    }
+    streams_size_real_ = requirements.size;
+    streams_data_ = static_cast<uint8_t*>(mapped);
+    VkBufferDeviceAddressInfo address{};
+    address.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    address.buffer = streams_buffer_;
+    streams_address_ = address_buffer_(device_, &address);
+    return streams_address_ != 0;
+  }
+
   bool CreateBufferUpload() {
     VkBufferCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -8962,9 +9069,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const uint32_t dimension = (f[5] >> 9) & 0x3;
     const bool cube = dimension == uint32_t(xenos::DataDimension::kCube);
     const bool volume = dimension == uint32_t(xenos::DataDimension::k3D);
-    if (dimension != uint32_t(xenos::DataDimension::k2DOrStacked) && !cube && !volume) {
-      Notify(30, "1D textures not supported yet: an empty one is used");
-      return;
+    // FH1: a 1D texture is one row; the shader samples it as a 2D texture at v = 0.5 (tfetch1D).
+    const bool one_d = dimension != uint32_t(xenos::DataDimension::k2DOrStacked) && !cube && !volume;
+    if (one_d && warnings_1d_ < 8) {
+      ++warnings_1d_;
+      REXLOG_INFO("[fh1] 1D texture {:08X} format {} width {} (fetch {:08X} {:08X} {:08X} {:08X} {:08X} {:08X})",
+                  (f[1] >> 12) << 12, f[1] & 0x3F, (f[2] & 0xFFFFFF) + 1, f[0], f[1], f[2], f[3], f[4], f[5]);
     }
     heap = cube ? 2 : volume ? 1 : 0;
     const uint32_t layers = cube ? 6 : 1;
@@ -9052,8 +9162,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       return;  // NFSC debug: compressed textures are replaced by the empty stand-in
     }
     // size_2d: 13 + 13 bits; size_3d: 11 + 11 + 10 bits (xenos.h:1222-1233).
-    const uint32_t width = volume ? (f[2] & 0x7FF) + 1 : (f[2] & 0x1FFF) + 1;
-    const uint32_t height = volume ? ((f[2] >> 11) & 0x7FF) + 1 : ((f[2] >> 13) & 0x1FFF) + 1;
+    const uint32_t width = volume ? (f[2] & 0x7FF) + 1 : one_d ? (f[2] & 0xFFFFFF) + 1 : (f[2] & 0x1FFF) + 1;
+    const uint32_t height = volume ? ((f[2] >> 11) & 0x7FF) + 1 : one_d ? 1 : ((f[2] >> 13) & 0x1FFF) + 1;
+    if (one_d && width > 8192) {
+      Notify(30, "1D texture wider than 8192: an empty one is used");
+      return;
+    }
     const uint32_t background = volume ? ((f[2] >> 22) & 0x3FF) + 1 : 0;
     if (volume && tf.block > 1) {
       Notify(38, "compressed 3D texture: an empty one is used");
@@ -9079,10 +9193,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const uint64_t dir_base = uint64_t(base) & 0x1FFFFFFF;
     const uint64_t dir_mips = uint64_t((f[5] >> 12) & 0x1FFFF) << 12;
     const uint32_t level_packed =
-        mipmaps_ && !volume && ((f[5] >> 11) & 0x1) ? LevelPacked(width, height) : UINT32_MAX;
+        mipmaps_ && !volume && !one_d && ((f[5] >> 11) & 0x1) ? LevelPacked(width, height) : UINT32_MAX;
     uint32_t level_max = 0;
     bool read_base = true;
-    if (mipmaps_ && !volume && dir_mips != 0) {
+    if (mipmaps_ && !volume && !one_d && dir_mips != 0) {
       const uint32_t tam_max = Log2Floor(std::max(width, height));
       uint32_t level_min = std::min((f[4] >> 2) & 0xFu, tam_max);
       level_max = std::max(std::min((f[4] >> 6) & 0xFu, tam_max), level_min);
@@ -13655,6 +13769,24 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     uint32_t height = 0;
     float exp_scale = 1.0f;  // FH1: 2^(the fetch constant's exp_adjust + the resolve's exp_bias)
   };
+  uint32_t warnings_1d_ = 0;
+  // FH1: StreamInCache.
+  static constexpr VkDeviceSize kSizeStreams = VkDeviceSize(32) << 20;
+  struct StreamCached {
+    uint64_t fingerprint = 0;
+    uint32_t offset = 0;  // 0 = not in the buffer
+    uint64_t frame = UINT64_MAX;  // last frame_ its guest bytes were compared
+  };
+  std::unordered_map<uint64_t, StreamCached> streams_;
+  VkBuffer streams_buffer_ = VK_NULL_HANDLE;
+  VkDeviceMemory streams_memory_ = VK_NULL_HANDLE;
+  VkDeviceSize streams_size_real_ = 0;
+  VkDeviceSize streams_used_ = 16;  // offsets under 4 mean "no stream" to the shader
+  uint8_t* streams_data_ = nullptr;
+  VkDeviceAddress streams_address_ = 0;
+  uint32_t streams_type_ = UINT32_MAX;
+  bool streams_coherent_ = true;
+  bool streams_failed_ = false;
   bool exp_bias_ = true;              // fh1_native_exp_bias
   bool vs_textures_ = true;           // fh1_native_vs_textures
   bool cache_between_frames_ = true;  // fh1_native_texture_cache_across_frames
