@@ -64,6 +64,21 @@ Done the same evening (commits 06ccc15 and the one after):
 - Diagnostics: one-frame trace up to 20,000 lines; trace lines show each texture's sign bits and exp adjust;
   `--fh1_native_diag_constants_ps` also logs the boolean registers.
 
+Grey tint, second round (2026-10-04 late, user: "only the Dolby intro has deep blacks"):
+- The intro videos are not a renderer problem. Their files hold those levels (read with PyAV, `pip install av`):
+  Dolby background Y=16 (video black), Playground Y=19-20, Turn 10 Y=29. After the game's range expansion that is
+  0, 4 and 14-15 on screen, and native and the emulated GPU both show exactly that (tools: auto_test shots at the
+  same seconds on both renderers + percentiles of the picture area).
+- The real tint was in menus, loading screens and the festival: darkest tones 20 (emulated: 4), mid tones 112
+  (emulated: 40). Cause: textures fetched with the gamma sign (signs 3F: most of the world and the HUD) were read
+  raw. They now get the host's sRGB formats (`--fh1_native_gamma_textures`, default on; fh1_native_draws.cpp,
+  PrepareTexture). After: darkest tones 4, mid tones 64, loading screens show their picture.
+- Still open on this subject: (a) the console's curve is piecewise-linear, sRGB is only close; (b) resolved
+  textures fetched with the gamma sign and writes to k_8_8_8_8_GAMMA targets are still raw (they cancel for the
+  videos; doing one without the other would break the videos); (c) the festival is still brighter than the
+  emulated picture (mid tones 64 vs 40), mixed with the smear / speckle glitches below, so re-measure after
+  those; (d) loading screens: the dark / white boxes behind the text are missing on native.
+
 Known but not done:
 - Loading screens and menus: text on black now (not white). The emulated GPU may show a video or picture behind
   them: compare a loading screen and the pause/main menus on both renderers before calling this item finished.

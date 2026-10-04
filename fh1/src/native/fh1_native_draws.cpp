@@ -1098,6 +1098,9 @@ REXCVAR_DEFINE_STRING(fh1_debug_only_ps, "", "FH1",
 REXCVAR_DEFINE_BOOL(fh1_debug_no_depth, false, "FH1",
                     "Debug: the depth test and depth writes are switched off for every draw")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(fh1_native_gamma_textures, true, "FH1",
+                    "Textures fetched with the gamma sign are converted to linear when sampled (host sRGB formats)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(fh1_debug_no_dxt, false, "FH1",
                     "Debug: every block-compressed (DXT) texture is replaced by the empty stand-in texture")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
@@ -8279,6 +8282,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     REXLOG_INFO("[native] C6: texture caches across frames (fh1_native_texture_cache_across_frames) = {}",
                 cache_between_frames_ ? "SI" : "no");
     mipmaps_ = REXCVAR_GET(fh1_native_mipmaps);
+    gamma_textures_ = REXCVAR_GET(fh1_native_gamma_textures);
+    REXLOG_INFO("[native] C3: gamma textures read as sRGB (fh1_native_gamma_textures) = {}",
+                gamma_textures_ ? "yes" : "no");
     REXLOG_INFO("[native] C3: texture mip levels (fh1_native_mipmaps) = {}", mipmaps_ ? "SI" : "no");
     textures_mb_max_ = REXCVAR_GET(fh1_native_texture_mb_max);
     test_without_memory_every_ = REXCVAR_GET(fh1_native_test_out_of_memory_every);
@@ -8708,7 +8714,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     heap = cube ? 2 : volume ? 1 : 0;
     const uint32_t layers = cube ? 6 : 1;
-    if ((f[0] >> 2) & 0xFF) {
+    if (const uint32_t signs = (f[0] >> 2) & 0xFF; signs && !(gamma_textures_ && signs == 0x3F)) {
       Notify(31, "signed or gamma textures: read as unsigned");
     }
     const uint32_t swizzle = (f[3] >> 1) & 0xFFF;
@@ -8757,6 +8763,20 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (!FormatTextureOf(format, tf)) {
       Notify(400 + format, "texture format not supported yet: an empty one is used");
       return;
+    }
+    // FH1: a texture whose red, green and blue are fetched with the gamma sign (3) holds gamma-encoded color and the
+    // console converts it to linear when sampling. Read raw, every such texture (most of the world and the HUD) came
+    // out too bright and the whole picture looked washed out. The host's sRGB formats do that conversion (the
+    // console's curve is piecewise-linear, close to sRGB). The signs are part of the texture key, so the same
+    // memory fetched without them keeps its own plain image.
+    if (gamma_textures_ && ((f[0] >> 2) & 0x3F) == 0x3F) {
+      switch (tf.format) {
+        case VK_FORMAT_R8G8B8A8_UNORM: tf.format = VK_FORMAT_R8G8B8A8_SRGB; break;
+        case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: tf.format = VK_FORMAT_BC1_RGBA_SRGB_BLOCK; break;
+        case VK_FORMAT_BC2_UNORM_BLOCK: tf.format = VK_FORMAT_BC2_SRGB_BLOCK; break;
+        case VK_FORMAT_BC3_UNORM_BLOCK: tf.format = VK_FORMAT_BC3_SRGB_BLOCK; break;
+        default: Notify(41, "gamma texture in a format without an sRGB twin: read raw"); break;
+      }
     }
     if (REXCVAR_GET(fh1_debug_no_dxt) && tf.block > 1) {
       return;  // NFSC debug: compressed textures are replaced by the empty stand-in
@@ -13346,6 +13366,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   };
   bool cache_between_frames_ = true;  // fh1_native_texture_cache_across_frames
   bool mipmaps_ = true;                 // fh1_native_mipmaps
+  bool gamma_textures_ = true;          // fh1_native_gamma_textures
   bool diag_mips_ = false;              // fh1_native_diag_mips
   uint64_t mips_reviewed_ = 0;
   uint64_t mips_rare_ = 0;
