@@ -1,7 +1,7 @@
 # Handoff (2026-10-04): where the native renderer stands, and the next task (English names)
 
 ## DONE 2026-10-04: English names
-The rename below was done on 2026-10-04 (branch `english-rename`). What changed for daily use:
+The rename below was done on 2026-10-04. What changed for daily use:
 - Native renderer: `--nfsc_renderer=native` (was `--nfsmw_renderizador=nativo`); the shader library next to
   fh1.exe is `nfsc_shaders.nfsp`. Files are `fh1/src/native/nfsc_*` with the same names as nfsc-recomp.
 - `fh1_msaa_4x_as_1x`, `fh1_vertices_10_11_11_mask`; SDK settings follow nfsc-recomp (`nfsc_io_*`, `audio_dump_*`...).
