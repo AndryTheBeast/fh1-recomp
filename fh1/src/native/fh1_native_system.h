@@ -2,7 +2,7 @@
 //
 // With fh1_renderer = "native", OnPreSetup puts this system in
 // config.graphics and the Xenos emulation plugin is not loaded. Details are
-// in docs/native-renderer.md.
+// in docs/nfsmw-nx/native-renderer.md.
 
 #pragma once
 

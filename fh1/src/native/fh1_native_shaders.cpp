@@ -24,7 +24,7 @@
  * xxHash reads with memcpy (XXH_FORCE_MEMORY_ACCESS 0). With the method it picks for GCC (1) it reads through
  * 64- and 32-bit pointers without may_alias, and GCC may move that read ahead of the store of the data being
  * hashed (strict aliasing). With that, the texture key read keys[4] before writing it and the same texture was
- * created several times (see docs/toolchain.md). Same fingerprint values; on AArch64, the same LDR.
+ * created several times (see docs/nfsmw-nx/toolchain.md). Same fingerprint values; on AArch64, the same LDR.
  */
 #if defined(XXH_IMPLEM_13a8737387)
 #error "xxhash.h was already included with its implementation before this point: XXH_FORCE_MEMORY_ACCESS 0 would "
@@ -100,7 +100,7 @@ bool NameIs(const Container& c, size_t position, const char* name) {
 // Reads what is needed from the 2005 container, which is not the one in XenosRecomp
 // shader.h (that is the 2008 one): 24-byte header with signature, virtual part,
 // physical part, definitions (+12), CTAB (+16) and shader header (+20). The
-// microcode is the whole physical part. Reference: docs/shaders.md and
+// microcode is the whole physical part. Reference: docs/nfsmw-nx/shaders.md and
 // shaders/fh1_container_2005.h (Convert2005). Returns the reason if it cannot be
 // read.
 // NFSC: Carbon's Direct3D also REORDERS the vertex fetches of a vertex shader. For identification the fetch

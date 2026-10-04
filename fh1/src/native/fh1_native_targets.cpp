@@ -2126,7 +2126,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
          */
         if (ms > double(REXCVAR_GET(fh1_hitch_ms)) && warnings_hitch_ < 1000) {
           ++warnings_hitch_;
-          /* gpu_ns_ are raw GPU timestamps: multiply by 1.627 to get real milliseconds (see nfsc-nx docs/measuring.md). */
+          /* gpu_ns_ are raw GPU timestamps: multiply by 1.627 to get real milliseconds (see nfsc-nx docs/nfsmw-nx/measuring.md). */
           const double gpu_ms = double(gpu_ns_ - hitch_gpu_ns_) / 1e6 * 1.627;
           // The three [hitch] lines go to the report thread (FH1_REPORT_RING).
           FH1_REPORT_RING(

@@ -90,7 +90,7 @@ REXCVAR_DEFINE_BOOL(host_present_ignore_implicit_vsync, true, "UI/Presenter",
  * Not deleted: the mechanism works, it is measured and the switch is still there. It would only pay off
  * if presenting cost the recording thread nothing, and that needs a separate Vulkan queue, not another
  * priority tweak (the priority is already applied: "accepted by the kernel"). The device has a single
- * queue (see docs/platform-notes.md, Presentation).
+ * queue (see docs/nfsmw-nx/platform-notes.md, Presentation).
  */
 REXCVAR_DEFINE_BOOL(present_own_thread, REX_PRESENT_THREAD_OWN_DEFAULT, "UI/Presenter",
                     "Present on the presenter's own thread instead of inside the thread that produces the image. "
@@ -138,7 +138,7 @@ REXCVAR_DEFINE_INT32(present_thread_grace_frames, 3000, "UI/Presenter",
  *   - Above the guests (0x3B). 0x3B would not work: the game threads busy-wait and would starve it.
  *   - Above the ring, which runs at 0x2D. On Horizon only 0x3B is time-sliced and the other bands are
  *     cooperative, so a presenter at the same priority as the ring only runs when the ring blocks, and
- *     it starved (see docs/platform-notes.md, Threads). The thread spends almost all its time blocked
+ *     it starved (see docs/nfsmw-nx/platform-notes.md, Threads). The thread spends almost all its time blocked
  *     on fences, not using CPU.
  */
 REXCVAR_DEFINE_INT32(present_thread_priority, 0x2C, "UI/Presenter",
@@ -1708,7 +1708,7 @@ void Presenter::ShutdownPaintThread() {
     paint_thread_shutdown_ = true;
     paint_thread_free_.notify_all();  // nobody may be left waiting when it stops
     // Always signal with the lock held: deciding to sleep and signaling without the lock is what
-    // hung the vertex copy thread (see docs/platform-notes.md, Threads).
+    // hung the vertex copy thread (see docs/nfsmw-nx/platform-notes.md, Threads).
     paint_thread_signal_.notify_all();
   }
   rex::thread::Wait(paint_thread_.get(), false);
@@ -1911,7 +1911,7 @@ void Presenter::PaintThreadMain() {
       paint_thread_pending_ = false;
       ++paint_thread_painted_;
       // And signal the game thread in case it was waiting for us to take this one. Inside the lock, as
-      // the lost wake-up rule requires (see docs/platform-notes.md, Threads).
+      // the lost wake-up rule requires (see docs/nfsmw-nx/platform-notes.md, Threads).
       paint_thread_free_.notify_one();
     }
     PaintFromPaintThread();

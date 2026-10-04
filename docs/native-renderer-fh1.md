@@ -2,7 +2,7 @@
 
 Decision (user, 2026-10-02): stop polishing the emulated Xbox 360 GPU and build a native renderer
 the way nfsmw-nx did for Need for Speed Most Wanted (its app was in `reference/nfsmw-app/` until 2026-10-04, see git history; its
-design in `docs/native-renderer.md` and `docs/shaders.md`). Fix bugs once it draws.
+design in `docs/nfsmw-nx/native-renderer.md` and `docs/nfsmw-nx/shaders.md`). Fix bugs once it draws.
 
 ## What nfsmw-nx built (and what FH1 can reuse)
 
@@ -29,7 +29,7 @@ the addresses in the system part.
   tone map. Readbacks the CPU needs: auto exposure, car photos.
 - **EDRAM tricks the game relies on**: the 4x-at-pitch-P = 1x-at-pitch-2P alias (depth and
   colour), and 16 kinds of data handed between render targets through EDRAM while driving
-  (`docs/native-render-targets.md`). Natively these become explicit image-to-image copies or
+  (`docs/history/native-render-targets.md`). Natively these become explicit image-to-image copies or
   shared images.
 
 ## Phases
@@ -58,7 +58,7 @@ the addresses in the system part.
   uniform buffer, pipeline cache and prewarm, texture fingerprints, no busy waits).
 
 The emulated GPU (D3D12 default, Vulkan) stays as the playable path until the native one
-matches it. The experiments in `docs/native-render-targets.md` (transfer skipping, tall main
+matches it. The experiments in `docs/history/native-render-targets.md` (transfer skipping, tall main
 pass) stay off by default and are paused.
 
 ## Progress

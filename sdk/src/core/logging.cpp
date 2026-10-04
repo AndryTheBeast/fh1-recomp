@@ -98,7 +98,7 @@ REXCVAR_DEFINE_INT32(log_max_files, 20, "Log", "Max number of rotated log files 
  *   2. The spdlog pool thread inherits the priority of the thread that creates it, and on Horizon
  *      only priority 0x3B is time-sliced: with 3 cores busy with audio (0x2B), presentation
  *      (0x2C) and the ring (0x2D), that thread may almost never run. Queue full -> every REXLOG
- *      call blocks. See docs/platform-notes.md (Threads).
+ *      call blocks. See docs/nfsmw-nx/platform-notes.md (Threads).
  * ================================================================================================
  */
 REXCVAR_DEFINE_BOOL(log_async, false, "Log",

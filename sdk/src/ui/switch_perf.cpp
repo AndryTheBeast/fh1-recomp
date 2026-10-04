@@ -27,7 +27,7 @@
  * time the calling thread spends inside: fences (zero-timeout queries and waits), submission
  * kickoffs, new NvMaps (with and without CPU cache), GPU addresses and mappings, armDCacheClean, the
  * window queue and svcSleepThread. Every fence query is at least one ioctl even when the GPU has
- * already finished (see docs/platform-notes.md), so the count per second is needed before changing
+ * already finished (see docs/nfsmw-nx/platform-notes.md), so the count per second is needed before changing
  * anything.
  *
  * Careful with the pause: while a thread is paused nothing is done that could take a lock (no

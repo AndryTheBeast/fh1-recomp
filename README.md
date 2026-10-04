@@ -17,14 +17,15 @@ Switch-side problems (memory, threads, Vulkan on NVK, shader pre-translation).
 
 ## Status
 
-**Milestone (September 2026): playable on PC at full speed.** From a new game through the intro, the
-festival, loading a save and a complete race, with no crashes, at a steady **30 fps** (the game's own frame
-cap on the Xbox 360) with a correct picture. Rendering still goes through ReXGlue's Xenos GPU emulation
-(Direct3D 12); a native renderer comes later.
+**Playable on PC at full speed (since September 2026).** From a new game through the intro, the festival,
+loading a save, races, the garage and the paint shop, with no crashes, at a steady **30 fps** (the game's own
+frame cap on the Xbox 360) with a correct picture. This default path draws through ReXGlue's emulation of the
+Xbox 360 GPU (Direct3D 12, or Vulkan with `--gpu_backend=vulkan`).
 
-Car-to-car and car-to-object collisions work (October 2026: the Xbox's `vmsum3fp128` dot product returns
-NaN on float overflow, and the game's collision code depends on it). Still being fixed: the HUD sometimes
-flashes, and a few graphics details. Details and history in [ROADMAP.md](ROADMAP.md).
+**In progress (October 2026): a native Vulkan renderer** (`--fh1_renderer=native`) that draws the game
+directly, without emulating the Xbox 360 GPU; it is what the Switch port will need. Boot, videos, menus and
+loading screens already match the emulated picture; the 3D scene runs at 30 fps but still has picture glitches.
+Plan in [ROADMAP.md](ROADMAP.md), details in [docs/native-renderer-status.md](docs/native-renderer-status.md).
 
 ### Test hardware
 
@@ -41,13 +42,13 @@ APU: Zen 4 CPU and an RDNA 3 integrated GPU, running Windows 11.
 
 | Folder | Contents |
 | --- | --- |
-| `fh1/` | The Forza Horizon project: manifest, overrides, app sources (in progress) |
+| `fh1/` | The Forza Horizon project: manifest, overrides, app sources; `fh1/src/native/` is the native renderer |
 | `sdk/` | ReXGlue SDK with nfsmw-nx's Horizon (Switch) layer and codegen changes |
 | `shaders/` | XenosRecomp with nfsmw-nx's changes, and the shader library tools |
 | `mesa/` | Patch for mesa-switch (NVK on the Switch) |
 | `tools/` | Code generation, gap-finding and build scripts |
-| `docs/` | nfsmw-nx's documentation. Start with `docs/porting-another-game.md` |
-| `reference/` | nfsmw-nx's game-specific app, kept as a worked example (native renderer, hooks, audio) |
+| `docs/` | This project's documents ([index](docs/README.md)); nfsmw-nx's documentation is in `docs/nfsmw-nx/` |
+| `reference/` | Leftovers of nfsmw-nx kept for the Switch port (its README, profile data) |
 
 ## Building on Windows
 

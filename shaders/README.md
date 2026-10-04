@@ -2,16 +2,16 @@
 
 This folder has the shader translator and the tools around it. Look here to rebuild the shader library, or to find
 the code of one step of the translation. How the translation works, and why, is in
-[docs/shaders.md](../docs/shaders.md). The command to rebuild the library on a PC is in step 7 of
-[docs/building.md](../docs/building.md).
+[docs/nfsmw-nx/shaders.md](../docs/nfsmw-nx/shaders.md). The command to rebuild the library on a PC is in step 7 of
+[docs/nfsmw-nx/building.md](../docs/nfsmw-nx/building.md).
 
-The game's [shaders](../docs/glossary.md#shader) (the small programs the GPU runs) are Xbox 360
-([Xenos](../docs/glossary.md#xenos)) [microcode](../docs/glossary.md#microcode). They are stored in containers (the
+The game's [shaders](../docs/nfsmw-nx/glossary.md#shader) (the small programs the GPU runs) are Xbox 360
+([Xenos](../docs/nfsmw-nx/glossary.md#xenos)) [microcode](../docs/nfsmw-nx/glossary.md#microcode). They are stored in containers (the
 files that hold them) inside the disc files and the executable. They are translated ahead of time into a
-[SPIR-V](../docs/glossary.md#spir-v) library, `nfsmw_shaders.nfsp` (the
-[shader library](../docs/glossary.md#shader-library)), which the renderer loads at startup. The steps are: find the
-containers, translate the microcode to [HLSL](../docs/glossary.md#hlsl), compile the HLSL to SPIR-V with
-[DXC](../docs/glossary.md#dxc), and pack the result into the library.
+[SPIR-V](../docs/nfsmw-nx/glossary.md#spir-v) library, `nfsmw_shaders.nfsp` (the
+[shader library](../docs/nfsmw-nx/glossary.md#shader-library)), which the renderer loads at startup. The steps are: find the
+containers, translate the microcode to [HLSL](../docs/nfsmw-nx/glossary.md#hlsl), compile the HLSL to SPIR-V with
+[DXC](../docs/nfsmw-nx/glossary.md#dxc), and pack the result into the library.
 
 | File | What it does |
 |---|---|

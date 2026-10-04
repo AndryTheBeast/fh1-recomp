@@ -27,7 +27,7 @@
 //   fh1_native_targets.cpp does the copies (resolve and clear) and presents
 //   the resolved texture of each Swap, fh1_native_shaders.cpp identifies the
 //   shaders that reach the ring, and fh1_native_draws.cpp draws the
-//   geometry. See docs/native-renderer.md.
+//   geometry. See docs/nfsmw-nx/native-renderer.md.
 
 #include "fh1_native_system.h"
 
@@ -86,7 +86,7 @@
  * xxHash reads with memcpy (XXH_FORCE_MEMORY_ACCESS 0). With the method it picks for GCC (1) it reads through
  * 64- and 32-bit pointers without may_alias, and GCC may move that read ahead of the store of the data being
  * hashed (strict aliasing). With that, the texture key read keys[4] before writing it and the same texture was
- * created several times (see docs/toolchain.md). Same fingerprint values; on AArch64, the same LDR.
+ * created several times (see docs/nfsmw-nx/toolchain.md). Same fingerprint values; on AArch64, the same LDR.
  */
 #if defined(XXH_IMPLEM_13a8737387)
 #error "xxhash.h was already included with its implementation before this point: XXH_FORCE_MEMORY_ACCESS 0 would "
@@ -361,7 +361,7 @@ REXCVAR_DEFINE_INT32(fh1_native_ring_core, 1, "FH1",
  *
  * Off by default: fixing a mask can leave a thread unable to run (unlike the preferred core), and measured on
  * the console, pinning the ring to one core made the peaks worse: the minimum dropped to 16.3 FPS against about
- * 21 without pinning (see nfsc-nx docs/platform-notes.md, Threads). The A/B is done from the toml without recompiling,
+ * 21 without pinning (see nfsc-nx docs/nfsmw-nx/platform-notes.md, Threads). The A/B is done from the toml without recompiling,
  * and the log says whether migrations drop to zero.
  */
 REXCVAR_DEFINE_BOOL(fh1_native_ring_core_exclusive, false, "FH1",
@@ -3372,7 +3372,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   }
 
   /*
-   * Phase 1 of the Direct3D-level renderer (docs/native-renderer.md).
+   * Phase 1 of the Direct3D-level renderer (docs/nfsmw-nx/native-renderer.md).
    * The snapshot of the device mirror taken in this draw's Draw* call, against the state the ring has
    * read from the packets right when it reaches this draw. Everything that matches is state the renderer
    * can read from the mirror without packets; anything else has to come through another path.

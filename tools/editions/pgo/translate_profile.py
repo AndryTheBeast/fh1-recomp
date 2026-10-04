@@ -26,7 +26,7 @@ import sys
 import gcda
 
 # app/ of this repository, spelled as CMake passes it to GCC (forward slashes). The profile of local functions
-# only matches when the sources are compiled from this same path (see docs/toolchain.md).
+# only matches when the sources are compiled from this same path (see docs/nfsmw-nx/toolchain.md).
 ROOT_APP = os.environ.get('NFSMW_APP_DIR') or os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..', '..', 'app')).replace(os.sep, '/')
 DEF = re.compile(r'^DEFINE_REX_FUNC\(sub_([0-9A-F]{8})\)', re.M)

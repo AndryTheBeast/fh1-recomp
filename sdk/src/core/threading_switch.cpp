@@ -300,7 +300,7 @@ bool RexSwitchSetCurrentThreadCore(int core) {
  *
  * Different from RexSwitchSetCurrentThreadCore and more dangerous: if that core saturates, the
  * thread does not get to run. That is why it sits behind a cvar that is off by default and is
- * checked in the log. See docs/platform-notes.md (Threads).
+ * checked in the log. See docs/nfsmw-nx/platform-notes.md (Threads).
  */
 bool RexSwitchPinCurrentThreadToCore(int core) {
   if (core < 0) {

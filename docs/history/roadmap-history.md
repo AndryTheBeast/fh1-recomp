@@ -4,7 +4,7 @@ Moved here from ROADMAP.md on 2026-10-02 when the roadmap was rewritten. Kept ve
 addresses, measurements and dead ends. The current plan is in ../ROADMAP.md.
 
 
-Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx.
+Following the order in `docs/nfsmw-nx/porting-another-game.md`, which worked for nfsmw-nx.
 
 ## Stage 1 — Translate the game on PC
 - [x] Build the ReXGlue code generator (`rexglue`)
@@ -240,7 +240,7 @@ Following the order in `docs/porting-another-game.md`, which worked for nfsmw-nx
 Why: in busy races the emulated GPU needs ~37 ms of host GPU per frame (EDRAM emulation, 3-strip
 tiling, per-draw emulation); the quick cuts (MSAA 1x, single strip) break the picture. The user
 chose the native renderer (2026-10-01). Model: nfsmw-nx's renderer (reference/nfsmw-app/src/
-nfsmw_nativo_*, docs/native-renderer.md): the game's own D3D keeps writing the PM4 ring; a ring
+nfsmw_nativo_*, docs/nfsmw-nx/native-renderer.md): the game's own D3D keeps writing the PM4 ring; a ring
 thread reads it and draws the same frame with Vulkan, without EDRAM. Vulkan, not D3D12, so the
 same renderer later moves to the Switch repo. The xenos emulation stays selectable as the
 reference picture and fallback (compare both to tell renderer bugs from game bugs).
@@ -271,7 +271,7 @@ reference picture and fallback (compare both to tell renderer bugs from game bug
          phase B: the emulation's shader storage (cache/shaders/shareable/4D5309C9.xsh).
 - [ ] Phase B - shaders. Revised 2026-10-01: a PM4-driven renderer sees the microcode exactly as
       loaded (vertex shaders already patched by D3D for their vertex layout - the problem that
-      forced nfsmw into shader-creation hooks, docs/shaders.md). On PC, translate that microcode
+      forced nfsmw into shader-creation hooks, docs/nfsmw-nx/shaders.md). On PC, translate that microcode
       with the SDK's own Vulkan/SPIR-V translator (Xenia's, sdk/src/graphics/vulkan) and cache the
       results on disk; the XenosRecomp offline library (shaders/) is for the Switch, where runtime
       translation was too slow. The emulation's shader storage (XESH format, ShaderStoredHeader +

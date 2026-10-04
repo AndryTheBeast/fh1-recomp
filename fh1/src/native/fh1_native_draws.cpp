@@ -5828,7 +5828,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
    * memory_identity_mutex (nouveau_horizon_memory.c:1065), and everything else belongs to that image. The
    * pool is not touched from the thread: it stays single-threaded (fh1_native_texture_pool.h).
    *
-   * Threads (see nfsc-nx docs/platform-notes.md, Threads). Shared state is under bindings_mutex_, and every decision
+   * Threads (see nfsc-nx docs/nfsmw-nx/platform-notes.md, Threads). Shared state is under bindings_mutex_, and every decision
    * to sleep or wake is taken with the lock held; the thread only reads the image, memory and offset of its
    * request and stores the result under the lock. The ring's wait has a timeout and logs every 2 s.
    * Persistent thread (never detached), joined in the destructor before any image is destroyed. Priority
@@ -6369,7 +6369,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
    * the middle of. If the thread has no core, the ring ends up doing the usual work at submission, plus the
    * copy, and the "not worth it" guard switches it off.
    *
-   * Threads (see nfsc-nx docs/platform-notes.md, Threads). All shared state is under fingerprints_mutex_, and every
+   * Threads (see nfsc-nx docs/nfsmw-nx/platform-notes.md, Threads). All shared state is under fingerprints_mutex_, and every
    * decision to sleep or wake is taken with the lock held: no "store mine and read yours" with atomics.
    * The thread only reads the snapshot and the plan of its job (written before publishing it) and only
    * writes its buffers, its space in the upload buffer and its job's results; it does not write to the log.
@@ -9019,7 +9019,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           const auto [it_words, new_ones] = words_by_shape_.try_emplace(shape);
           /*
            * Key guard. The same five words cannot produce a different key: if one does, the key was not computed
-           * from what its words say (as when XXH3 read keys[4] before it was written; see docs/toolchain.md).
+           * from what its words say (as when XXH3 read keys[4] before it was written; see docs/nfsmw-nx/toolchain.md).
            */
           if (!new_ones && std::equal(std::begin(keys), std::end(keys), it_words->second.begin())) {
             const uint64_t times = ++keys_incoherent_;

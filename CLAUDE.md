@@ -1,6 +1,7 @@
 # CLAUDE.md — Forza Horizon (Xbox 360) recompilation port
 
-Handoff notes for any Claude session working on this repo. Read this first, then `ROADMAP.md`.
+Handoff notes for any Claude session working on this repo. Read this first, then `ROADMAP.md` and
+`docs/native-renderer-status.md` (the current work).
 
 ## Goal and current state
 
@@ -13,12 +14,14 @@ project (NFS Most Wanted for Switch). Its game-specific app was kept in `referen
 worked example until 2026-10-04 (deleted at the user's request, still in git history); the better
 worked example now is nfsc-recomp (`..\repos\nfsc-recomp-main`).
 
-Status (2026-10-02): **playable on PC** - boot, festival, free roam, races, garage, buying and
+Status (2026-10-04): **playable on PC** - boot, festival, free roam, races, garage, buying and
 repainting cars (photos correct), saving. Legion Go (Ryzen Z1 Extreme): 30 fps (game cap) in
-normal play, 26-28 in the busiest spots. Graphics = the SDK's emulated Xbox 360 GPU: D3D12 (default)
-and Vulkan (`--gpu_backend=vulkan`), both correct. ROADMAP.md has the current plan (short);
-docs/roadmap-history.md the detailed log of everything done; docs/performance-review.md where the
-frame time goes and what to cut for the Switch.
+normal play, 26-28 in the busiest spots. Default graphics = the SDK's emulated Xbox 360 GPU: D3D12
+(default) and Vulkan (`--gpu_backend=vulkan`), both correct. In progress: the native Vulkan renderer
+(`--fh1_renderer=native`): boot, videos, menus and loading screens match the emulated picture; the 3D
+scene still has glitches. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
+the frame time goes and what to cut for the Switch.
 
 Earlier machines: Intel HD 630 and Iris Plus G7 (~7 fps). Since 2026-10-01 a Lenovo Legion Go
 (AMD Ryzen Z1 Extreme: Zen 4 + RDNA 3, 1920x1200). Full build ~14 min, app-only rebuild ~4 min.
@@ -87,7 +90,7 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 | `fh1/src/fh1_crash_report.cpp` | Windows crash report: symbolized stack to `<log>.crash.txt` |
 | `sdk/` | ReXGlue SDK (nfsmw-nx fork). `sdk/thirdparty` only holds changed files; `tools/fetch_thirdparty.py` fetches the rest |
 | `tools/` | Build, extraction and gap tools (below) |
-| `docs/` | nfsmw-nx docs — `docs/porting-another-game.md` is the plan we follow |
+| `docs/` | Our documents (index: `docs/README.md`); `docs/history/` = finished work; `docs/nfsmw-nx/` = the inherited nfsmw-nx docs (`porting-another-game.md` is the plan we follow) |
 
 ## How a fix cycle works
 
@@ -200,7 +203,7 @@ lists the actions and saves the render targets as PNG.
   festival-start shot (dome warmth: ~80 correct, below 0 = far scenery fogged).
 - tools/compile_only.ps1 compiles single object files (ninja targets) while the game is running
   (the full build cannot relink a running exe/DLL). tools/bisect_transfers.py finds which EDRAM
-  transfer kinds a scene needs (see docs/native-render-targets.md).
+  transfer kinds a scene needs (see docs/history/native-render-targets.md).
 - Native renderer shaders (2026-10-02): `tools/build_shader_library.ps1` builds
   build_logs/shaders/fh1_shaders.nfsp from the disc (XenosRecomp in shaders/, now used and changed
   for FH1 under NFSMW_RECOMP; DXC with SPIR-V from FH1-recomp/tools_dxc - the Windows SDK's has none).
@@ -208,7 +211,7 @@ lists the actions and saves the render targets as PNG.
   patch scripts with the Write tool or use chr(92).
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
-- English names (2026-10-04): all code is in English (docs/handoff-english-rename.md has the list of renamed
+- English names (2026-10-04): all code is in English (docs/history/handoff-english-rename.md has the list of renamed
   files and options).
 - FH1's own native renderer (2026-10-04): `fh1/src/native/fh1_*`, namespace `fh1::native`, every setting `fh1_*`;
   run it with `--fh1_renderer=native`, shader library `fh1_shaders.nfsp` next to fh1.exe. It started as
@@ -218,8 +221,13 @@ lists the actions and saves the render targets as PNG.
 
 ## Next steps
 
-**Read docs/handoff-native-renderer.md first.** User decision 2026-10-04: the native renderer must be FH1's own
+**Read docs/native-renderer-status.md first.** User decision 2026-10-04: the native renderer must be FH1's own
 (`--fh1_renderer=native`), taking from nfsc-recomp the fixes that work for FH1 instead of running his renderer
-as is. Done 2026-10-04 (user chose "adopt the working code"): the renderer is `fh1/src/native/fh1_*`
-(`--fh1_renderer=native`: title, menus, festival at 30 fps). Next: the open picture problems listed in that
-handoff, in its order. ROADMAP.md and docs/native-renderer-fh1.md have the phases (N0-N5).
+as is; done the same day. Boot, videos, menus and loading screens were fixed on 2026-10-04 and checked by the
+user. Next (user, 2026-10-04): the rendering glitches of the 3D scene, in the order of that document (smear and
+speckled edges first, then packed positions). ROADMAP.md and docs/native-renderer-fh1.md have the phases (N0-N5).
+
+Local folder layout (2026-10-04): `build_logs\reference\` = the screenshots, traces and logs the documents
+refer to; `build_logs\archive-2026-10-04\` = every earlier test, run, build log and RenderDoc capture (nothing
+there is needed to work; the 2.7 GB of RenderDoc captures can be deleted if the user agrees);
+`build_logs\shaders\old\` = shader sets from before translator changes. New test output lands in `build_logs\`.

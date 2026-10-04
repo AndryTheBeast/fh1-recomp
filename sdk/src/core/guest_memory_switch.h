@@ -2,7 +2,7 @@
  * Guest memory on Horizon: reservation, commit, aliases and protection.
  *
  * This is the core of the port. Everything here was measured on the console, not
- * assumed; see docs/platform-notes.md.
+ * assumed; see docs/nfsmw-nx/platform-notes.md.
  *
  * The problem
  *

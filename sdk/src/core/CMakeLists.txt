@@ -58,7 +58,7 @@ elseif(REXGLUE_PLATFORM_SWITCH)
     # so neither WIN32 nor UNIX is defined and a branch of its own is needed.
     # Most of the POSIX layer compiles as is on newlib; what Horizon lacks goes
     # into the *_switch.cpp files. The reasons for each are in
-    # docs/platform-notes.md.
+    # docs/nfsmw-nx/platform-notes.md.
     target_sources(rexcore PRIVATE
         atomic_posix.cpp
         clock_posix.cpp

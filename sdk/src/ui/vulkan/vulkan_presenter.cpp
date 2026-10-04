@@ -1757,7 +1757,7 @@ VkSwapchainKHR VulkanPresenter::PaintContext::CreateSwapchainForVulkanSurface(
    * With four, while the compositor shows one and has another queued, two are left for us and
    * acquisition stops blocking in the normal case. It costs one 1280x720x4 = 3.5 MB image of video
    * memory (not part of the 3185/3189 MB of the guest, which is something else). The Horizon WSI clamps
-   * the request to three images (see docs/platform-notes.md, Presentation).
+   * the request to three images (see docs/nfsmw-nx/platform-notes.md, Presentation).
    *
    * The alternative, acquiring the next frame's image in advance, pays off more; it is implemented
    * below (acquisition with a zero timeout after presenting).

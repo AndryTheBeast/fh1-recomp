@@ -4,7 +4,7 @@
  *
  * How a fault arrives on Horizon, which is not how it does on POSIX
  *
- * All measured on the console (see docs/platform-notes.md), not assumed:
+ * All measured on the console (see docs/nfsmw-nx/platform-notes.md), not assumed:
  *
  *  - There are no signals. A fault reaches __libnx_exception_handler, which libnx calls
  *    as a normal function on a stack of its own.

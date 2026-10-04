@@ -5,7 +5,7 @@
 #   REXGLUE=out/host/rexglue tools/codegen.sh app_usa app_usa/hooked.txt app_usa/table.tsv
 #
 # The second and third arguments are for the trees made by tools/editions/create_tree.py: the list of hooked
-# functions of that edition and the address table used to create it (see docs/editions.md).
+# functions of that edition and the address table used to create it (see docs/nfsmw-nx/editions.md).
 # Set PYTHON if the Python launcher is not "python" (on Windows it is usually "py").
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

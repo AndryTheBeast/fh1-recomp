@@ -30,11 +30,11 @@
    rebuilds are quicker with `build_mesa_msys2.sh`, in this folder. The result is an SDK folder.
 4. Tell the app where that SDK folder is when you configure it:
    `-DREXGLUE_SWITCH_NVK_SDK=<sdk>/opt/devkitpro/portlibs/switch`. The whole process is in
-   [docs/building.md](../docs/building.md).
+   [docs/nfsmw-nx/building.md](../docs/nfsmw-nx/building.md).
 
 ## What the patch changes
 
-One line per change. Why each one was needed, and how much it gained, is in [docs/mesa.md](../docs/mesa.md).
+One line per change. Why each one was needed, and how much it gained, is in [docs/nfsmw-nx/mesa.md](../docs/nfsmw-nx/mesa.md).
 
 | Change | What it does | Files |
 |---|---|---|

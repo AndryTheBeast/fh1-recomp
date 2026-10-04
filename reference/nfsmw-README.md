@@ -135,7 +135,7 @@ of the console and not an overclock. Races average 32 to 35 FPS; the heaviest ar
 Heights, runs at 21-22 FPS for about 20 seconds.
 
 How it went from a few frames per second to this is explained step by step in
-[docs/performance-history.md](docs/performance-history.md).
+[docs/nfsmw-nx/performance-history.md](docs/nfsmw-nx/performance-history.md).
 
 ## Overclocking
 
@@ -202,24 +202,24 @@ For this port:
 
 For anyone porting another Xbox 360 game, or curious about how this one was done. **Start with
 [docs/README.md](docs/README.md)**: it explains in six steps how the whole port fits together, and what to read for
-what you want to do. Every technical word is explained in the [glossary](docs/glossary.md).
+what you want to do. Every technical word is explained in the [glossary](docs/nfsmw-nx/glossary.md).
 
 <div align="center">
 
 | Document | What it explains |
 | --- | --- |
-| [docs/glossary.md](docs/glossary.md) | Every technical word, in plain words |
-| [docs/building.md](docs/building.md) | How to build the NRO, the driver and the shader library, step by step |
-| [docs/porting-another-game.md](docs/porting-another-game.md) | What you can reuse for another game, and in which order to work |
-| [docs/native-renderer.md](docs/native-renderer.md) | How the port draws the game with Vulkan |
-| [docs/shaders.md](docs/shaders.md) | How the game's shaders are translated, and what had to be fixed |
-| [docs/toolchain.md](docs/toolchain.md) | How the game's code is translated and compiled, and the build options that make it faster |
-| [docs/mesa.md](docs/mesa.md) | The graphics driver and this port's changes to it |
-| [docs/platform-notes.md](docs/platform-notes.md) | Things about the Switch system that cost a lot of time to find out |
-| [docs/audio-and-video.md](docs/audio-and-video.md) | The game's audio and cutscenes on the Switch |
-| [docs/editions.md](docs/editions.md) | How every edition and language of the game is supported |
-| [docs/measuring.md](docs/measuring.md) | How to measure performance on the console without being misled |
-| [docs/performance-history.md](docs/performance-history.md) | How the frame rate went from a few FPS to about 30, step by step |
+| [docs/nfsmw-nx/glossary.md](docs/nfsmw-nx/glossary.md) | Every technical word, in plain words |
+| [docs/nfsmw-nx/building.md](docs/nfsmw-nx/building.md) | How to build the NRO, the driver and the shader library, step by step |
+| [docs/nfsmw-nx/porting-another-game.md](docs/nfsmw-nx/porting-another-game.md) | What you can reuse for another game, and in which order to work |
+| [docs/nfsmw-nx/native-renderer.md](docs/nfsmw-nx/native-renderer.md) | How the port draws the game with Vulkan |
+| [docs/nfsmw-nx/shaders.md](docs/nfsmw-nx/shaders.md) | How the game's shaders are translated, and what had to be fixed |
+| [docs/nfsmw-nx/toolchain.md](docs/nfsmw-nx/toolchain.md) | How the game's code is translated and compiled, and the build options that make it faster |
+| [docs/nfsmw-nx/mesa.md](docs/nfsmw-nx/mesa.md) | The graphics driver and this port's changes to it |
+| [docs/nfsmw-nx/platform-notes.md](docs/nfsmw-nx/platform-notes.md) | Things about the Switch system that cost a lot of time to find out |
+| [docs/nfsmw-nx/audio-and-video.md](docs/nfsmw-nx/audio-and-video.md) | The game's audio and cutscenes on the Switch |
+| [docs/nfsmw-nx/editions.md](docs/nfsmw-nx/editions.md) | How every edition and language of the game is supported |
+| [docs/nfsmw-nx/measuring.md](docs/nfsmw-nx/measuring.md) | How to measure performance on the console without being misled |
+| [docs/nfsmw-nx/performance-history.md](docs/nfsmw-nx/performance-history.md) | How the frame rate went from a few FPS to about 30, step by step |
 
 </div>
 
@@ -227,7 +227,7 @@ what you want to do. Every technical word is explained in the [glossary](docs/gl
 
 devkitA64 and libnx from [devkitPro](https://devkitpro.org), CMake, Ninja, Python, the Vulkan driver built from
 [mesa-switch](https://github.com/danfromtico/mesa-switch) with `mesa/mesa-switch-nfsmw.patch`, and your own copy of
-the game for the code generator. The whole process is in [docs/building.md](docs/building.md).
+the game for the code generator. The whole process is in [docs/nfsmw-nx/building.md](docs/nfsmw-nx/building.md).
 
 <div align="center">
 
