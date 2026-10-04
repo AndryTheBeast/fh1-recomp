@@ -3735,6 +3735,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     std::swap(target.image, spare.image);
     std::swap(target.memory_block, spare.memory_block);
     std::swap(target.view, spare.view);
+    std::swap(target.view_srgb, spare.view_srgb);
     std::swap(target.prepared, spare.prepared);
     front_images_[size_t(free)].retained_by = base;
     front_pending_[base].retained = free;  // source_vk is still the content image, now retained
@@ -4478,6 +4479,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     std::swap(target.image, resolved.image.image);
     std::swap(target.memory_block, resolved.image.memory_block);
     std::swap(target.view, resolved.image.view);
+    std::swap(target.view_srgb, resolved.image.view_srgb);
     std::swap(target.prepared, resolved.image.prepared);
     resolved.image.swap_rb = resolved.swap_rb;  // belongs to the content, not the image
     resolved.image.content_invalid = false;
@@ -4578,6 +4580,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       std::swap(target.image, it->second.image.image);
       std::swap(target.memory_block, it->second.image.memory_block);
       std::swap(target.view, it->second.image.view);
+      std::swap(target.view_srgb, it->second.image.view_srgb);
       std::swap(target.prepared, it->second.image.prepared);
       it->second.image.content_invalid = false;
       if (draws_) {
@@ -4964,6 +4967,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     info.imageType = VK_IMAGE_TYPE_2D;
     info.format = format;
+    // FH1: 8-bit color images also get an sRGB view (ImageNative::view_srgb).
+    info.flags = format == kFormatColor ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
     info.extent = {width, height, 1};
     info.mipLevels = 1;
     info.arrayLayers = 1;
@@ -4996,6 +5001,13 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     if (dfn_.vkCreateImageView(device_, &info_view, nullptr, &image.view) != VK_SUCCESS) {
       Destroy(image);
       return false;
+    }
+    image.view_srgb = VK_NULL_HANDLE;
+    if (format == kFormatColor) {
+      info_view.format = VK_FORMAT_R8G8B8A8_SRGB;
+      if (dfn_.vkCreateImageView(device_, &info_view, nullptr, &image.view_srgb) != VK_SUCCESS) {
+        image.view_srgb = VK_NULL_HANDLE;  // without it, gamma draws and fetches stay raw
+      }
     }
     image.width = width;
     image.height = height;
@@ -5046,6 +5058,11 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     if (draws_ && image.view != VK_NULL_HANDLE) {
       draws_->ForgetView(image.view);
     }
+    if (draws_ && image.view_srgb != VK_NULL_HANDLE) {
+      draws_->ForgetView(image.view_srgb);
+    }
+    if (image.view_srgb != VK_NULL_HANDLE) dfn_.vkDestroyImageView(device_, image.view_srgb, nullptr);
+    image.view_srgb = VK_NULL_HANDLE;
     if (image.view != VK_NULL_HANDLE) dfn_.vkDestroyImageView(device_, image.view, nullptr);
     if (image.image != VK_NULL_HANDLE) dfn_.vkDestroyImage(device_, image.image, nullptr);
     if (image.memory_block != VK_NULL_HANDLE) dfn_.vkFreeMemory(device_, image.memory_block, nullptr);

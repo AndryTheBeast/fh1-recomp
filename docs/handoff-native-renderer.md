@@ -73,11 +73,16 @@ Grey tint, second round (2026-10-04 late, user: "only the Dolby intro has deep b
   (emulated: 40). Cause: textures fetched with the gamma sign (signs 3F: most of the world and the HUD) were read
   raw. They now get the host's sRGB formats (`--fh1_native_gamma_textures`, default on; fh1_native_draws.cpp,
   PrepareTexture). After: darkest tones 4, mid tones 64, loading screens show their picture.
-- Still open on this subject: (a) the console's curve is piecewise-linear, sRGB is only close; (b) resolved
-  textures fetched with the gamma sign and writes to k_8_8_8_8_GAMMA targets are still raw (they cancel for the
-  videos; doing one without the other would break the videos); (c) the festival is still brighter than the
-  emulated picture (mid tones 64 vs 40), mixed with the smear / speckle glitches below, so re-measure after
-  those; (d) loading screens: the dark / white boxes behind the text are missing on native.
+- Videos looked "low bitrate" on native (user report): coarse color steps in dark areas. Cause: the game draws
+  videos into a k_8_8_8_8_GAMMA target and fetches the resolved picture with the gamma sign; stored raw, the dark
+  tones had a quarter of the precision. Now 8-bit color images carry a second sRGB view (ImageNative::view_srgb):
+  passes whose guest format is 1 draw through it, and resolved pictures fetched with signs 3F are sampled through
+  it (`--fh1_native_gamma_targets`, default on). Checked with a crop of the Playground background brightened x8:
+  smooth, same as the emulated GPU; levels unchanged.
+- Still open on this subject: (a) the console's curve is piecewise-linear, sRGB is only close (Turn 10 background
+  15 instead of 14); (b) the festival is still brighter than the emulated picture (mid tones 64 vs 40), mixed
+  with the smear / speckle glitches below, so re-measure after those; (c) loading screens: the dark / white boxes
+  behind the text are missing on native.
 
 Known but not done:
 - Loading screens and menus: text on black now (not white). The emulated GPU may show a video or picture behind

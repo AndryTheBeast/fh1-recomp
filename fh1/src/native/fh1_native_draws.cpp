@@ -1101,6 +1101,10 @@ REXCVAR_DEFINE_BOOL(fh1_debug_no_depth, false, "FH1",
 REXCVAR_DEFINE_BOOL(fh1_native_gamma_textures, true, "FH1",
                     "Textures fetched with the gamma sign are converted to linear when sampled (host sRGB formats)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(fh1_native_gamma_targets, true, "FH1",
+                    "Draws into k_8_8_8_8_GAMMA render targets are stored gamma-encoded and resolved pictures "
+                    "fetched with the gamma sign are decoded (host sRGB views)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(fh1_debug_no_dxt, false, "FH1",
                     "Debug: every block-compressed (DXT) texture is replaced by the empty stand-in texture")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
@@ -8283,6 +8287,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                 cache_between_frames_ ? "SI" : "no");
     mipmaps_ = REXCVAR_GET(fh1_native_mipmaps);
     gamma_textures_ = REXCVAR_GET(fh1_native_gamma_textures);
+    gamma_targets_ = REXCVAR_GET(fh1_native_gamma_targets);
     REXLOG_INFO("[native] C3: gamma textures read as sRGB (fh1_native_gamma_textures) = {}",
                 gamma_textures_ ? "yes" : "no");
     REXLOG_INFO("[native] C3: texture mip levels (fh1_native_mipmaps) = {}", mipmaps_ ? "SI" : "no");
@@ -8714,7 +8719,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     heap = cube ? 2 : volume ? 1 : 0;
     const uint32_t layers = cube ? 6 : 1;
-    if (const uint32_t signs = (f[0] >> 2) & 0xFF; signs && !(gamma_textures_ && signs == 0x3F)) {
+    if (const uint32_t signs = (f[0] >> 2) & 0xFF; signs && !(gamma_textures_ && gamma_targets_ && signs == 0x3F)) {
       Notify(31, "signed or gamma textures: read as unsigned");
     }
     const uint32_t swizzle = (f[3] >> 1) & 0xFFF;
@@ -8752,8 +8757,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         // The emulation writes the copy to memory with copy_dest_swap and loads it as a texture: the fetch
         // constant's swizzle (ZYXW for 8888) undoes that swap. Here the copy is image to image and does not
         // swap channels, so the swap goes into the host channels (without this, Mia came out blue).
-        slot = SlotView(resolved->image, resolved->format, swizzle,
-                             resolved->swap_rb ? kSwizzleBGRA : kSwizzleRGBA);
+        // FH1: fetched with the gamma sign, a resolved 8-bit picture is decoded like any gamma texture.
+        const bool srgb = gamma_targets_ && ((f[0] >> 2) & 0x3F) == 0x3F &&
+                          resolved->format == VK_FORMAT_R8G8B8A8_UNORM && resolved->view_srgb != VK_NULL_HANDLE;
+        slot = SlotView(resolved->image, srgb ? VK_FORMAT_R8G8B8A8_SRGB : resolved->format, swizzle,
+                             resolved->swap_rb ? kSwizzleBGRA : kSwizzleRGBA, 0, srgb);
         valid_until = frame_;  // see the long comment on the depth copy
         return;
       }
@@ -10048,8 +10056,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
 
   // Heap slot (0 for 2D textures, 2 for cubemaps) for a view of the image with that swizzle.
   uint32_t SlotView(VkImage image, VkFormat format, uint32_t swizzle, uint16_t swizzle_host,
-                       uint32_t heap = 0) {
-    const uint64_t key = KeyView(image, swizzle, swizzle_host, heap);  // The same key
+                       uint32_t heap = 0, bool srgb_of_resolved = false) {
+    // The same key; the sRGB view of a resolved picture is a second view of the same image.
+    const uint64_t key = KeyView(image, swizzle, swizzle_host, heap) ^ (srgb_of_resolved ? 0x5A17C0DE5A17C0DEull : 0);
     if (const auto it = views_.find(key); it != views_.end()) {
       return it->second.slot;
     }
@@ -10354,6 +10363,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         height = std::min(height, images[i]->height);
         views[i] = images[i]->view;
         formats[i] = uint32_t(images[i]->format);
+        // FH1: a k_8_8_8_8_GAMMA color target stores what the shader writes gamma-encoded (see view_srgb).
+        if (gamma_targets_ && i < 4 && (uint32_t(keys[i] >> 16) & 0xF) == 1 &&
+            images[i]->view_srgb != VK_NULL_HANDLE) {
+          views[i] = images[i]->view_srgb;
+          formats[i] = uint32_t(VK_FORMAT_R8G8B8A8_SRGB);
+        }
       }
     }
     // Shadow map: a depth-only target with a pitch of 1600 or more (same as skip_shadows).
@@ -13367,6 +13382,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   bool cache_between_frames_ = true;  // fh1_native_texture_cache_across_frames
   bool mipmaps_ = true;                 // fh1_native_mipmaps
   bool gamma_textures_ = true;          // fh1_native_gamma_textures
+  bool gamma_targets_ = true;           // fh1_native_gamma_targets
   bool diag_mips_ = false;              // fh1_native_diag_mips
   uint64_t mips_reviewed_ = 0;
   uint64_t mips_rare_ = 0;

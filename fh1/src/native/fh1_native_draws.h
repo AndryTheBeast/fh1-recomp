@@ -36,6 +36,9 @@ struct ImageNative {
   // instead of kBlockPoolInvalid to keep that header out of this one.
   uint32_t pool_block = 0xFFFFFFFFu;
   VkImageView view = VK_NULL_HANDLE;
+  // FH1: the same 8-bit color image seen as sRGB (render targets and resolved textures only). Draws into a
+  // k_8_8_8_8_GAMMA target and fetches with the gamma sign go through it, so the host converts as the console does.
+  VkImageView view_srgb = VK_NULL_HANDLE;
   uint32_t width = 0;
   uint32_t height = 0;
   // fh1_native_shadow_scale: the shadow map is drawn smaller than the guest requests and upscaled when
