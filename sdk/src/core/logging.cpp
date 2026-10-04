@@ -89,7 +89,7 @@ REXCVAR_DEFINE_INT32(log_max_files, 20, "Log", "Max number of rotated log files 
  *      CPU total   266 %  ->  179-233 %
  *      ring       75.7 %  ->  50-72 %
  *      game       68.9 %  ->  25-48 %
- *  and the stutters come with `GPU 0.0 reales, record 0.4`: a whole second of frame with nobody
+ *  and the stutters come with `GPU 0.0 real, record 0.4`: a whole second of frame with nobody
  *  working. That is a blocked thread, not work.
  *
  *  Two design mistakes:
@@ -102,11 +102,11 @@ REXCVAR_DEFINE_INT32(log_max_files, 20, "Log", "Max number of rotated log files 
  * ================================================================================================
  */
 REXCVAR_DEFINE_BOOL(log_async, false, "Log",
-                    "Write el log since un thread_value separate (el thread_value que llama solo encola). Quita los "
-                    "hitches del dump periodico; false pierde los last mensajes si there_is cuelgue")
+                    "Write the log from a separate thread (the calling thread only queues). Removes the stutters "
+                    "of the periodic flush; false loses the last messages on a hang")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
-REXCVAR_DEFINE_INT32(log_async_queue, 8192, "Log", "Mensajes que caben en la queue del log asincrono")
+REXCVAR_DEFINE_INT32(log_async_queue, 8192, "Log", "Messages that fit in the asynchronous log queue")
     .range(256, 65536)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 

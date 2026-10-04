@@ -9035,7 +9035,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                     base, width, height, format, ((f[0] >> 31) & 0x1) ? "tiled" : "linear",
                     (f[1] >> 6) & 0x3, ((f[0] >> 22) & 0x1FF) << 5, swizzle, (f[0] >> 2) & 0xFF,
                     cube ? " (cube)" : volume ? " (3D)" : "", levels, dir_mips,
-                    level_packed == UINT32_MAX ? std::string("ninguno") : std::to_string(level_packed));
+                    level_packed == UINT32_MAX ? std::string("none") : std::to_string(level_packed));
       }
     }
     slot = SlotView(texture.image.image, tf.format, swizzle, tf.swizzle_host, heap);

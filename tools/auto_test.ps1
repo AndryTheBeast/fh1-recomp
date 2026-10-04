@@ -102,5 +102,5 @@ Write-Host "=== $Name  log: $Log"
 if (Test-Path "$Log.crash.txt") { Write-Host "CRASHED:"; Get-Content "$Log.crash.txt" | Select-Object -First 12 }
 # Logs rotate at 5 MB into test-...-<stamp>.1.log, .2.log: read every part, oldest first.
 Get-ChildItem (Join-Path $Logs "test-$Name-$Stamp*.log") | Sort-Object LastWriteTime | Get-Content |
-  Select-String "\[fps\]|DXGI adapter|\[video\] el game abre" |
+  Select-String "\[fps\]|DXGI adapter|\[video\] the game opens" |
   ForEach-Object { $_.Line -replace '^\[\d+-\d+-\d+ ([\d:.]+)\] \[\w+\] \[\w+\] \[t\d+\] ', '$1 ' }

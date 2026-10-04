@@ -95,6 +95,7 @@ static const uint32_t kSpirvGlowSoft[1] = {0};
  */
 #if defined(XXH_IMPLEM_13a8737387)
 #error "xxhash.h was already included with its implementation before this point: XXH_FORCE_MEMORY_ACCESS 0 would "
+       "come too late"
 #endif
 #undef XXH_FORCE_MEMORY_ACCESS
 #define XXH_FORCE_MEMORY_ACCESS 0
@@ -150,15 +151,13 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_fast_untile, true, "NFSMW",
  * is forgotten).
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_framebuffers_forget_views, true, "NFSMW",
-                     "Native renderer (24/09, build 165): KB of STABLE textures the ring re-checks at most in one "
-                     "frame; the ones that do not fit wait 1-2 frames (at most 8 times in a row). Spreads out the "
-                    "as before");
+                    "Native renderer (25/09, build 184): destroying a C2 image destroys the framebuffers that use "
+                    "its view, so a reused handle does not return a stale one. false = as before");
 
 REXCVAR_DEFINE_INT32(nfsmw_native_fingerprint_kb_per_frame, 6144, "NFSMW",
-                     "Renderer native (24/09, build 165): KB de textures ESTABLES que el ring vuelve a "
-                     "should_check as mucho en un frame; the que no caben esperan 1-2 frames (8 times "
-                     "consecutive as mucho). Reparte the checks que coincidian en el same frame. "
-                     "0 = sin limit, as before");
+                     "Native renderer (24/09, build 165): KB of STABLE textures the ring re-checks at most in one "
+                     "frame; the ones that do not fit wait 1-2 frames (at most 8 times in a row). Spreads out the "
+                     "checks that fell on the same frame. 0 = no limit, as before");
 
 /*
  * Sampled recheck of stable textures. See PrepareTexture and FingerprintSample.
@@ -173,10 +172,9 @@ REXCVAR_DEFINE_INT32(nfsmw_native_fingerprint_sampling, 8, "NFSMW",
     .range(0, 64);
 
 REXCVAR_DEFINE_BOOL(nfsmw_shadows_without_vegetation, true, "NFSMW",
-                    "No draw en el map de shadows lo que lleva test de alpha: arboles, arbustos y "
                     "Do not draw what uses alpha test into the shadow map: trees, bushes and wire fences. They are "
                     "55 % of the pass's draws and 12 % of its triangles, so it saves little GPU (-1.2 ms) and a "
-                    "proyectar shadow");
+                    "fair amount of CPU (-3.1 ms). Trees stop casting shadows");
 
 /*
  * Radial blur of the final composite, removed by default (true).
@@ -256,7 +254,7 @@ REXCVAR_DEFINE_INT32(nfsmw_native_nvk_measure, 64, "NFSMW",
 REXCVAR_DEFINE_BOOL(nfsmw_native_nvk_measure_misses, false, "NFSMW",
                     "Native renderer (test, build 186): reads ahead what the pipeline bind and the shader flush "
                     "will use and measures it separately (how much is cache misses). Does extra work: only for "
-                    "measure");
+                    "measuring");
 REXCVAR_DEFINE_BOOL(nfsmw_native_nvk_emission, true, "NFSMW",
                     "Native renderer (26/09, build 186): NVK writes each command of the draw at once, with the "
                     "same bytes (checks itself). false = as always");
@@ -267,12 +265,12 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_nvk_dynamic, true, "NFSMW",
                     "Native renderer (26/09, build 186): NVK only emits the dynamic-state groups with dirty bits "
                     "(checks itself). false = as always");
 REXCVAR_DEFINE_BOOL(nfsmw_native_nvk_preload, true, "NFSMW",
+                    "Native renderer (26/09, build 186): cache hints (PRFM) for the pipeline and the shaders "
                     "before using them, and for the pipeline requested after PipelineOf. Changes nothing. false = "
                     "no hints");
 REXCVAR_DEFINE_INT32(nfsmw_native_nvk_toggle_s, 0, "NFSMW",
-                     "Renderer native (test, build 186): con N > 0 alterna the cuatro improvements de NVK (ranges "
                      "Native renderer (test, build 186): with N > 0 toggles the four NVK improvements (odd "
-                     "0 = no alterna");
+                     "intervals on, even off) every N seconds, to compare in the same run. 0 = no toggling");
 
 #if REX_PLATFORM_SWITCH
 /*
@@ -426,6 +424,7 @@ REXCVAR_DEFINE_INT32(nfsmw_native_texture_mb_max, kTexturesMbMaxByDefault, "NFSM
  * placeholder textures and no lower mips.
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_texture_binding_thread, true, "NFSMW",
+                    "Native renderer (25/09, build 184): the vkBindImageMemory of new textures (address "
                     "reservation and mapping on Horizon, ~0.6 ms each) runs on a separate thread while the ring "
                     "keeps recording; before submitting, whatever is missing is waited for. Same result (checks "
                     "itself). false = on the ring")
@@ -456,7 +455,7 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_texture_fingerprint_thread, false, "NFSMW",
                     "Native renderer (26/09, build 185): the fingerprint (XXH3), untiling and byte order of new "
                     "textures are done by a separate thread on a copy of the guest memory taken on the ring; "
                     "before submitting, whatever is missing is collected. Same result (checks itself). false = on "
-                    "ring, as before")
+                    "the ring, as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_INT32(nfsmw_native_texture_fingerprint_thread_priority, 0x2E, "NFSMW",
                      "Native renderer (build 185): priority of the texture fingerprint thread. 0x2E: below the "
@@ -483,7 +482,7 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_diag_reuse, true, "NFSMW",
                     "Native renderer (26/09, build 186, measurement only): counts how many new textures have the "
                     "same content and shape as another live one in the cache (the game reloads the packs at "
                     "another address) and how many of those others have been unused for more than 120 frames. "
-                    "count_2")
+                    "Changes nothing. false = no counting")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 /*
  * Pipeline prewarming. A pipeline that is not in the Vulkan cache is compiled on the fly on the ring: 68-159 ms
@@ -550,10 +549,9 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_test_occlusion_always, false, "NFSMW",
  * that state; one of them was worth 2 ms and had been inactive for six builds.
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_shadow_pass_without_load, true, "NFSMW",
-                    "Renderer native (test de FPS): abre el pass del map de shadows sin load su "
                     "Native renderer (FPS test): opens the shadow-map pass without loading its previous content "
                     "(loadOp = DONT_CARE). Measured in 112: nothing to gain, the depth loadOp costs nothing on "
-                    "0,037 ms)");
+                    "this GPU (the pass with 0 triangles costs 0.037 ms)");
 REXCVAR_DEFINE_INT32(nfsmw_native_skip_shadows_toggle_s, 0, "NFSMW",
                      "Native renderer (test): with N > 0 skips the shadows in the odd intervals of N seconds and "
                      "logs each change, to compare captures of the same spot");
@@ -622,7 +620,6 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_diag_empty_gray, false, "NFSMW",
                     "Native renderer: textures that are not supported yet (cube, 3D, pending formats) sample gray "
                     "instead of zero (tests only)");
 REXCVAR_DEFINE_BOOL(nfsmw_native_inv_tex_size, true, "NFSMW",
-                    "Renderer native (18/09, build 164): los shaders toman 1/size de texture de the "
                     "Native renderer (18/09, build 164): shaders take 1/texture size from the constants instead of "
                     "asking the texture on every sample with an offset. It is the same computation with the same "
                     "number: the image does not change. Needs a shader library regenerated with the new helper");
@@ -702,7 +699,7 @@ REXCVAR_DEFINE_INT32(nfsmw_native_shadow_bias_constant, 0, "NFSMW",
 REXCVAR_DEFINE_INT32(nfsmw_native_diag_min_mip, 0, "NFSMW",
                      "Diagnostic (25/09, build 180): textures with mips start N levels further down, also up "
                      "close, to see whether their mip levels are right. 0 = normal; 1, 2 or 3 to look. Changes at "
-                     "marcha")
+                     "run time")
     .range(0, 4);
 /*
  * Splitting the frame into two submissions.
@@ -758,9 +755,8 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_test_point_mip, false, "NFSMW",
                     "gets faster, sampling is the limit; if it does not move, the ALU is. The mip jump is visible "
                     "when moving away: only for measuring");
 REXCVAR_DEFINE_INT32(nfsmw_native_test_point_mip_toggle_s, 0, "NFSMW",
-                    "Native renderer (25/09, build 179): in draws with a single vertex binding, the upload buffer "
-                    "stays bound at 0 and the draw is shifted with vertexOffset/firstVertex, without one "
-                    "vkCmdBindVertexBuffers per draw. The GPU reads the same bytes. false = as before");
+                     "Native renderer (test, 21/09): with N > 0 toggles nfsmw_native_test_point_mip every N seconds "
+                     "(both samplers live in the cache, no stalls when switching)");
 /*
  * Do not upload the same vertices twice in the same frame.
  *
@@ -780,8 +776,8 @@ REXCVAR_DEFINE_INT32(nfsmw_native_test_point_mip_toggle_s, 0, "NFSMW",
  * If geometry ever looks stuck or stretched, this is the first thing to disable.
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_dedupe_vertices, true, "NFSMW",
-                    "Renderer native (21/09): si dos draws del same frame piden el same range de "
-                    "vertices, se sube one sola time. El report C6 anota hits y MB saved");
+                    "Native renderer (21/09): if two draws of the same frame ask for the same vertex range, it is "
+                    "uploaded only once. The C6 report logs hits and MB saved");
 
 /*
  * No vkCmdBindVertexBuffers in single-binding draws.
@@ -808,17 +804,17 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_dedupe_vertices, true, "NFSMW",
  * if anything looked wrong, nfsmw_native_zero_based_vertices = false restores the usual path.
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_zero_based_vertices, true, "NFSMW",
+                    "Native renderer (25/09, build 179): in draws with a single vertex binding, the upload buffer "
+                    "stays bound at 0 and the draw is shifted with vertexOffset/firstVertex, without one "
+                    "vkCmdBindVertexBuffers per draw. The GPU reads the same bytes. false = as before");
+
+REXCVAR_DEFINE_BOOL(nfsmw_native_alpha_only_ps, true, "NFSMW",
                     "Native renderer (18/09, build 158): in passes without a color target, compiles the pixel "
                     "shader without the color writes. The image does not change (Vulkan discards them) and the "
                     "driver removes as dead code what only fed the color: the alpha test remains");
-
-REXCVAR_DEFINE_BOOL(nfsmw_native_alpha_only_ps, true, "NFSMW",
-                    "Renderer native (18/09, build 158): en the passes sin target de color, compila el "
+REXCVAR_DEFINE_INT32(nfsmw_native_alpha_only_ps_toggle_s, 0, "NFSMW",
                      "Native renderer (test, build 158): with N > 0 toggles every N seconds between compiling the "
                      "pixel shader with and without the color writes in the colorless passes");
-REXCVAR_DEFINE_INT32(nfsmw_native_alpha_only_ps_toggle_s, 0, "NFSMW",
-                     "Renderer native (test, build 158): con N > 0 alterna every N seconds compile el "
-                     "pixel shader con y sin the writes de color en the passes sin color");
 
 /*
  * Depth test before shading, where it can be done without changing the image.
@@ -950,7 +946,7 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_fast_pass_key, true, "NFSMW",
 REXCVAR_DEFINE_BOOL(nfsmw_native_cvars_per_frame, true, "NFSMW",
                     "Native renderer (25/09, build 179): nfsmw_native_alpha_only_ps and "
                     "nfsmw_native_no_ps_without_color (and their toggles) are read once per frame and not on "
-                    "before");
+                    "every colorless draw. false = as before");
 REXCVAR_DEFINE_INT32(nfsmw_native_no_ps_without_color_toggle_s, 0, "NFSMW",
                      "Native renderer (test, build 157): with N > 0 toggles every N seconds between building the "
                      "pipeline with and without a fragment stage in the colorless draws, to compare captures of "
@@ -1028,9 +1024,8 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_canonical_key, false, "NFSMW",
  * after starting a pass"). false = forgotten at every pass, as before.
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_pipeline_between_passes, true, "NFSMW",
-                    "Native renderer (25/09, build 184): cull face, front face, topology, Z, stencil, bias and "
-                    "restart with vkCmdSet* (EDS1/EDS2 of Vulkan 1.3) instead of in the pipeline: fewer "
-                    "before");
+                    "Native renderer (25/09, build 184): the bound pipeline is kept when a pass of the same "
+                    "command buffer starts (Vulkan keeps it). false = bound again in every pass, as before");
 /*
  * Dynamic state, phase 1 (EDS1/EDS2, core in Vulkan 1.3; the console reports API 1.3.354). Cull mode, front
  * face, topology (within its class), Z test, write and function, stencil with its operations, depth bias
@@ -1046,9 +1041,9 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_pipeline_between_passes, true, "NFSMW",
 // Disabled by default. Measured: each BindPipeline went from 2.95 to 4.36 us and PipelineDe from 0.21 to
 // 0.47 us per draw, for only 13 % fewer binds: a net loss of ~1 ms of ring time per frame.
 REXCVAR_DEFINE_BOOL(nfsmw_native_dynamic_state, false, "NFSMW",
-                    "Native renderer (25/09, build 184): blend, equation and color mask with vkCmdSet* "
-                    "(VK_EXT_extended_dynamic_state3) instead of in the pipeline. Checks itself. false = in the "
-                    "pipeline, as before");
+                    "Native renderer (25/09, build 184): cull face, front face, topology, Z, stencil, bias and "
+                    "restart with vkCmdSet* (EDS1/EDS2 of Vulkan 1.3) instead of in the pipeline: fewer "
+                    "vkCmdBindPipeline. Checks itself. false = all in the pipeline, as before");
 /*
  * Dynamic state, phase 2 (VK_EXT_extended_dynamic_state3; NVK exposes it on Maxwell and the SDK enables it
  * with ui_vulkan_state_dynamic3.patch). Blending (blendEnable), its equation and each target's color mask
@@ -1058,8 +1053,8 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_dynamic_state, false, "NFSMW",
  */
 // Disabled by default, for the same measured reason as nfsmw_native_dynamic_state (it goes with it).
 REXCVAR_DEFINE_BOOL(nfsmw_native_dynamic_state3, false, "NFSMW",
-                    "Renderer native (25/09, build 184): blend, equation y mask de color con vkCmdSet* "
-                    "(VK_EXT_extended_dynamic_state3) en time de en el pipeline. Se comprueba sola. false = en el "
+                    "Native renderer (25/09, build 184): blend, equation and color mask with vkCmdSet* "
+                    "(VK_EXT_extended_dynamic_state3) instead of in the pipeline. Checks itself. false = in the "
                     "pipeline, as before");
 REXCVAR_DEFINE_BOOL(nfsmw_native_diag_upload_memory, true, "NFSMW",
                     "Native renderer: when creating the upload buffer, measures once how many MB/s the CPU writes "
@@ -2440,7 +2435,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (occlusion_open_ && pitch >= 640 && warnings_occlusion_draw_ < 8) {
         ++warnings_occlusion_draw_;
         REXLOG_INFO("[native] C2 occlusion draw {}: NO TARGET (not drawn): VS n{} PS n{} type {} count {} pitch {} "
-                    "mask {:08X} depth {:08X} mode EDRAM {}",
+                    "mask {:08X} depth {:08X} EDRAM mode {}",
                     warnings_occlusion_draw_, p.vs->number, ps ? int(ps->number) : -1, type, count, pitch,
                     mask_register, control_depth, mode_edram);
       }
@@ -3653,7 +3648,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       ++warnings_occlusion_draw_;
       last_warning_occlusion_draw_ = std::chrono::steady_clock::now();
       REXLOG_INFO("[native] C2 occlusion draw {}: host query {}: VS n{} PS n{} type {} count {} pitch {} masks "
-                  "masks {:08X} depth {:08X} (writes {}, test {}, function z {}) viewport {:.1f},{:.1f} "
+                  "{:08X} depth {:08X} (writes {}, test {}, z function {}) viewport {:.1f},{:.1f} {:.1f}x{:.1f} z "
                   "{:.3f}-{:.3f} scissor {},{} {}x{} with indices {}",
                   warnings_occlusion_draw_, query_occlusion_ == UINT32_MAX ? -1 : int64_t(query_occlusion_),
                   p.vs->number, ps ? int(ps->number) : -1, type, count, pitch, masks, control_depth,
@@ -3695,7 +3690,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
       REXLOG_INFO("[native] C2 occlusion draw {} (geometry): VTE {:08X} CLIP {:08X} sc {:08X} RB_DEPTH_INFO {:08X} "
                   "pass {}x{} ndc ({:.5g},{:.5g},{:.5g},{:.5g}) pipeline z function {} vmin {}; positions{}; VS "
-                  "constants VS{}",
+                  "constants{}",
                   warnings_occlusion_draw_, vte, r[gr::XE_GPU_REG_PA_CL_CLIP_CNTL], mode_sc,
                   r[gr::XE_GPU_REG_RB_DEPTH_INFO], pass_width_, pass_height_, ndc[0], ndc[1], ndc[2], ndc[3],
                   (key.depth >> 4) & 0x7, vmin, positions, constants);
@@ -3925,7 +3920,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (!ok) {
         vertices_base_zero_off_ = true;
         vertices_base_zero_ = false;
-        REXLOG_ERROR("[native] C6 vertices base zero: DIFFERENCE (offset {} stride {} bytes {} vmin {} first {}): "
+        REXLOG_ERROR("[native] C6 zero-based vertices: DIFFERENCE (offset {} stride {} bytes {} vmin {} first {}): "
                      "this draw and the rest of the session bind as always",
                      offset, stride, bytes, vmin, first);
         return false;
@@ -4035,8 +4030,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (!nvk_off_warned_[m] && __atomic_load_n(&nvk->improvements[m].off, __ATOMIC_RELAXED) != 0) {
         nvk_off_warned_[m] = true;
         REXLOG_ERROR("[native] C6 NVK per draw: DIFFERENCE seen by the guard of '{}' ({} different checks; details "
-                     "different_2; detail en rex_stderr.log). Off para el rest de la session: NVK lo does as "
-                     "always",
+                     "in rex_stderr.log). Off for the rest of the session: NVK does it as always",
                      kNames[m], __atomic_load_n(&nvk->improvements[m].differences, __ATOMIC_RELAXED));
       }
     }
@@ -4099,9 +4093,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (draws) {
       NFSMW_REPORT_RING(
           "[native] C6 NVK by parts (build 186; us per measured call [us per measured draw]; {} draws measured): "
-          "draw whole {} | push desc {} | dynamic {} | touch shaders {} | shaders {} | cbufs {} | emit {} | "
+          "whole draw {} | push desc {} | dynamic {} | shader touch {} | shaders {} | cbufs {} | emit {} | "
           "BindPipeline: shaders {} touch {} state copy {} | sets {} (root {} dirty {}) | root table {} | new "
-          "chunk new_value {} | BindVertexBuffers {}",
+          "chunk {} | BindVertexBuffers {}",
           draws, part(0), part(1), part(2), part(3), part(4), part(5), part(6), part(7), part(8),
           part(9), part(10), part(11), part(12), part(13), part(14), part(15));
       NFSMW_REPORT_RING(
@@ -4147,7 +4141,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       const auto pct = [bindings](uint64_t n) { return 100.0 * double(n) / double(bindings); };
       NFSMW_REPORT_RING(
           "[native] C6 set 4: {:.2f} binds per draw ({} in {} draws); only VS changes {:.1f} %, only PS {:.1f} %, "
-          "{:.1f} %, solo shared {:.1f} %, VS+PS {:.1f} %, VS+shared {:.1f} %, PS+shared {:.1f} %, "
+          "only shared {:.1f} %, VS+PS {:.1f} %, VS+shared {:.1f} %, PS+shared {:.1f} %, all three {:.1f} %, after "
           "buffer, slot or sky {:.1f} % | constants uploaded again: VS {} by generation, {} by epoch and {} "
           "because the shader reads more; PS {}, {} and {}",
           double(bindings) / double(set4_draws_), bindings, set4_draws_, pct(set4_changes_[1]),
@@ -4201,8 +4195,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     base_zero_report_ = now;
     if (!first && base_zero_total_) {
       NFSMW_REPORT_RING("[native] C6 vertices base zero ({}): {} de {} draws con vertices sin bind su own "
-                       "own offset ({:.1f} %); {} with several bindings and {} with the dedupe copy off a multiple "
-                       "of the stride; {:.2f} vkCmdBindVertexBuffers per draw",
+                  "displacement ({:.1f} %); {} con several bindings y {} con la copy del dedupe outside de un "
+                  "multiple de la stride; {:.2f} vkCmdBindVertexBuffers por draw",
                   vertices_base_zero_off_ ? "OFF by the guard"
                   : vertices_base_zero_       ? "on"
                                               : "off",
@@ -4328,7 +4322,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                    framing_scissor_.extent.width, framing_scissor_.extent.height);
     } else if (framing_checked_ == kFramingsACheck) {
       NFSMW_REPORT_RING("[native] C6 framing en cache: {} hits checked contra el calculation, 0 differences; sigue "
-                       "checking 1 in 4096", framing_checked_);
+                  "checking 1 de every 4096", framing_checked_);
     }
   }
 
@@ -4360,7 +4354,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
       if (n == kHeightUsefulACheck) {
         NFSMW_REPORT_RING("[native] C6 height util recordado: {} checks contra el map, 0 differences; sigue "
-                         "checking 1 in 4096", n);
+                    "checking 1 de every 4096", n);
       }
     }
     return *height_useful_memo_;
@@ -4379,7 +4373,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                    "of the session", n, computed, pass_key_);
     } else if (n == kKeysPassACheck) {
       NFSMW_REPORT_RING("[native] C6 key del pass: {} reused checked con XXH3, 0 differences; sigue "
-                       "4096", n);
+                  "checking 1 de every 4096", n);
     }
     return computed;
   }
@@ -4395,8 +4389,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const uint64_t framings = framing_hits_report_ + framing_calculations_report_;
     if (!first && framings) {
       NFSMW_REPORT_RING("[native] C6 details (build 179): framing de la cache en {} de {} draws ({:.1f} %; {}{}); "
-                       "key without XXH3 {} times ({}); remembered useful height {} times ({}); colorless-draw "
-                       "settings {}",
+                  "key del pass sin XXH3 {} times ({}); height util recordado {} times ({}); settings de los "
+                  "draws sin color {}",
                   framing_hits_report_, framings,
                   100.0 * double(framing_hits_report_) / double(framings),
                   framing_cache_off_ ? "OFF by the guard" : framing_cache_ ? "on" : "off",
@@ -4432,7 +4426,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     if (n == kPipelinesACheck) {
       NFSMW_REPORT_RING("[native] C6 pipelines: {} hits de la cache direct checked contra el map, 0 "
-                       "checking 1 in 4096", n);
+                  "differences; sigue checking 1 de every 4096", n);
     }
     return true;
   }
@@ -4591,7 +4585,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     NFSMW_REPORT_RING(
         "[native] C6 pipeline changes (build 184, measurement only): {} vkCmdBindPipeline in {:.0f} s ({:.3f} per "
         "draw, {:.1f} per frame; {} are the first of a pass) | no previous key {} | the SAME key after starting a "
-        "begin pass {} ({:.1f} %) | cambian shaders {} ({:.1f} %) | other entry {} | others formats {} | "
+        "pass {} ({:.1f} %) | shaders change {} ({:.1f} %) | other input {} | other formats {} | specialization {} "
         "({:.1f} %: alpha test {}, with early Z {}, other {}) | no effect (bits PipelineOf does not read) {} "
         "({:.1f} %) | STATE ONLY {} ({:.1f} %, {:.3f} per draw): EDS1/EDS2 without touching the SDK {}, the rest "
         "needs EDS3",
@@ -4635,7 +4629,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     pipelines_direct_misses_previous_ = pipelines_direct_misses_;
     if (!first && (hits || misses)) {
       NFSMW_REPORT_RING("[native] C6 pipelines (build 179): cache direct {} hits y {} misses ({:.1f} % de the "
-                       "lookups the one-entry shortcut does not solve); {} checked against the map ({})",
+                  "busquedas que no resuelve el shortcut de one entry); {} checked contra el map ({})",
                   hits, misses, 100.0 * double(hits) / double(hits + misses),
                   pipelines_direct_checked_,
                   pipelines_direct_off_ ? "OFF by the guard"
@@ -5380,11 +5374,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (!fb_retire_ && (pass_active_ || !a_la_par)) {
       fb_retire_ = true;
       REXLOG_ERROR("[native] C6 framebuffers (build 184): DIFFERENCE when destroying view {:016X}: {}. For the "
+                   "rest of the session the affected framebuffers are retired without destroying them (destroyed "
                    "at shutdown)",
                    uint64_t(reinterpret_cast<uintptr_t>(vista)),
                    pass_active_ ? "a pass is open (whoever destroys the view has not submitted the work)"
                                 : "the cache and its list of views do not match (someone creates framebuffers "
-                                  "path)");
+                                  "another way)");
     }
     uint32_t outside = 0;
     if (!a_la_par) {
@@ -5905,7 +5900,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
       ++bindings_failed_;
       TurnOffBindings(fmt::format("DIFFERENCE: vkBindImageMemory returned {} on the thread for a {}x{} texture ({} "
-                                "levels, {} layers)",
+                                  "levels, {} layers)",
                                 int32_t(flight.result), flight.width, flight.height, flight.levels, flight.layers));
       dfn_.vkDestroyImage(device_, flight.image, nullptr);
       pool_textures_.Free(texture.image.pool_block);
@@ -5957,7 +5952,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (!with_copies || upload == VK_NULL_HANDLE || upload != flight.copy_commands ||
           flight.copy_epoch != epoch_upload_) {
         TurnOffBindings(fmt::format("DIFFERENCE: a deferred copy can no longer go in its upload buffer (epoch {} "
-                                  "front a {}, {})",
+                                    "against {}, {})",
                                   flight.copy_epoch, epoch_upload_,
                                   with_copies ? "another upload buffer" : "collected when switching buffers"));
         texture.image.prepared = false;  // the next check uploads it again in full, with its barrier
@@ -6040,6 +6035,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       reports_without_compensate_ = ns_wait_bindings_report_ > ns_thread ? reports_without_compensate_ + 1 : 0;
       if (reports_without_compensate_ >= 3) {
         TurnOffBindings(fmt::format("not worth it: in 3 reports in a row the ring waited for the thread longer "
+                                    "than the thread took to bind (the last one, {:.1f} ms of waiting for {:.1f} "
                                     "ms of binding)",
                                   double(ns_wait_bindings_report_) / 1e6, double(ns_thread) / 1e6));
       }
@@ -6186,8 +6182,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     fingerprints_phase_ = kFingerprintsOff;
     REXLOG_ERROR("[native] C3: texture fingerprint thread OFF for the rest of the session: {}. New textures are "
-                 "vuelven a prepararse whole en el thread_value del ring ({} done_2 por el thread_value, {} por el ring, {} "
-                 "compared)",
+                 "prepared whole on the ring thread again ({} done by the thread, {} by the ring, {} compared)",
                  reason, fingerprints_thread_total_, fingerprints_ring_total_, fingerprints_compared_);
   }
 
@@ -6767,7 +6762,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (t.epoch != epoch_upload_) {
         difference = true;  // se vuelve a needs_upload whole (fingerprints_suspicious_)
         detail = fmt::format("DIFFERENCE: the data of texture {:08X} went to another upload buffer (epoch {} "
-                              "front a {})",
+                             "against {})",
                               t.address, t.epoch, epoch_upload_);
       }
       t.texture->fingerprint_raw = t.fingerprint_raw;
@@ -6856,7 +6851,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     fingerprints_cv_.notify_one();
     fingerprints_thread_.join();  // first finishes the published jobs
     REXLOG_INFO("[native] C3: texture fingerprint thread stopped ({} textures done by the thread, {} by the ring, "
-                "compared, {} discarded, {} laps a needs_upload)",
+                "{} compared, {} discarded, {} uploaded again)",
                 fingerprints_thread_total_, fingerprints_ring_total_, fingerprints_compared_, fingerprints_discarded_,
                 fingerprints_reuploads_);
   }
@@ -6888,7 +6883,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           "prepared {} in {:.1f} ms (fingerprint {:.1f} ms) and the ring {} at submission in {:.1f} ms; the ring "
           "copied {:.1f} MB of snapshots in {:.1f} ms and waited {:.1f} ms for the thread {} times (worst {:.2f} "
           "ms); {} by the usual path without room; {} compared since the start ({} could not be); thread on core "
-          "{:#x}{}; phase {}",
+          "{}, priority {:#x}{}; phase {}",
           fingerprints_planned_report_, fingerprints_comparison_report_, fingerprints_thread_report_,
           double(ns_fingerprints_thread_report_) / 1e6, double(ns_fingerprint_raw_thread_report_) / 1e6,
           fingerprints_ring_report_, double(ns_fingerprints_ring_report_) / 1e6,
@@ -6903,7 +6898,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (reports_without_compensate_fingerprints_ >= 3) {
         TurnOffFingerprints(fmt::format("not worth it: in 3 reports in a row the thread took less off the ring "
                                         "than the ring spent copying and waiting for it (the last one: thread "
-                                  "wait {:.1f} ms)",
+                                        "{:.1f} ms, copies {:.1f} ms, wait {:.1f} ms)",
                                   double(ns_fingerprints_thread_report_) / 1e6, double(ns_snapshots_report_) / 1e6,
                                   double(ns_wait_fingerprints_report_) / 1e6));
       }
@@ -7039,7 +7034,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                   "them itself while waiting for them (nfsmw_native_uploads_help) = {}",
                   copies_help_requested_
                       ? fmt::format("YES, in chunks of {}; WATCHING phase during the first {} waits with pending "
-                                    "pending_2",
+                                    "copies",
                                     kCopiesByChunk, kWaitsCopiesWatching)
                       : std::string("no, waits for the thread as before"));
     } else if (std::this_thread::get_id() != copies_producer_) {
@@ -7279,7 +7274,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       copies_phase_ = kCopiesWithoutHelp;
       REXLOG_ERROR("[native] C6: vertex copies: DIFFERENCE: {} ({} queued, counters balanced; {} redone on the "
                    "ring before submitting). Ring help OFF for the rest of the session: waits for the thread as "
-                   "as before",
+                   "before",
                    reason, target_2, redone);
       return;
     }
@@ -7352,7 +7347,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           "going through the queue ({:.1f} MB); the thread copied {} ({:.1f} MB) and the ring helped with {} "
           "({:.1f} MB, {:.1f} ms) in {} of {} waits with pending copies ({} not taken on arrival); waited for the "
           "thread's chunk {} times ({:.2f} ms, worst {:.2f} ms) and for all of it {} times; pure wait {:.1f} ms "
-          "checked, {} differences; phase {}",
+          "(worst {:.2f} ms); {} copies checked, {} differences; phase {}",
           c.queued, double(c.bytes_queued) / 1048576.0, c.in_line, double(c.bytes_in_line) / 1048576.0,
           d_thread_n, double(d_thread_bytes) / 1048576.0, c.helped, double(c.bytes_helped) / 1048576.0,
           double(c.ns_helping) / 1e6, c.waits_with_help, c.waits, c.without_take, c.waits_chunk,
@@ -8527,7 +8522,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           texture.bytes = uint64_t(width) * height * 4 * layers;
           bytes_textures_ += texture.bytes;
           REXLOG_INFO("[native] C3: cube {:08X} {}x{} with its faces resolved by C2 (fetch {:08X} {:08X} {:08X} "
-                      "{:08X} {:08X} {:08X} {:08X} {:08X})",
+                      "{:08X} {:08X} {:08X})",
                       base, width, height, f[0], f[1], f[2], f[3], f[4], f[5]);
         }
         if (texture.frame != frame_) {
@@ -8662,7 +8657,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
             ++warnings_other_key_;
             const auto& before = it_words->second;
             REXLOG_INFO("[native] C3 same texture with another key: {:08X} {}x{} format {} | before {:08X} {:08X} "
-                        "{:08X} {:02X} {:06X} | now {:08X} {:08X} {:08X} {:02X} {:06X} | cambian {:08X} {:08X} "
+                        "{:08X} {:02X} {:06X} | now {:08X} {:08X} {:08X} {:02X} {:06X} | changed {:08X} {:08X} "
                         "{:08X} {:02X} {:06X}",
                         base, width, height, format, before[0], before[1], before[2], before[3], before[4], keys[0],
                         keys[1], keys[2], keys[3], keys[4], before[0] ^ keys[0], before[1] ^ keys[1],
@@ -8679,6 +8674,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         // spikes.
         if (textures_created_ % 1024 == 0) {
           REXLOG_INFO("[native] C3 cache diag: {} textures created ({} in the cache, {} MB): {} at an address that "
+                      "already had another texture; {} with the same address, format and size as another but a "
                       "different key",
                       textures_created_, textures_.size(), bytes_textures_ >> 20, created_in_address_view_,
                       created_same_shape_other_key_);
@@ -8686,7 +8682,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         }
       }
       if (textures_.size() <= 48) {
-        REXLOG_INFO("[native] C3: texture {:08X} {}x{} format {} {} order {} pitch {} "
+        REXLOG_INFO("[native] C3: texture {:08X} {}x{} format {} {} order {} pitch {} swizzle {:03X} signs "
                     "{:02X}{}; levels {} (mips at {:08X}, packed from {})",
                     base, width, height, format, ((f[0] >> 31) & 0x1) ? "tiled" : "linear",
                     (f[1] >> 6) & 0x3, ((f[0] >> 22) & 0x1FF) << 5, swizzle, (f[0] >> 2) & 0xFF,
@@ -9187,8 +9183,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         ++reuse_details_;
         const Texture& t = cold ? *cold : *equal;
         NFSMW_REPORT_RING("[native] C3 reuse por content (build 186, solo measurement): la texture new_entry {:08X} "
-                         "({}x{}, VkFormat {}, {} levels, {} layers, {} KB) has the same content and shape as "
-                         "{:08X}, {}",
+                             "({}x{}, VkFormat {}, {} levels, {} layers, {} KB) has el same content y shape que "
+                             "la {:08X}, {}",
                              texture.address, texture.image.width, texture.image.height,
                              uint32_t(texture.image.format), texture.levels, texture.layers, texture.bytes >> 10,
                              t.address,
@@ -9217,6 +9213,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (reuse_new_) {
       const uint64_t pointed = uint64_t(live_by_content_.size());
       NFSMW_REPORT_RING(
+          "[native] C3 reuse by content (build 186, measurement only), last 10 s: {} new textures with a "
           "fingerprint ({:.1f} MB); {} with the same content and shape as another live one ({:.1f} MB), {} of them "
           "with one not checked for more than {} frames ({:.1f} MB); {} with more than {} equal ones without "
           "looking at them whole | in the cache: {} textures with a fingerprint in {} different contents ({} "
@@ -9243,8 +9240,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     if (report_sampling_ != std::chrono::steady_clock::time_point{}) {
       NFSMW_REPORT_RING("[native] C3 sampling de fingerprints: {} recomprobaciones resolved_2 con la sample ({:.1f} MB read y "
-                       "{:.1f} MB not read), {} with the sample changed and {} with both fingerprints since the "
-                       "previous line; {} with both since the start",
+                  "{:.1f} MB sin read), {} con la sample changed y {} con the dos fingerprints since la line previous; "
+                  "{} con the dos since el principio",
                   samples_hits_, double(bytes_sample_) / 1048576.0,
                   double(bytes_saved_sample_) / 1048576.0, samples_different_, samples_with_the_two_,
                   samples_checked_);
@@ -10379,7 +10376,6 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     const uint64_t late = d[kZSet] + d[kZWritesZ] + d[kZStencil] + d[kZOcclusion];
     NFSMW_REPORT_RING(
-        "[native] C6 Z early por frame: {:.0f} draws la aprovechan, {:.0f} NO se pueden porque "
         "[native] C6 early Z per frame: {:.0f} draws use it, {:.0f} CANNOT because they write depth (those are the "
         "size of the C88 pre-pass), {:.0f} because of stencil, {:.0f} inside an occlusion query; {:.0f} already "
         "tested before. Of the ones that forced shading first, {:.0f} % are fixed{}",
@@ -10433,8 +10429,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
      */
     NFSMW_REPORT_RING("[native] C6 sky: {:.2f} detectados por fingerprint y {:.2f} con la geometry del dome "
                 "(480 indices y first_3 del pass) por frame. El second has que dar 1,00. "
-                     "indices and first in the pass) per frame. The second must be 1.00. GUARD: {} ({} frames with "
-                     "a dome looked at, {} with exactly one, maximum {} in one frame)",
+                "GUARD: {} ({} frames con dome looked, {} con exactamente uno, maximum {} en "
+                "un frame)",
                 double(seen_2) / frames, double(candidates) / frames,
                 sky_guard_ == kSkyDeferring  ? "SUPERADA, deferring"
                 : sky_guard_ == kSkyDiscarded ? "REJECTED, nothing is deferred"
@@ -10487,14 +10483,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (sky_guard_max_ == 1 && sky_guard_with_one_ >= kSkyFramesWithOne) {
       sky_guard_ = kSkyDeferring;
       REXLOG_INFO("[native] C6 sky: guard PASSED ({} of {} frames with exactly one dome, never two). The sky is "
-                  "never dos). Se aplaza el sky a partir de now: son 3,4-4,3 ms de GPU sin "
                   "deferred from now on: 3.4-4.3 ms of GPU without changing a pixel",
                   sky_guard_with_one_, sky_guard_frames_);
     } else {
       sky_guard_ = kSkyDiscarded;
       REXLOG_WARN("[native] C6 sky: guard NOT passed (maximum {} domes in one frame, {} of {} frames with exactly "
-                  "frames con exactamente uno; hacian missing {}). NO se aplaza nothing: la image "
-                  "queda exactamente as was_writable",
+                  "one; {} were needed). Nothing is deferred: the image stays exactly as it was",
                   sky_guard_max_, sky_guard_with_one_, sky_guard_frames_,
                   kSkyFramesWithOne);
     }
@@ -10892,7 +10886,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     if (n == kCanonicalACheck) {
       NFSMW_REPORT_RING("[native] C6 key canonical: {} keys changed checked field a field contra la de "
-                       "differences; keeps checking 1 in 4096",
+                           "always, 0 differences; sigue checking 1 de every 4096",
                            n);
     }
     return true;
@@ -10955,7 +10949,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       return;
     }
     NFSMW_REPORT_RING("[native] C6 key canonical (build 184): {}; {} keys changed en 20 s ({} checked "
-                     "start, {}); {} pipelines in the map, {} new in 20 s",
+                         "since el principio, {}); {} pipelines en el map, {} new_items en 20 s",
                          key_canonical_off_ ? "OFF by the guard"
                          : key_canonical_       ? "on"
                                                  : "off",
@@ -11288,7 +11282,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       eds_valid_ = false;
       pipeline_bound_ = VK_NULL_HANDLE;
       REXLOG_ERROR("[native] C6 dynamic state: DIFFERENCE in {} (check {}: set {} and the usual pipeline would "
-                   "llevaria {}; VS {} PS {}, topology {}, depth {:08X}, rasterization {:02X}, masks {:04X}). "
+                   "have {}; VS {} PS {}, topology {}, depth {:08X}, rasterization {:02X}, masks {:04X}). Off for "
                    "the rest of the session: the pipelines with all the state fixed come back",
                    field, n, fixed_2, expected, key.vs, key.ps, key.topology, key.depth,
                    key.rasterization, key.masks);
@@ -11296,7 +11290,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     if (n == kEdsACheck) {
       NFSMW_REPORT_RING("[native] C6 state dynamic: {} changes de key checked contra el state de su "
-                       "pipeline, 0 differences; keeps checking 1 in 4096",
+                           "pipeline de always, 0 differences; sigue checking 1 de every 4096",
                            n);
     }
     return true;
@@ -11365,7 +11359,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                                  : "NOT available (the device does not offer it or it is not enabled): phase 2 is "
                                    "not used");
 #else
-    REXLOG_INFO("[native] C6 state dynamic (build 184): EDS3 NO available: este SDK no habilita "
+    REXLOG_INFO("[native] C6 dynamic state (build 184): EDS3 NOT available: this SDK does not enable "
                 "VK_EXT_extended_dynamic_state3 (ui_vulkan_state_dynamic3.patch is missing); phase 2 is not used");
 #endif
   }
@@ -11396,7 +11390,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     NFSMW_REPORT_RING(
         "[native] C6 dynamic state (build 184): {}; {} draws in 20 s ({:.0f} per frame; {} repeat the previous "
         "key) and {} vkCmdSet* ({:.3f} per draw; {} times everything: new buffer, sky or pass that forgets the "
-        "pipeline) | face {}, front {}, topology {}, reset {}, bias {}, test Z {}, write Z {}, function Z "
+        "pipeline) | cull face {}, front face {}, topology {}, restart {}, bias {}, Z test {}, Z write {}, Z "
         "function {}, stencil {}, stencil ops {} | blend {}, equation {}, masks {} | pipelines created: {} usual, "
         "{} EDS1/EDS2, {} EDS3, {} with both | guard: {} checked ({})",
         eds_off_ ? "OFF by the guard" : NameModeEds(eds_mode_), draws,
@@ -11954,9 +11948,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const double seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - prewarm_start_).count();
     REXLOG_INFO("[native] C6 prewarm (build 186): {} in {:.1f} s, priority {:#x}: {} of {} pipelines prewarmed, {} "
-                "prewarmed, {} compiled de truth ({:.0f} ms, {:.1f} ms every uno; el rest ya was_writable en la cache), "
                 "really compiled ({:.0f} ms, {:.1f} ms each; the rest was already in the cache), {} skipped "
-                "failed",
+                "because the library no longer has their shaders, {} of another dynamic-state mode and {} failed",
                 prewarm_stop_.load(std::memory_order_relaxed) ? "stopped" : "finished", seconds, priority,
                 done, n, compiled, double(ns_compiled) / 1e6,
                 compiled ? double(ns_compiled) / 1e6 / double(compiled) : 0.0, sin_shader, other_mode, failed);

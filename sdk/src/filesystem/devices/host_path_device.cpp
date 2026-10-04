@@ -78,7 +78,7 @@ bool HostPathDevice::Initialize() {
   PopulateEntry(root_entry);
   const double ms =
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - before).count();
-  REXFS_INFO("[io] montado '{}' en {}: {} entries en {:.1f} ms ({})",
+  REXFS_INFO("[io] mounted '{}' at {}: {} entries in {:.1f} ms ({})",
              rex::path_to_utf8(host_path_), mount_path_,
              g_entries_in_tree.load(std::memory_order_relaxed) - entries_before, ms,
              read_only_ ? "solo read" : "write");

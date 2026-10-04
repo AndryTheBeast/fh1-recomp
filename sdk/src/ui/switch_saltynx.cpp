@@ -79,7 +79,7 @@ struct BlockFps {
   int8_t buffers_expected;
 } __attribute__((packed));
 
-static_assert(sizeof(BlockFps) == 174, "el overlay wait 174 bytes");
+static_assert(sizeof(BlockFps) == 174, "the overlay expects 174 bytes");
 
 /* struct Shared de ReverseNX-RT (9 bytes). */
 struct BlockReverseNx {
@@ -244,7 +244,7 @@ void NotifyPublished(const BlockFps* block) {
   const unsigned displacement =
       g_base ? unsigned(reinterpret_cast<const uint8_t*>(block) - static_cast<const uint8_t*>(g_base)) : 0u;
   std::fprintf(stderr,
-               "[saltynx] PUBLISHED a los %.2f s del arranque: FPS=%u y RES=%ux%u en el displacement 0x%X\n",
+               "[saltynx] PUBLISHED %.2f s after startup: FPS=%u and RES=%ux%u at offset 0x%X\n",
                seconds, unsigned(g_last_fps), unsigned(g_last_width), unsigned(g_last_height),
                displacement);
 }
@@ -313,16 +313,16 @@ bool FindMemorySharedOwn() {
  */
 void Diagnostic(Result rc_saltysd) {
   if (rc_saltysd == 0) {
-    Warning("[saltynx] ni se ha intentado: el process no has room para other session de puerto");
+    Warning("[saltynx] not even tried: the process has no room for another port session");
   } else {
-    WarningNum("[saltynx] no conecta con los ports de SaltyNX. Last error", rc_saltysd);
+    WarningNum("[saltynx] cannot connect to the SaltyNX ports. Last error", rc_saltysd);
   }
 
   // Our own title ID: SaltyNX rejects those above 0x01FFFFFFFFFFFFFF ("is a homebrew application"),
   // which is exactly the range forwarders fall in. Knowing it saves a question.
   u64 title = 0;
   if (R_SUCCEEDED(svcGetInfo(&title, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0))) {
-    std::fprintf(stderr, "[saltynx] nuestro TID: %016llX (SaltyNX accepts <= 01FFFFFFFFFFFFFF y sin 0x1F00)\n",
+    std::fprintf(stderr, "[saltynx] our TID: %016llX (SaltyNX accepts <= 01FFFFFFFFFFFFFF and without 0x1F00)\n",
                  (unsigned long long)title);
   }
 
@@ -343,9 +343,9 @@ void Diagnostic(Result rc_saltysd) {
   const Result rc_sm = svcConnectToNamedPort(&control, "sm:");
   if (R_SUCCEEDED(rc_sm)) {
     svcCloseHandle(control);
-    Warning("[saltynx] control: 'sm:' SI da session new_entry, asi que el limit es del puerto de SaltyNX");
+    Warning("[saltynx] check: 'sm:' DOES give a new session, so the limit is SaltyNX's port");
   } else {
-    WarningNum("[saltynx] control: 'sm:' tampoco da session, asi que el limit es NUESTRO. Error", rc_sm);
+    WarningNum("[saltynx] check: 'sm:' does not give a session either, so the limit is OURS. Error", rc_sm);
   }
 
   u64 raw = 0;
@@ -354,7 +354,7 @@ void Diagnostic(Result rc_saltysd) {
     rc_lim = svcGetInfo(&raw, InfoType_ResourceLimit, CUR_PROCESS_HANDLE, 0);
   }
   if (R_FAILED(rc_lim)) {
-    WarningNum("[saltynx] no se pueden read los limites del process. Error", rc_lim);
+    WarningNum("[saltynx] cannot read the process limits. Error", rc_lim);
     return;
   }
   const Handle limit = static_cast<Handle>(raw);
@@ -364,9 +364,9 @@ void Diagnostic(Result rc_saltysd) {
   };
   const Resource kResources[] = {
       {"[saltynx] sessions used / cap:", LimitableResource_Sessions},
-      {"[saltynx] eventos used / cap:", LimitableResource_Events},
+      {"[saltynx] events used / cap:", LimitableResource_Events},
       {"[saltynx] threads used / cap:", LimitableResource_Threads},
-      {"[saltynx] memorias transferibles used / cap:", LimitableResource_TransferMemories},
+      {"[saltynx] memories transferibles used / cap:", LimitableResource_TransferMemories},
   };
   for (const Resource& r : kResources) {
     s64 now = 0;
@@ -438,12 +438,12 @@ bool DoRoom(bool* sm_closed, bool allow_release_sm) {
                                                       static_cast<u64>(cap + 4));
       if (R_SUCCEEDED(rc)) {
         room = ThereIsRoomForOneSession(limit);
-        WarningTwo("[saltynx] subido el cap de sessions del process:", (long long)cap, (long long)(cap + 4));
+        WarningTwo("[saltynx] raised the process session cap:", (long long)cap, (long long)(cap + 4));
       } else {
-        WarningNum("[saltynx] no leaves needs_upload el cap de sessions. Error", rc);
+        WarningNum("[saltynx] the session cap cannot be raised. Error", rc);
       }
     } else {
-      Warning("[saltynx] el cargador no permite svcSetResourceLimitLimitValue (SVC 0x7E)");
+      Warning("[saltynx] the loader does not allow svcSetResourceLimitLimitValue (SVC 0x7E)");
     }
   }
 
@@ -452,10 +452,10 @@ bool DoRoom(bool* sm_closed, bool allow_release_sm) {
     if (ThereIsRoomForOneSession(limit)) {
       *sm_closed = true;
       room = true;
-      Warning("[saltynx] soltado 'sm:' un momento para tener room");
+      Warning("[saltynx] released 'sm:' for a moment to make room");
     } else {
       smInitialize();  // it did not close: restore the count and leave it as it was
-      Warning("[saltynx] ni releasing 'sm:' there_is room para one session");
+      Warning("[saltynx] not even releasing 'sm:' leaves room for a session");
     }
   }
 
@@ -601,14 +601,14 @@ void Start() {
 
   if (name && !g_warned_connection) {
     g_warned_connection = true;  // once; this is retried every second and used to fill the log
-    Warning(name[0] == 'S' ? "[saltynx] connected por SaltySD" : "[saltynx] connected por InjectServ");
+    Warning(name[0] == 'S' ? "[saltynx] connected through SaltySD" : "[saltynx] connected through InjectServ");
   }
   if (!g_mapped) {
     if (R_FAILED(rc_handler) && !g_warned_without_memory) {
       // A port connected but did not serve the memory. The attempt is not lost: the other one has already
       // been tried. Only once: this is retried every second for the whole session and used to fill the log.
       g_warned_without_memory = true;
-      WarningNum("[saltynx] algun puerto conecta pero no da la memory_block shared; error", rc_handler);
+      WarningNum("[saltynx] some port connects but does not give the shared memory; error", rc_handler);
     }
     // Path 2: no free session. If SaltyNX was injected into this process, its shared memory is already mapped here.
     if (!FindMemorySharedOwn()) {
@@ -620,12 +620,12 @@ void Start() {
       if (g_attempts == 5 || g_attempts == 30) {
         Diagnostic(rc_puerto);
       } else if (g_attempts % 600 == 0) {
-        WarningNum("[saltynx] se sigue reintentando sin exito. Error", rc_puerto);
+        WarningNum("[saltynx] still retrying without success. Error", rc_puerto);
       }
       return;
     }
     g_mapped = true;
-    Warning("[saltynx] sin session en los ports, pero su memory_block shared ya was_writable mapped here");
+    Warning("[saltynx] no session on the ports, but their shared memory was already mapped here");
   }
 
   // The FPS block: if SaltyNX already left one in this process it is overwritten (its fields would be
@@ -635,17 +635,17 @@ void Start() {
     g_fps.store(existing, std::memory_order_release);
     if (!g_warned_block) {
       g_warned_block = true;
-      Warning("[saltynx] block de FPS ya present: se writes encima");
+      Warning("[saltynx] FPS block already present: writing over it");
     }
   } else if (reserved) {
     auto* block = reinterpret_cast<BlockFps*>(g_base + displacement);
     std::memset(block, 0, sizeof(*block));
     block->magic = kMagicFps;
     g_fps.store(block, std::memory_order_release);
-    WarningNum("[saltynx] block de FPS created_2 en el displacement", (long long)displacement);
+    WarningNum("[saltynx] FPS block created at offset", (long long)displacement);
   } else if (!g_warned_without_room) {
     g_warned_without_room = true;
-    Warning("[saltynx] sin room para el block de FPS; se sigue intentando one time por second");
+    Warning("[saltynx] no room for the FPS block; trying again once per second");
   }
   if (BlockFps* block = g_fps.load(std::memory_order_acquire)) {
     // FPS and resolution at once, without waiting for the next second or the next present.
@@ -672,10 +672,10 @@ void Start() {
     std::memset(reverse, 0, sizeof(*reverse));
     reverse->magic = kMagicReverseNx;
     reverse->by_default = true;  // the system decides until the player says otherwise
-    WarningNum("[saltynx] block de Reverse-NX created_2 en el displacement", (long long)offset_nx);
+    WarningNum("[saltynx] Reverse-NX block created at offset", (long long)offset_nx);
   } else if (!g_warned_reverse) {
     g_warned_reverse = true;  // once, since this is retried every second
-    Warning(reverse ? "[saltynx] block de Reverse-NX ya present" : "[saltynx] sin room para el block de Reverse-NX");
+    Warning(reverse ? "[saltynx] Reverse-NX block already present" : "[saltynx] no room for the Reverse-NX block");
   }
   // Only stored if there is one. Otherwise a retry would write nullptr over a good pointer.
   if (reverse) {

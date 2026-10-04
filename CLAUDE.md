@@ -207,6 +207,11 @@ lists the actions and saves the render targets as PNG.
   patch scripts with the Write tool or use chr(92).
 - Upstream rexglue issue #420 is the thunk-pool crash fixed here (FunctionDispatcher::AllocateThunk).
 
+- English names (2026-10-04): all code is in English. The native renderer is `fh1/src/native/nfsc_*` (same file and
+  symbol names as nfsc-recomp, so `diff` against `../repos/nfsc-recomp-main/carbon/src/native` shows only the FH1
+  changes); run it with `--nfsc_renderer=native`, shader library `nfsc_shaders.nfsp` next to fh1.exe
+  (docs/handoff-english-rename.md has the list of renamed files and options).
+
 ## Next steps
 
 See ROADMAP.md and docs/native-renderer-fh1.md: a native renderer built the nfsmw-nx way (user's

@@ -66,7 +66,7 @@ struct StatisticsRanges {
   uint64_t cap_mb = 0;  // the cvar, so the summary does not have to declare it on its own
   // Why something was not cached. Without this the cache could not be tuned.
   uint64_t low_floor = 0;          // reads demasiado pequenas
-  uint64_t over_ceiling = 0;         // demasiado grandes
+  uint64_t over_ceiling = 0;         // demasiado large
   uint64_t sequential = 0;        // the level-load sweep, which is not kept
   uint64_t sequential_bytes = 0;
   uint64_t floor_kb = 0;

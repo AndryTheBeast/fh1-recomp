@@ -169,7 +169,7 @@ void DumpContext() {
   if (R_SUCCEEDED(RequestContextOf<56>(buf))) { Dump(buf, 56); return; }
   if (R_SUCCEEDED(RequestContextOf<64>(buf))) { Dump(buf, 64); return; }
   if (R_SUCCEEDED(RequestContextOf<72>(buf))) { Dump(buf, 72); return; }
-  Warning("[clocks] GetCurrentContext no cuela con ninguno de los sizes probados");
+  Warning("[clocks] GetCurrentContext does not work with any of the sizes tried");
 }
 
 Result SetOverride(uint32_t modulo, uint32_t hz) {
@@ -237,8 +237,8 @@ bool Open() {
   }
   if (!chosen) {
     if (g_attempts == 1) {
-      Warning("[clocks] no encuentro ningun sysmodule de clocks conocido (probados: sys:clk, hoc:clk, "
-            "hocclk, sysclk, clk:sys, sys:oc): no there_is a quien pedirselo");
+      Warning("[clocks] no known clock sysmodule found (tried: sys:clk, hoc:clk, hocclk, sysclk, clk:sys, sys:oc): "
+              "nobody to ask");
     }
     g_attempts = 5;  // no volver a preguntar
     return false;
@@ -246,7 +246,7 @@ bool Open() {
   const Result rc = smGetService(&g_service, chosen);
   if (R_FAILED(rc)) {
     if (g_attempts == 1) {
-      std::fprintf(stderr, "[clocks] there_is '%s' pero no se pudo open. Error 0x%X\n", chosen,
+      std::fprintf(stderr, "[clocks] '%s' exists but could not be opened. Error 0x%X\n", chosen,
                    (unsigned)rc);
     }
     return false;
@@ -255,8 +255,8 @@ bool Open() {
   uint32_t version = 0;
   if (R_FAILED(RequestVersionApi(&version))) {
     std::fprintf(stderr,
-                 "[clocks] '%s' open pero no contesta a GetApiVersion: no es la interfaz de "
-                 "sys-clk, no se due nothing (servicios found: %s)\n",
+                 "[clocks] '%s' opened but does not answer GetApiVersion: it is not the sys-clk interface, nothing "
+                 "is touched (services found: %s)\n",
                  chosen, found);
     serviceClose(&g_service);
     g_attempts = 5;
@@ -267,16 +267,16 @@ bool Open() {
   if (R_SUCCEEDED(RequestVersionText(version_text, sizeof(version_text)))) {
     version_text[sizeof(version_text) - 1] = 0;
     char line[160];
-    std::snprintf(line, sizeof(line), "[clocks] version del sysmodule: %s", version_text);
+    std::snprintf(line, sizeof(line), "[clocks] sysmodule version: %s", version_text);
     Warning(line);
   } else {
-    Warning("[clocks] el sysmodule no contesta a GetVersionString (order 1)");
+    Warning("[clocks] the sysmodule does not answer GetVersionString (command 1)");
   }
   DumpContext();
   std::fprintf(stderr, "[clocks] sysmodule '%s', API %u (servicios found: %s)\n", chosen,
                (unsigned)version, found);
   g_open = true;
-  Warning("[clocks] ready: los clocks pueden follow a Reverse-NX");
+  Warning("[clocks] ready: the clocks can follow Reverse-NX");
   return true;
 }
 
@@ -335,7 +335,7 @@ void Apply(bool a_docked) {
     }
   }
   if (!hz[0] && !hz[1] && !hz[2]) {
-    Warning("[clocks] no tienes nothing set_2 en esa column: no se due nothing");
+    Warning("[clocks] you have nothing set in that column: nothing is touched");
     return;
   }
   for (unsigned m = 0; m < kModules; ++m) {
@@ -344,7 +344,7 @@ void Apply(bool a_docked) {
     }
   }
   std::fprintf(stderr,
-               "[clocks] %s por Reverse-NX: CPU %u kHz, GPU %u kHz, memory_block %u kHz (0 = as was_writable)\n",
+               "[clocks] %s by Reverse-NX: CPU %u kHz, GPU %u kHz, memory %u kHz (0 = as it was)\n",
                a_docked ? "docked" : "handheld", hz[0] / 1000u, hz[1] / 1000u, hz[2] / 1000u);
 }
 
@@ -360,7 +360,7 @@ void Release() {
     }
   }
   if (any) {
-    Warning("[clocks] soltados: los vuelve a set el sysmodule");
+    Warning("[clocks] released: the sysmodule sets them again");
   }
 }
 

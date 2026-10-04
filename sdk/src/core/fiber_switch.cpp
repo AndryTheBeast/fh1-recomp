@@ -156,7 +156,7 @@ void Fiber::Destroy() {
   if (is_thread_fiber_) {
     tls_current_ = nullptr;
   } else {
-    assert(this != tls_current_ && "Destroy over la fibra que esta corriendo");
+    assert(this != tls_current_ && "Destroy on the fiber that is running");
   }
   delete this;
 }
@@ -170,7 +170,7 @@ extern "C" [[noreturn]] void rex_fiber_trampoline(void) {
   f->entry_(f->arg_);
   // entry_ must not return: there is no context to go back to, this fiber's
   // stack ends here.
-  assert(false && "la function de entry de one fibra ha vuelto");
+  assert(false && "a fiber's entry function returned");
   std::abort();
 }
 

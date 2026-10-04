@@ -668,7 +668,7 @@
 "0x83150EE0" = { }   # thunk
 "0x83150F08" = { }   # thunk
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x824705F0" = { }   # rest
 "0x8247A5C8" = { }   # rest
 "0x8249C440" = { }   # rest
@@ -737,7 +737,7 @@
 
 # Thunk runs split by tools/gaps_pass.py
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x8247A5E0" = { }   # rest
 "0x8249C450" = { }   # rest
 "0x8249CA30" = { }   # rest
@@ -763,7 +763,7 @@
 
 # Thunk runs split by tools/gaps_pass.py
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x8249C460" = { }   # rest
 "0x8249CA40" = { }   # rest
 "0x824A13E0" = { }   # rest
@@ -776,7 +776,7 @@
 
 # Thunk runs split by tools/gaps_pass.py
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x8249CA50" = { }   # rest
 "0x824A13F0" = { }   # rest
 "0x82B2EF44" = { }   # rest
@@ -785,7 +785,7 @@
 
 # Thunk runs split by tools/gaps_pass.py
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x8249CA60" = { }   # rest
 "0x824A1400" = { }   # rest
 "0x82B2EF54" = { }   # rest
@@ -793,29 +793,29 @@
 
 # Thunk runs split by tools/gaps_pass.py
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x8249CA70" = { }   # rest
 "0x824A1410" = { }   # rest
 
 
 # Thunk runs split by tools/gaps_pass.py
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x8249CA80" = { }   # rest
 "0x824A1420" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x8249CA90" = { }   # rest
 "0x824A1430" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x8249CAA0" = { }   # rest
 "0x824A1440" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x824A1450" = { }   # rest
 # Continuations (tools/merge_continuations.py)
 "0x829C2A48" = { end = 0x829C2AA0 }

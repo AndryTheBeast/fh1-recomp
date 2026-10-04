@@ -208,8 +208,8 @@ KEYS_XEX = {
     0x00E10402: "Exports by name",
 }
 
-COMPRESSION = {0: "ninguna", 1: "basica", 2: "normal (LZX)", 3: "delta"}
-ENCRYPTED = {0: "ninguno", 1: "normal (AES-128)"}
+COMPRESSION = {0: "none", 1: "basic", 2: "normal (LZX)", 3: "delta"}
+ENCRYPTED = {0: "none", 1: "normal (AES-128)"}
 
 
 def _u32(buf, off):

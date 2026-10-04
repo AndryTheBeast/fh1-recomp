@@ -196,13 +196,13 @@ struct Mode {
 };
 constexpr Mode kModes[] = {
     {0, "normal"},
-    {1, "sin drawn"},
-    {2, "sin transferencias"},
-    {4, "sin resolves"},
-    {8, "sin loads de textures"},
-    {16, "sin effect de presentacion"},
-    {32, "sin dispatch por tiles"},
-    {63, "sin nothing"},
+    {1, "no draws"},
+    {2, "no transfers"},
+    {4, "no resolves"},
+    {8, "no texture loads"},
+    {16, "no presentation effect"},
+    {32, "no tile dispatch"},
+    {63, "nothing"},
 };
 constexpr size_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
 
@@ -386,11 +386,10 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
     total_cpu += g_slots[i].cpu;
   }
   std::fprintf(f,
-               "==== %.1f s | mode: %s | game %.1f fps | CPU total %.0f%% (400%% = 4 cores) | misses/s: "
-               "read emulada %.0f, handler SDK %.0f, reintento emulado %.0f, SEH %.0f, "
-               "physical confirmada %.0f, views %.0f | guest %zu/%zu MB (fallback/mapped) | "
-               "limit de mapping %llu/%llu MB, process %llu/%llu MB | "
-               "sample_total %zu | vigilancia: %s | samplers: %.0f new_items/s, %.0f parones/s\n",
+               "==== %.1f s | mode: %s | game %.1f fps | total CPU %.0f%% (400%% = 4 cores) | faults/s: emulated "
+               "read %.0f, SDK handler %.0f, emulated retry %.0f, SEH %.0f, physical commit %.0f, views %.0f | "
+               "guest %zu/%zu MB (backing/mapped) | map limit %llu/%llu MB, process %llu/%llu MB | samples %zu | "
+               "watch: %s | samplers: %.0f new/s, %.0f stalls/s\n",
                seconds, mode, double(counters_now[0] - counters_last[0]) / seconds, total_cpu,
                double(counters_now[1] - counters_last[1]) / seconds,
                double(counters_now[2] - counters_last[2]) / seconds,
@@ -402,7 +401,7 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                (u64)lim_used, (u64)lim_cap, (u64)proc_used, (u64)proc_total, g_sample_count,
                 (RexGmModeProtection() == 1   ? "permissions (pages legibles)"
                  : RexGmModeProtection() == 2 ? "desmapeo (every read falla)"
-                                              : "sin test"),
+                                              : "untested"),
                 double(counters_now[20] - counters_last[20]) / seconds,
                 double(counters_now[19] - counters_last[19]) / seconds);
   // Work the game sends to the GPU, per presented frame. One screen is
@@ -414,9 +413,9 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
   // in handheld mode.
   const u64 pico_audio = g_counters[23].exchange(0, std::memory_order_relaxed);
   std::fprintf(f,
-               "     audio: %.0f blocks de client mezclados, %.0f solicitudes sin data, "
-               "%.0f/%.0f buffers audout con PCM no nulo, %.0f sample_total saturated (mas de 1,0 before de recortar), "
-               "%.0f buffers con pico de 0,98 o mas, pico maximum %.3f | consola en mode %s\n",
+               "     audio: %.0f client blocks mixed, %.0f requests without data, %.0f/%.0f audout buffers with "
+               "non-zero PCM, %.0f clipped samples (above 1.0 before clipping), %.0f buffers peaking at 0.98 or "
+               "more, maximum peak %.3f | console in %s mode\n",
                delta(24), delta(25), delta(26), delta(27), delta(21), delta(22), double(pico_audio) / 10000.0,
                rex::ui::switch_saltynx::ModeBase(appletGetOperationMode() == AppletOperationMode_Console)
                    ? "docked"
@@ -428,15 +427,15 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
     const auto reverse = rex::ui::switch_saltynx::StateReverse();
     const bool real = appletGetOperationMode() == AppletOperationMode_Console;
     if (!reverse.there_is) {
-      std::fprintf(f, "     Reverse-NX: sin block (consola %s, manda ella)\n",
-                   real ? "en la base" : "en the manos");
+      std::fprintf(f, "     Reverse-NX: no block (console %s, it decides)\n",
+                   real ? "docked" : "handheld");
     } else {
       std::fprintf(f,
-                   "     Reverse-NX: dice %s, manda %s (Controlled by system %s), el game ha preguntado: %s; "
-                   "consola de truth %s -> se obedece %s\n",
-                   reverse.en_base ? "docked" : "handheld", reverse.by_default ? "la consola" : "Reverse-NX",
-                   reverse.by_default ? "Yes" : "No", reverse.plugin_active ? "si" : "no",
-                   real ? "en la base" : "en the manos",
+                   "     Reverse-NX: says %s, decides %s (Controlled by system %s), the game has asked: %s; real "
+                   "console %s -> obeying %s\n",
+                   reverse.en_base ? "docked" : "handheld", reverse.by_default ? "the console" : "Reverse-NX",
+                   reverse.by_default ? "Yes" : "No", reverse.plugin_active ? "yes" : "no",
+                   real ? "docked" : "handheld",
                    rex::ui::switch_saltynx::ModeBase(real) ? "docked" : "handheld");
     }
   }
@@ -493,8 +492,8 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
       tsSessionGetTemperature(&ts_board, &degrees_board);
     }
     std::fprintf(f,
-                 "     clocks: CPU %.1f MHz, GPU %.1f MHz, memory_block %.1f MHz%s | cores del process %u "
-                 "(mask 0x%llX) | SoC %.1f C, board %.1f C%s\n",
+                 "     clocks: CPU %.1f MHz, GPU %.1f MHz, memory %.1f MHz%s | process cores %u (mask 0x%llX) | "
+                 "SoC %.1f C, board %.1f C%s\n",
                  double(hz[0]) / 1.0e6, double(hz[1]) / 1.0e6, double(hz[2]) / 1.0e6,
                  there_is_clkrst ? "" : " (clkrst no available)", cores,
                  (unsigned long long)mask_cores, double(degrees_soc), double(degrees_board),
@@ -516,11 +515,11 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
       last[i][2] = vb;
     }
     std::fprintf(f,
-                 "     libnx por second (calls y ms inside): fences consultadas %.0f (%.1f ms), esperadas %.0f "
-                 "(%.1f ms) | kickoff %.0f (%.1f ms) | NvMap new_items %.1f con cache (%.1f MB) y %.1f sin cache "
-                 "(%.1f MB), %.1f ms | addresses de GPU %.1f (%.1f ms), mapeos %.1f (%.1f MB, %.1f ms) | "
-                 "armDCacheClean %.0f (%.1f MB, %.1f ms) | queue de la window %.1f (%.1f ms), take buffer %.1f "
-                 "(%.1f ms) | svcSleepThread: 0 %.0f, yield %.0f, until 1 ms %.0f (%.1f ms), mas %.0f\n",
+                 "     libnx per second (calls and ms inside): fences queried %.0f (%.1f ms), waited %.0f (%.1f "
+                 "ms) | kickoff %.0f (%.1f ms) | new NvMap %.1f with cache (%.1f MB) and %.1f without cache (%.1f "
+                 "MB), %.1f ms | GPU addresses %.1f (%.1f ms), mappings %.1f (%.1f MB, %.1f ms) | armDCacheClean "
+                 "%.0f (%.1f MB, %.1f ms) | window queue %.1f (%.1f ms), dequeue buffer %.1f (%.1f ms) | "
+                 "svcSleepThread: 0 %.0f, yield %.0f, up to 1 ms %.0f (%.1f ms), more %.0f\n",
                  n[kFenceQuery], ms[kFenceQuery], n[kFenceWait], ms[kFenceWait], n[kKickoff],
                  ms[kKickoff], n[kNvMapCached], mb[kNvMapCached], n[kNvMapSinCache], mb[kNvMapSinCache],
                  ms[kNvMapCached] + ms[kNvMapSinCache], n[kReserveAddress], ms[kReserveAddress],
@@ -530,17 +529,16 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
   }
   if (frames > 0) {
     std::fprintf(f,
-                 "     por frame: %.0f drawn | scissor %.1f pantallas | %.1f submissions | "
-                 "%.1f resolves (%.2f pantallas) | transferencias: %.1f calls, %.1f render "
-                 "targets, %.1f drawn | %.1f textures cargadas | %.2f MB de memory_block "
-                 "shared upload | pipelines created en el interval: %.0f\n",
+                 "     per frame: %.0f draws | scissor %.1f screens | %.1f submissions | %.1f resolves (%.2f "
+                 "screens) | transfers: %.1f calls, %.1f render targets, %.1f draws | %.1f textures loaded | %.2f "
+                 "MB of shared memory uploaded | pipelines created in the interval: %.0f\n",
                  delta(5) / frames, delta(6) / frames / 921600.0, delta(7) / frames,
                  delta(9) / frames, delta(10) / frames / 921600.0, delta(11) / frames,
                  delta(12) / frames, delta(13) / frames, delta(14) / frames,
                  delta(15) / frames / 1048576.0, delta(16));
     std::fprintf(f,
-                 "     drawn por width de surface: 1600+ %.0f | 1280-1599 %.0f | "
-                 "640-1279 %.0f | 256-639 %.0f | minus de 256 %.0f\n",
+                 "     draws by surface width: 1600+ %.0f | 1280-1599 %.0f | 640-1279 %.0f | 256-639 %.0f | under "
+                 "256 %.0f\n",
                  delta(28) / frames, delta(29) / frames, delta(30) / frames, delta(31) / frames,
                  delta(32) / frames);
   }
@@ -568,7 +566,7 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
         auto it = std::upper_bound(v.begin(), v.end(), t, [](u64 x, const WindowHitch& w) { return x < w.start; });
         return it != v.begin() && t <= (it - 1)->fin;
       };
-      std::fprintf(f, "\n== during los hitches: %u frames de mas de 45 ms (%.0f ms en total) ==\n", nt, ms_total);
+      std::fprintf(f, "\n== during the hitches: %u frames over 45 ms (%.0f ms in total) ==\n", nt, ms_total);
       for (size_t i : order) {
         std::vector<u64> pcs;
         std::vector<const Sample*> all;
@@ -588,7 +586,7 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
           continue;
         }
         const Slot& s = g_slots[i];
-        std::fprintf(f, "-- thread_value \"%s\": %zu sample_total en los hitches, %.0f%% waiting en el kernel\n",
+        std::fprintf(f, "-- thread \"%s\": %zu samples in the hitches, %.0f%% waiting in the kernel\n",
                      s.name[0] ? s.name : "?", all.size(), double(en_svc) * 100.0 / double(all.size()));
         const auto h = Histogram(pcs);
         for (size_t k = 0; k < h.size() && k < 25; ++k) {
@@ -647,7 +645,7 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                                [](size_t v, const Sample& a) { return v < a.slot; });
     const size_t n = size_t(hi - lo);
     if (n == 0) {
-      std::fprintf(f, "   sin sample_total\n");
+      std::fprintf(f, "   no samples\n");
       continue;
     }
     std::vector<u64> pcs, lrs;
@@ -660,7 +658,7 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
       pcs.push_back(it->pc);
       lrs.push_back(it->lr);
     }
-    std::fprintf(f, "   %zu sample_total, %.0f%% waiting en el kernel\n", n,
+    std::fprintf(f, "   %zu samples, %.0f%% waiting in the kernel\n", n,
                  double(in_svc) * 100.0 / double(n));
     const auto pc_hist = Histogram(pcs);
     const size_t busy = pcs.size();
@@ -816,7 +814,7 @@ void ProfilerMain(void*) {
   if (FILE* f = std::fopen(ReportPath().c_str(), "w")) {
     std::fprintf(f, "image 0x%016" PRIx64 ", code until 0x%016" PRIx64 "\n\n", g_base,
                  g_text_hi);
-    std::fprintf(f, "Sampling de stacks_value: %s\n", sample_stacks ? "active (1 ms)" : "desactivado");
+    std::fprintf(f, "Stack sampling: %s\n", sample_stacks ? "active (1 ms)" : "off");
     std::fclose(f);
   }
 

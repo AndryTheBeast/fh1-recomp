@@ -34,7 +34,7 @@ int main(int argc, char** argv) try {
     nfsmw::Flow flow;
     auto output = nfsmw::Convert2005(data, flow);
     const nfsmw::Reader normal{output};
-    Require(std::equal(data.begin()+l.u32(4), data.end(), output.begin()+normal.u32(4)), "microcode alterado al normalize");
+    Require(std::equal(data.begin()+l.u32(4), data.end(), output.begin()+normal.u32(4)), "microcode altered when normalizing");
     uint32_t exports = 0;
     bool kills = false;
     for (uint32_t i = 0; i < flow.bytes; i += 12) {

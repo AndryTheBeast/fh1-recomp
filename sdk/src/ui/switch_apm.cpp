@@ -221,11 +221,11 @@ extern "C" void RexSwitchApmApply(void) {
 
   ApmPerformanceMode mode = ApmPerformanceMode_Invalid;
   if (R_FAILED(apmGetPerformanceMode(&mode))) {
-    std::fprintf(stderr, "[apm] no se pudo read el mode de rendimiento; no se due nothing\n");
+    std::fprintf(stderr, "[apm] could not read the performance mode; nothing is touched\n");
     return;
   }
   if (mode != ApmPerformanceMode_Normal) {
-    std::fprintf(stderr, "[apm] la consola esta en docked (mode %d): no se asks nothing\n", int(mode));
+    std::fprintf(stderr, "[apm] the console is docked (mode %d): nothing is requested\n", int(mode));
     return;
   }
 
@@ -235,11 +235,11 @@ extern "C" void RexSwitchApmApply(void) {
   u32 gpu0 = 0, emc0 = 0;
   if (!ReadClocks(gpu0, emc0)) {
     std::fprintf(stderr,
-                 "[apm] no se pueden read los clocks reales (clkrst): NO se cambia nothing, porque sin "
-                 "should_check no se can garantizar que la memory_block se quede where esta\n");
+                 "[apm] cannot read the real clocks (clkrst): NOTHING is changed, because without checking it "
+                 "cannot be guaranteed that the memory stays where it is\n");
     return;
   }
-  std::fprintf(stderr, "[apm] de game: config 0x%08X, GPU %.1f MHz, memory_block %.1f MHz\n",
+  std::fprintf(stderr, "[apm] starting point: config 0x%08X, GPU %.1f MHz, memory %.1f MHz\n",
                there_is_original ? config_original : 0u, double(gpu0) / 1e6, double(emc0) / 1e6);
 
   const u32 target_gpu_hz = u32(mhz) * 1000000u;
@@ -264,8 +264,8 @@ extern "C" void RexSwitchApmApply(void) {
     if (gpu_uploaded && memory_still) {
       if (!still_of_true) {
         std::fprintf(stderr,
-                     "[apm] 0x%08X sube la memory_block a %.1f MHz, pero nfsc_switch_ram_1600 esta en "
-                     "true: se acepta y NO se vigila la memory_block\n",
+                     "[apm] 0x%08X raises the memory to %.1f MHz, but nfsc_switch_ram_1600 is true: accepted and "
+                     "the memory is NOT watched\n",
                      c.config, double(emc1) / 1e6);
         std::fprintf(stderr, "[apm] SET 0x%08X: GPU %.1f MHz (era %.1f), memory_block %.1f MHz\n",
                      c.config, double(gpu1) / 1e6, double(gpu0) / 1e6, double(emc1) / 1e6);
@@ -277,16 +277,15 @@ extern "C" void RexSwitchApmApply(void) {
        */
       g_emc_original.store(emc0, std::memory_order_relaxed);
       std::fprintf(stderr,
-                   "[apm] SET la configuracion 0x%08X (table: GPU %d, EMC %d): GPU %.1f MHz (era "
-                   "%.1f) y la memory_block se queda en %.1f MHz, checked during %.1f s consecutive; "
-                   "queda watched\n",
+                   "[apm] SET configuration 0x%08X (table: GPU %d, EMC %d): GPU %.1f MHz (was %.1f) and the memory "
+                   "stays at %.1f MHz, checked for %.1f s in a row; it stays watched\n",
                    c.config, c.mhz, c.emc, double(gpu1) / 1e6, double(gpu0) / 1e6,
                    double(emc1) / 1e6, double(kPollStepNs) * kPollSteps / 1e9);
       return;
     }
     std::fprintf(stderr, "[apm] descartada 0x%08X: GPU %.1f MHz, memory_block %.1f MHz (%s)\n", c.config,
                  double(gpu1) / 1e6, double(emc1) / 1e6,
-                 !gpu_uploaded ? "la GPU no sube lo requested" : "MUEVE LA MEMORY");
+                 !gpu_uploaded ? "the GPU does not reach the requested clock" : "MOVES THE MEMORY");
   }
 
   /*
@@ -301,14 +300,13 @@ extern "C" void RexSwitchApmApply(void) {
     u32 gpu2 = 0, emc2 = 0;
     MemoryStillDuring(emc0, gpu2, emc2);
     std::fprintf(stderr,
-                 "[apm] este firmware NO has ninguna configuracion de %d MHz que deje la memory_block "
-                 "en %.1f MHz; se vuelve a la original 0x%08X (GPU %.1f MHz, memory_block %.1f MHz).\n"
-                 "[apm] SI PREFIERES LA GPU ALTA AUNQUE LA RAM SUBA A 1600: pon "
-                 "nfsc_switch_ram_1600 = true en nfsmw.toml\n",
+                 "[apm] this firmware has NO %d MHz configuration that leaves the memory at %.1f MHz; going back "
+                 "to the original 0x%08X (GPU %.1f MHz, memory %.1f MHz).\n[apm] IF YOU PREFER THE HIGH GPU EVEN "
+                 "IF THE RAM GOES UP TO 1600: set nfsc_switch_ram_1600 = true in nfsc.toml\n",
                  mhz, double(emc0) / 1e6, config_original, double(gpu2) / 1e6, double(emc2) / 1e6);
   } else {
-    std::fprintf(stderr, "[apm] ninguna configuracion de %d MHz sirvio y NO se pudo restore la "
-                         "original: revisa los clocks en el overlay\n",
+    std::fprintf(stderr, "[apm] no %d MHz configuration worked and the original could NOT be restored: check the "
+                         "clocks in the overlay\n",
                  mhz);
   }
 }
@@ -334,15 +332,14 @@ extern "C" void RexSwitchApmWatch(void) {
   const int n = g_corrections_emc.fetch_add(1, std::memory_order_relaxed) + 1;
   if (!g_warning_emc.exchange(true)) {
     std::fprintf(stderr,
-                 "[apm] la memory_block had subido sola a %.1f MHz (t=%d s): se baja a %.1f con clkrst "
-                 "(%s)\n",
+                 "[apm] the memory went up on its own to %.1f MHz (t=%d s): lowering it to %.1f with clkrst (%s)\n",
                  double(emc) / 1e6, tic, double(emc0) / 1e6, drop ? "aceptado" : "RECHAZADO");
   }
   if (!drop || n >= kMaxCorrectionsEmc) {
     g_given_up_emc.store(true, std::memory_order_relaxed);
     std::fprintf(stderr,
-                 "[apm] se leaves de insistir con la memory_block after %d attempt(s): este firmware la "
-                 "reimpone. La GPU se queda en lo requested; la RAM, en lo que mande el system\n",
+                 "[apm] giving up on the memory after %d attempt(s): this firmware reimposes it. The GPU stays at "
+                 "what was requested; the RAM, at what the system decides\n",
                  n);
   }
 }

@@ -145,7 +145,7 @@ sys.exit(0 if with_mark and not without_mark else 1)
 END_MARK_SHADOW
 py "$OUTPUT/mark_shadow_minimum.py" "$OUTPUT" || { echo "The tfetch2DShadowMin mark is missing in the SPIR-V"; exit 1; }
 "$ROOT/nfsmw_pack_library.exe" "$ENTRY" "$OUTPUT/spirv" "$OUTPUT/nfsmw_shaders.nfsp" > "$OUTPUT/packet.log" \
-  || { echo "Miss al pack; ver packet.log"; exit 1; }
+  || { echo "Failed to pack; see packet.log"; exit 1; }
 "$ROOT/nfsmw_test_library.exe" "$OUTPUT/nfsmw_shaders.nfsp" "$ENTRY" > "$OUTPUT/library.log" \
   || { echo "Library regression failure; see library.log"; exit 1; }
 ls -la "$OUTPUT/nfsmw_shaders.nfsp"

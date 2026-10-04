@@ -36,12 +36,12 @@
  * 128 x 64 KB = 8 MB.
  */
 REXCVAR_DEFINE_INT32(nfsc_io_window_kb, 256, "Filesystem",
-                     "ReadAccess early por file, en KB (0 = off). Solo data de solo read.");
+                     "Read-ahead per file, in KB (0 = off). Read-only data only.");
 
 // How many windows can exist at once. A hard cap so that opening many files does not eat the RAM.
 // 128 was an arbitrary number; in a whole measured session there were never more than 10 live windows.
 REXCVAR_DEFINE_INT32(nfsc_io_windows_max, 16, "Filesystem",
-                     "Maximum de files con read early a la time.");
+                     "Maximum files with read-ahead at the same time.");
 
 /*
  * Split large direct reads into pieces of this many MB. 0 = a single call.
@@ -66,7 +66,7 @@ REXCVAR_DEFINE_INT32(nfsc_io_windows_max, 16, "Filesystem",
  * bounds the worst case and fixes short reads, not because a gain is expected.
  */
 REXCVAR_DEFINE_INT32(nfsc_io_chunk_mb, 4, "Filesystem",
-                     "Part the reads direct grandes en chunks de estos MB (0 = de one sola time).");
+                     "Splits large direct reads into chunks of this many MB (0 = all at once).");
 
 /*
  * RAM read cache by blocks (nfsc_io_cache_mb, off). The game rereads the same data from the SD
@@ -110,8 +110,8 @@ REXCVAR_DEFINE_INT32(nfsc_io_chunk_mb, 4, "Filesystem",
  * ================================================================================================
  */
 REXCVAR_DEFINE_INT32(nfsc_io_cache_mb, 0, "Filesystem",
-                     "Cache en RAM de lo ya read del disco, en MB (0 = off). Solo data de solo "
-                     "read. El game relee every lap lo same.");
+                     "RAM cache of what was already read from disk, in MB (0 = off). Read-only data only. The game "
+                     "rereads the same data every lap.");
 
 /*
  * Read cache by exact range. This is the second attempt, not the block cache above.
@@ -169,21 +169,21 @@ REXCVAR_DEFINE_INT32(nfsc_io_cache_mb, 0, "Filesystem",
  * and the thread stacks, 64 MB leaves margin; 128 would not in the pessimistic case.
  */
 REXCVAR_DEFINE_INT32(nfsc_io_ranges_mb, 64, "Filesystem",
-                     "Cache de reads por range exacto, cap total en MB (0 = off). 64 = la fingerprint "
-                     "measurement de one race (56,6 MB) sin cache_evictions; mas no compra nothing.");
+                     "Cache of reads by exact range, total cap in MB (0 = off). 64 = the measured footprint of a "
+                     "race (56.6 MB) without evictions; more buys nothing.");
 
 // Floor, in KB. At 4 MB it left out everything that is reread during a race (0.14-2.0 MB).
 REXCVAR_DEFINE_INT32(nfsc_io_ranges_min_kb, 256, "Filesystem",
-                     "Solo se cachean the reads de estos KB o mas. 256 = el punto where la simulacion "
-                     "leaves de ganar (con 128 suben the cache_evictions y bajan los hits).");
+                     "Only reads of this many KB or more are cached. 256 = the point where the simulation stops "
+                     "gaining (with 128 evictions go up and hits go down).");
 
 // Compatibility: the old cvar in MB. If a toml sets it to a value > 0, it overrides the KB one.
 REXCVAR_DEFINE_INT32(nfsc_io_ranges_min_mb, 0, "Filesystem",
-                     "OBSOLETO (build 131): use nfsc_io_ranges_min_kb. Si es > 0 manda over el de KB.");
+                     "OBSOLETE (build 131): use nfsc_io_ranges_min_kb. If > 0 it overrides the KB one.");
 
 // Per-entry ceiling: a single read cannot take more than this out of the total cap.
 REXCVAR_DEFINE_INT32(nfsc_io_ranges_max_mb, 12, "Filesystem",
-                     "Ninguna entry de la cache de ranges pasa de estos MB.");
+                     "No entry of the range cache is larger than this many MB.");
 
 namespace rex::filesystem {
 
@@ -329,8 +329,8 @@ bool ReadWithCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_
         g_cache.clear();
         g_cache_lru.clear();
         g_cache_bytes = 0;
-        REXLOG_WARN("[io] cache en RAM: sin memory_block, se apaga (iba por {} MB). El game sigue leyendo "
-                    "del disco as before",
+        REXLOG_WARN("[io] RAM cache: out of memory, turning off (it was at {} MB). The game keeps reading from "
+                    "disk as before",
                     tenia);
         return false;
       }
@@ -360,9 +360,8 @@ bool ReadWithCache(FileHandle* fh, uint32_t id, std::span<uint8_t> buffer, size_
   const uint64_t laps = g_cache_hits + g_cache_misses;
   if (laps >= g_cache_report + 200) {
     g_cache_report = laps;
-    REXLOG_INFO("[io] cache en RAM: {} blocks ({} MB de {}), {} servidas de RAM y {} del disco "
-                "({:.1f} % de hits); {:.1f} MB entregados, {:.1f} read de la SD, {} blocks "
-                "evicted",
+    REXLOG_INFO("[io] RAM cache: {} blocks ({} MB of {}), {} served from RAM and {} from disk ({:.1f} % hits); "
+                "{:.1f} MB delivered, {:.1f} read from the SD, {} blocks evicted",
                 g_cache.size(), g_cache_bytes >> 20, REXCVAR_GET(nfsc_io_cache_mb), g_cache_hits,
                 g_cache_misses, laps ? 100.0 * double(g_cache_hits) / double(laps) : 0.0,
                 double(g_cache_bytes_served) / 1048576.0, double(g_cache_bytes_disco) / 1048576.0,
@@ -523,8 +522,8 @@ void SaveRange(uint32_t id, uint64_t displacement, uint32_t requested, const uin
     }
     g_ranges_entries.store(0, std::memory_order_relaxed);
     g_ranges_bytes_live.store(0, std::memory_order_relaxed);
-    REXLOG_WARN("[io] ranges-cache: sin memory_block, se apaga (iba por {} MB). El game sigue leyendo "
-                "del disco as before",
+    REXLOG_WARN("[io] range cache: out of memory, turning off (it was at {} MB). The game keeps reading from disk "
+                "as before",
                 tenia);
     return;
   }

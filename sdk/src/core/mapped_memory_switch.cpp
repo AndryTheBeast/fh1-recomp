@@ -129,9 +129,8 @@ std::unique_ptr<MappedMemory> MappedMemory::Open(const std::filesystem::path& pa
   }
 
   if (len > kMaxInMemoryFile) {
-    REXLOG_ERROR("MappedMemory: '{}' asks {} MB y en Switch no there_is mmap de files, asi que "
-                 "habria que leerlo whole a RAM. Si es la ISO del game, usa los files "
-                 "EXTRAIDOS (folder game_root) en su lugar.",
+    REXLOG_ERROR("MappedMemory: '{}' asks for {} MB and the Switch has no file mmap, so it would have to be read "
+                 "whole into RAM. If it is the game's ISO, use the EXTRACTED files (game_root folder) instead.",
                  path, len >> 20);
     fclose(f);
     return nullptr;
@@ -140,7 +139,7 @@ std::unique_ptr<MappedMemory> MappedMemory::Open(const std::filesystem::path& pa
   const size_t reserved = (len + kPage - 1) & ~(kPage - 1);
   uint8_t* data = static_cast<uint8_t*>(memalign(kPage, reserved));
   if (!data) {
-    REXLOG_ERROR("MappedMemory: sin memory_block para read '{}' ({} MB)", path, len >> 20);
+    REXLOG_ERROR("MappedMemory: no memory to read '{}' ({} MB)", path, len >> 20);
     fclose(f);
     return nullptr;
   }

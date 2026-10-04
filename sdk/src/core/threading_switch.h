@@ -55,7 +55,7 @@ extern "C" {
 typedef uint32_t RexSwitchHandle;
 #define REX_SWITCH_INVALID_HANDLE ((RexSwitchHandle)0)
 
-/* --- conjuntos de CPU -------------------------------------------------- */
+/* --- sets de CPU -------------------------------------------------- */
 
 /*
  * The Switch has 4 cores; core 3 is reserved by the system except in title

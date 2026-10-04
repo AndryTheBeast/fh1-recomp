@@ -29,9 +29,8 @@ REXCVAR_DEFINE_INT32(
     audio_maxqframes, 8, "Audio",
     "Max buffered audio frames (range 4-64). Lower reduces latency but may cause stuttering.");
 REXCVAR_DEFINE_BOOL(audio_diag_critical_priority, false, "Audio",
-                    "Diagnostic (solo PC): Audio Worker y XMA Decoder a priority de time critico, "
-                    "as en la Switch, where van por encima de los threads del game y no ceden el "
-                    "core mientras tienen work");
+                    "Diagnostic (PC only): Audio Worker and XMA Decoder at time-critical priority, as on the "
+                    "Switch, where they run above the game threads and do not yield the core while they have work");
 
 // As with normal Microsoft, there are like twelve different ways to access
 // the audio APIs. Early games use XMA*() methods almost exclusively to touch

@@ -33,8 +33,8 @@ extern "C" {
 
 REXCVAR_DEFINE_BOOL(ffmpeg_verbose, false, "Audio", "Verbose FFmpeg output (debug and above)");
 REXCVAR_DEFINE_BOOL(audio_ffmpeg_simd, true, "Audio",
-                    "Diagnostic: false = el decodificador XMA de FFmpeg usa solo code C, sin "
-                    "NEON ni SSE (para compare el audio)");
+                    "Diagnostic: false = FFmpeg's XMA decoder uses plain C only, without NEON or SSE (to compare "
+                    "the audio)");
 REXCVAR_DECLARE(bool, audio_diag_critical_priority);  // definida en audio_system.cpp
 /*
  * On by default only on the Switch, like the server priority and the frame wait: there the game's
@@ -51,10 +51,10 @@ REXCVAR_DECLARE(bool, audio_diag_critical_priority);  // definida en audio_syste
 #define REX_XMA_IN_WORKER_BY_DEFAULT 0
 #endif
 REXCVAR_DEFINE_INT32(audio_xma_in_worker, REX_XMA_IN_WORKER_BY_DEFAULT, "Audio",
-                     "Quien descodifica el XMA al llegar un kick (XMAEnableContext): 0 = el thread_value que lo asks, "
-                     "as until now; 1 = el thread_value XMA Decoder, que en la Switch va a 0x2B y no lo preempta "
-                     "el ring de la GPU; 2 = el worker, y el thread_value que asks el kick solo ends los "
-                     "contexts que el worker no haya cogido (para el PC, where no there_is esas prioridades)");
+                     "Who decodes the XMA when a kick arrives (XMAEnableContext): 0 = the thread that asks, as "
+                     "until now; 1 = the XMA Decoder thread, which on the Switch runs at 0x2B and is not preempted "
+                     "by the GPU ring; 2 = the worker, and the thread that asks for the kick only finishes the "
+                     "contexts the worker has not taken (for the PC, where those priorities do not exist)");
 
 // As with normal Microsoft, there are like twelve different ways to access
 // the audio APIs. Early games use XMA*() methods almost exclusively to touch
@@ -121,7 +121,7 @@ X_STATUS XmaDecoder::Setup(system::KernelState* kernel_state) {
   // MDCT, float_dsp) be chosen without SIMD.
   if (!REXCVAR_GET(audio_ffmpeg_simd)) {
     av_force_cpu_flags(0);
-    REXAPU_INFO("XMA: FFmpeg sin SIMD (audio_ffmpeg_simd = false)");
+    REXAPU_INFO("XMA: FFmpeg without SIMD (audio_ffmpeg_simd = false)");
   }
 
   // Register APU/XMA MMIO handlers
@@ -279,12 +279,12 @@ void ReportXma() {
   const uint64_t latency_ns = g_measurement_xma.latency_ns.exchange(0, std::memory_order_relaxed);
   const uint64_t latency_max = g_measurement_xma.latency_max_ns.exchange(0, std::memory_order_relaxed);
   const uint64_t latency_n = g_measurement_xma.latency_n.exchange(0, std::memory_order_relaxed);
-  REXLOG_INFO("[xma] en el thread_value que llama, {:.1f} s: kicks {} con {} contexts descodificados, {:.1f} ms (maximum "
-              "{:.2f} ms); locks {} con {} contexts, {:.1f} ms waiting (maximum {:.2f} ms)",
+  REXLOG_INFO("[xma] on the calling thread, {:.1f} s: kicks {} with {} contexts decoded, {:.1f} ms (maximum {:.2f} "
+              "ms); locks {} with {} contexts, {:.1f} ms waiting (maximum {:.2f} ms)",
               double(now - last) / 1000.0, kicks, kick_contexts, double(kick_ns) / 1e6, double(kick_max) / 1e6,
               locks, lock_contexts, double(lock_ns) / 1e6, double(lock_max) / 1e6);
-  REXLOG_INFO("[xma] split (mode {}): worker {} contexts en {:.1f} ms (maximum {:.2f} ms), fallback del thread_value "
-              "del kick {}; del kick al datum ready media {:.0f} us y maxima {:.2f} ms ({} measurements)",
+  REXLOG_INFO("[xma] split (mode {}): worker {} contexts in {:.1f} ms (maximum {:.2f} ms), fallback on the kick "
+              "thread {}; from kick to data ready average {:.0f} us and maximum {:.2f} ms ({} measurements)",
               REXCVAR_GET(audio_xma_in_worker), of_worker, double(work_ns) / 1e6,
               double(work_max) / 1e6, of_fallback,
               latency_n ? double(latency_ns) / double(latency_n) / 1e3 : 0.0, double(latency_max) / 1e6,

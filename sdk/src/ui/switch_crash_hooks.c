@@ -74,7 +74,7 @@ void abort(void) {
 }
 
 static void RexSwitchExitHook(void) {
-    RexSwitchCrashLog("exit() outside del close sorted", NULL, (u64)__builtin_frame_address(0),
+    RexSwitchCrashLog("exit() outside the orderly shutdown", NULL, (u64)__builtin_frame_address(0),
                       (u64)__builtin_return_address(0));
     diagAbortWithResult(MAKERESULT(Module_Libnx, 103));
 }

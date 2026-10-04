@@ -52,9 +52,9 @@
  * A monotonic clock read per call is a few nanoseconds next to a trip to the SD. It is on.
  */
 REXCVAR_DEFINE_INT32(nfsc_io_warning_ms, 8, "Filesystem",
-                     "Avisa en el log de every open o read que pass de estos ms (0 = never).");
+                     "Logs a warning for every open or read slower than this many ms (0 = never).");
 REXCVAR_DEFINE_INT32(nfsc_io_summary_s, 15, "Filesystem",
-                     "Every how_many_2 seconds se writes el summary [io] (0 = never).");
+                     "How often, in seconds, the [io] summary is written (0 = never).");
 
 namespace rex::kernel::xboxkrnl {
 using namespace rex::system;
@@ -266,15 +266,14 @@ void MaybeSummaryIo(uint64_t now_us) {
   const uint64_t opens = d.opens_ok + d.opens_miss;
 
   REXKRNL_INFO(
-      "[io] {} s: {} opens ({} fallan) {:.1f} ms en total, worst {:.1f} ms, media {:.2f} ms; "
-      "{} reads {:.1f} MB en {:.1f} ms, worst {:.1f} ms",
+      "[io] {} s: {} opens ({} fail) {:.1f} ms in total, worst {:.1f} ms, average {:.2f} ms; {} reads {:.1f} MB in "
+      "{:.1f} ms, worst {:.1f} ms",
       period_s, opens, d.opens_miss, d.us_opens / 1000.0, worst_open / 1000.0,
       opens ? (d.us_opens / 1000.0) / double(opens) : 0.0, d.reads,
       d.bytes_read_total / (1024.0 * 1024.0), d.us_reads / 1000.0, worst_read / 1000.0);
   REXKRNL_INFO(
-      "[io] paths: {} resolved_2 sin touch la SD, {} stats, {} scans de directorio ({} entries "
-      "en el tree); window: {} hits / {} fills / {} direct, {:.1f} MB since RAM, {} "
-      "files con window",
+      "[io] paths: {} resolved without touching the SD, {} stats, {} directory scans ({} entries in the tree); "
+      "window: {} hits / {} fills / {} direct, {:.1f} MB from RAM, {} files with a window",
       d.misses_in_dry, d.stats_en_sd, d.scans_in_sd, paths.entries_in_tree, d.hits,
       d.fills, d.direct, d.bytes_ram / (1024.0 * 1024.0), window.windows_live);
 
@@ -289,8 +288,8 @@ void MaybeSummaryIo(uint64_t now_us) {
    */
   const uint64_t reads_range = d.rereads + d.different;
   REXKRNL_INFO(
-      "[io] ranges: {} releidas de {} ({:.0f} %), {:.1f} MB ya read before de {:.1f} MB ({:.0f} %); {} "
-      "consecutive ({:.0f} %); {} window_evictions",
+      "[io] ranges: {} reread of {} ({:.0f} %), {:.1f} MB already read before out of {:.1f} MB ({:.0f} %); {} "
+      "sequential ({:.0f} %); {} evictions",
       d.rereads, reads_range,
       reads_range ? 100.0 * double(d.rereads) / double(reads_range) : 0.0,
       d.bytes_reread / (1024.0 * 1024.0),
@@ -312,22 +311,22 @@ void MaybeSummaryIo(uint64_t now_us) {
    * How to read it:
    *  - "cache_evictions" at 0 is what is expected. If it grows, the cap is too small and the LRU
    *    drops entries before reusing them, which is exactly how the block cache died.
-   *  - "de la SD" against "since RAM" is the amplification. By exact range it must be 1:1 on
+   *  - "from the SD" against "from RAM" is the amplification. By exact range it must be 1:1 on
    *    the first lap and go down from there; if more SD were read than delivered, something is
    *    wrong (the block cache read 318 for 304 delivered, and that is why it was turned off).
    */
   const auto ranges = rex::filesystem::ReadStatisticsRanges();
   const uint64_t ranges_total = ranges.hits + ranges.misses;
   REXKRNL_INFO(
-      "[io] ranges-cache: {} hits / {} misses ({:.0f} %), {:.1f} MB since RAM contra {:.1f} MB "
-      "de la SD; {} entries live ({:.1f} MB de {} cap), {} cache_evictions; no cached: {} low el "
-      "floor de {} KB, {} over el ceiling, {} del scan de load ({:.1f} MB){}",
+      "[io] range cache: {} hits / {} misses ({:.0f} %), {:.1f} MB from RAM against {:.1f} MB from the SD; {} live "
+      "entries ({:.1f} MB of {} cap), {} evictions; not cached: {} below the {} KB floor, {} above the ceiling, {} "
+      "from the loading scan ({:.1f} MB){}",
       ranges.hits, ranges.misses,
       ranges_total ? 100.0 * double(ranges.hits) / double(ranges_total) : 0.0,
       ranges.bytes_ram / (1024.0 * 1024.0), ranges.bytes_disco / (1024.0 * 1024.0), ranges.entries,
       ranges.bytes_live / (1024.0 * 1024.0), ranges.cap_mb, ranges.cache_evictions, ranges.low_floor,
       ranges.floor_kb, ranges.over_ceiling, ranges.sequential,
-      ranges.sequential_bytes / (1024.0 * 1024.0), ranges.without_memory ? " [OFF: sin memory_block]" : "");
+      ranges.sequential_bytes / (1024.0 * 1024.0), ranges.without_memory ? " [OFF: out of memory]" : "");
 }
 
 // Always measured: reading the monotonic clock on Horizon is a processor register read, not a system call.
@@ -361,7 +360,7 @@ inline void NoteRead(uint64_t us, uint32_t bytes, const std::string_view path,
   if (warning_ms > 0 && us >= static_cast<uint64_t>(warning_ms) * 1000ull &&
       g_io_warnings.fetch_add(1, std::memory_order_relaxed) < 300) {
     // The offset is included. Without it a sequential sweep cannot be told apart from a reread.
-    REXKRNL_WARN("[io] SLOW: read {} bytes de '{}' en {} tardo {:.1f} ms{}", bytes, path,
+    REXKRNL_WARN("[io] SLOW: reading {} bytes of '{}' at {} took {:.1f} ms{}", bytes, path,
                  displacement, us / 1000.0, reread ? " (REREAD)" : "");
   }
 }
@@ -390,7 +389,7 @@ void NfscNoteOpen(const rex::filesystem::Entry* entry, const std::string& path) 
     g_nfsc_wmv_open.erase(g_nfsc_wmv_open.begin());
   }
   g_nfsc_wmv_open.emplace_back(entry, path);
-  REXLOG_INFO("[video] el game abre '{}'", path);
+  REXLOG_INFO("[video] the game opens '{}'", path);
 }
 
 void NfscNoteRead(const rex::filesystem::Entry* entry) {
@@ -399,7 +398,7 @@ void NfscNoteRead(const rex::filesystem::Entry* entry) {
     if (e == entry) {
       if (r != g_nfsc_last_wmv_read) {
         g_nfsc_last_wmv_read = r;
-        REXLOG_INFO("[video] el game reads '{}'", r);
+        REXLOG_INFO("[video] the game reads '{}'", r);
       }
       return;
     }
@@ -1063,7 +1062,7 @@ u32 NtFlushBuffersFile_entry(u32 file_handle, ppc_ptr_t<X_IO_STATUS_BLOCK> io_st
     result = file->Flush();
     static std::atomic<uint32_t> warnings{0};
     if (warnings.fetch_add(1, std::memory_order_relaxed) < 16) {
-      REXKRNL_INFO("[guardado] NtFlushBuffersFile: {} bajado al disco (result {:08X})",
+      REXKRNL_INFO("[save] NtFlushBuffersFile: {} flushed to disk (result {:08X})",
                    file->path(), uint32_t(result));
     }
   }

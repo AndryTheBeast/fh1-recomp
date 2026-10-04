@@ -64,7 +64,7 @@
 "0x882435D8" = { }   # 16 bytes, after 0x88242BC0
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x88063888" = { }   # rest
 "0x880678F8" = { }   # rest
 "0x880D2F38" = { }   # rest
@@ -82,7 +82,7 @@
 "0x881EC4CC" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x88063890" = { }   # rest
 "0x88067918" = { }   # rest
 "0x88105758" = { }   # rest
@@ -95,38 +95,38 @@
 "0x881A64A8" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x88063898" = { }   # rest
 "0x88067938" = { }   # rest
 "0x8813F7A4" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x880638A0" = { }   # rest
 "0x88067958" = { }   # rest
 "0x8813F7B0" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x880638A8" = { }   # rest
 "0x88067978" = { }   # rest
 "0x8813F7BC" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x880638B0" = { }   # rest
 "0x88067998" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x880679B8" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x880679D8" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x880679F8" = { }   # rest
 # Continuations (tools/merge_continuations.py)
 "0x88063590" = { end = 0x880636B8 }

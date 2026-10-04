@@ -36,11 +36,10 @@
 #include <vector>
 
 REXCVAR_DEFINE_INT32(audio_dump_s, 0, "Audio",
-                     "Diagnostic: seconds del audio que delivery el game (6 channel_count, before del "
-                     "driver) que se guardan en audio_dump_<client>.wav junto al ejecutable; "
-                     "0 = nothing");
+                     "Diagnostic: seconds of the audio the game hands over (6 channels, before the driver) saved "
+                     "to audio_dump_<client>.wav next to the executable; 0 = nothing");
 REXCVAR_DEFINE_INT32(audio_dump_since_s, 0, "Audio",
-                     "Diagnostic: seconds de audio de every client que se saltan before del dump");
+                     "Diagnostic: seconds of each client's audio skipped before the dump");
 
 namespace {
 
@@ -112,7 +111,7 @@ void WriteDump(uint32_t client, std::vector<float> sample_total) {
                       ("audio_dump_" + std::to_string(client) + ".wav");
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     if (!file) {
-      REXKRNL_WARN("[audio] no se pudo create el dump {}", path.string());
+      REXKRNL_WARN("[audio] could not create the dump {}", path.string());
       return;
     }
     const uint32_t bytes = uint32_t(sample_total.size() * sizeof(float));
@@ -131,7 +130,7 @@ void WriteDump(uint32_t client, std::vector<float> sample_total) {
     file.write("data", 4);
     u32(bytes);
     file.write(reinterpret_cast<const char*>(sample_total.data()), bytes);
-    REXKRNL_INFO("[audio] dump del client {}: {} sample_total por canal en {}", client,
+    REXKRNL_INFO("[audio] dump of client {}: {} samples per channel in {}", client,
                  sample_total.size() / 6, path.string());
   });
 }

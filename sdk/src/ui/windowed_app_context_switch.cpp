@@ -191,7 +191,7 @@ int SwitchWindowedAppContext::RunMainMessageLoop() {
         impl_->docked_effective = docked;
       } else if (docked != impl_->docked_effective) {
         impl_->docked_effective = docked;
-        REXLOG_INFO("Switch: Reverse-NX now dice {}: se cambia el size de la window",
+        REXLOG_INFO("Switch: Reverse-NX now says {}: resizing the window",
                     docked ? "docked" : "handheld");
         display_changed_ = true;
       }

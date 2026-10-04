@@ -311,9 +311,10 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_lazy_depth, true, "NFSMW",
  * line: "C2 front front". false = always copy, as before.
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_lazy_front, true, "NFSMW",
-                    "Renderer native (25/09, build 184): el Swap pinta el front since su target de render (o one "
-                    "image retained) en time de copiarlo before a la texture: 0,59 Mpixeles minus por frame. Same "
-                    "image; con FXAA se copy as always. Se comprueba sola. false = copy_2 always, as before");
+                    "Native renderer (25/09, build 184): the Swap paints the front buffer from its render target "
+                    "(or a retained image) instead of first copying it to the texture: 0.59 Mpixels less per "
+                    "frame. Same image; with FXAA it is copied as always. Checks itself. false = always copy, as "
+                    "before");
 /*
  * The shadow map without the 1600x1600 copy (nfsmw_native_shadow_minimum).
  *
@@ -351,14 +352,14 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_lazy_front, true, "NFSMW",
  * Report line: "C2 shadow por minimum". false = always copy, as before.
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_shadow_minimum, true, "NFSMW",
-                    "Native renderer (25/09, build 184): the Swap paints the front buffer from its render target "
-                    "(or a retained image) instead of first copying it to the texture: 0.59 Mpixels less per "
-                    "frame. Same image; with FXAA it is copied as always. Checks itself. false = always copy, as "
-                    "copy_2 as before");
-REXCVAR_DEFINE_INT32(nfsmw_native_shadow_minimum_toggle_s, 0, "NFSMW",
+                    "Native renderer (25/09, build 184): the world's shadow map is no longer restored by copying "
                     "1600x1600; the cars are drawn on the cleared target and the world samples the minimum of the "
                     "two textures. Same image. Needs the library with tfetch2DShadowMin. Checks itself. false = "
                     "copy as before");
+REXCVAR_DEFINE_INT32(nfsmw_native_shadow_minimum_toggle_s, 0, "NFSMW",
+                     "Native renderer (25/09, build 184, test): with N > 0 and the guard already applying, toggles "
+                     "every N seconds between the minimum (even intervals) and the usual copy (odd ones), to "
+                     "measure the net gain on the console with 'C2: GPU per Swap'. 0 = no toggling");
 /*
  * Repeated clears.
  *
@@ -373,9 +374,9 @@ REXCVAR_DEFINE_INT32(nfsmw_native_shadow_minimum_toggle_s, 0, "NFSMW",
  * restore. With that it is impossible to skip a clear that is needed.
  */
 REXCVAR_DEFINE_BOOL(nfsmw_native_skip_repeated_clears, true, "NFSMW",
-                     "Native renderer (25/09, build 184, test): with N > 0 and the guard already applying, toggles "
-                     "every N seconds between the minimum (even intervals) and the usual copy (odd ones), to "
-                     "measure the net gain on the console with 'C2: GPU per Swap'. 0 = no toggling");
+                    "Native renderer (20/09 night): skip a clear when the target is already cleared to that same "
+                    "value and nothing has been drawn since. Not a single pixel changes; 'clears skipped' in the "
+                    "C2 report says how many are saved");
 /*
  * How much of each clear is used (nfsmw_native_diag_clears).
  *
@@ -389,9 +390,9 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_skip_repeated_clears, true, "NFSMW",
 // false by default. Measured: the clip to the useful area that needs it only saved 0.09 ms of GPU, and the
 // tracking runs on the PM4 ring thread, which is now the bottleneck.
 REXCVAR_DEFINE_BOOL(nfsmw_native_diag_clears, false, "NFSMW",
-                    "Native renderer (20/09 night): skip a clear when the target is already cleared to that same "
-                    "value and nothing has been drawn since. Not a single pixel changes; 'clears skipped' in the "
-                    "C2 report says how many are saved");
+                    "Native renderer (25/09, build 184, diagnostic): per target, the cleared area against the area "
+                    "used until the next clear (passes, resolves, restores and swaps). One line every 20 s ('C2 "
+                    "clears per target'). Does not change the image");
 /*
  * Color clears only over the area in use (nfsmw_native_clear_useful_area).
  *
@@ -411,25 +412,24 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_diag_clears, false, "NFSMW",
 // false by default. Measured: 0.09 ms of GPU per frame (1.18 Mpixels not cleared): not worth it with the
 // PM4 ring as the bottleneck.
 REXCVAR_DEFINE_BOOL(nfsmw_native_clear_useful_area, false, "NFSMW",
-                    "Native renderer (25/09, build 184, diagnostic): per target, the cleared area against the area "
-                    "used until the next clear (passes, resolves, restores and swaps). One line every 20 s ('C2 "
-                    "clears per target'). Does not change the image");
+                    "Native renderer (25/09, build 184): color clears clear only the rows that are really used; "
+                    "the rest is cleared before something uses it. Same image. Needs nfsmw_native_diag_clears. "
+                    "false = the whole image, as before");
 // Defined in nfsmw_native_draws.cpp; here it is only read so as not to open two queries of the same type
 // at once.
 REXCVAR_DECLARE(int32_t, nfsmw_native_per_draw_statistics_s);
 // nfsmw_native_shadow_minimum only pays off with the single-sample PCF (defined in nfsmw_native_draws.cpp).
 REXCVAR_DECLARE(bool, nfsmw_native_cheap_pcf);
 REXCVAR_DEFINE_BOOL(nfsmw_native_pipeline_statistics, false, "NFSMW",
-                    "Native renderer (25/09, build 184): color clears clear only the rows that are really used; "
-                    "the rest is cleared before something uses it. Same image. Needs nfsmw_native_diag_clears. "
-                    "false = the whole image, as before");
-REXCVAR_DEFINE_BOOL(nfsmw_native_diag_clear, false, "NFSMW",
                     "Native renderer (17/09, build 156): counts shaded fragments, vertex invocations and clipped "
                     "primitives per pass type (C2 report). The image does not change, but the queries cost GPU "
-                    "presentacion)");
-REXCVAR_DEFINE_BOOL(nfsmw_native_diag_resolved, false, "NFSMW",
+                    "time: only for measuring");
+REXCVAR_DEFINE_BOOL(nfsmw_native_diag_clear, false, "NFSMW",
                     "Native renderer: clear each render target with its own color instead of the game's color "
                     "(tests only: checks copy, clear and presentation)");
+REXCVAR_DEFINE_BOOL(nfsmw_native_diag_resolved, false, "NFSMW",
+                    "Native renderer: present the resolved textures of each frame as a mosaic, in the order of "
+                    "their copies (tests only)");
 /*
  * Who reads each resolved texture (nfsmw_native_diag_readers_s, measurement only).
  *
@@ -464,7 +464,7 @@ REXCVAR_DEFINE_INT32(nfsmw_native_diag_readers_s, 0, "NFSMW",
                      "Native renderer (25/09, build 184): every this many seconds two whole frames are watched "
                      "and, per resolved texture, it writes which pixel shaders read each write before the next one "
                      "(C2 readers lines); what comes out as UNUSED is then watched in every frame. Measurement "
-                     "mide. 0 = off")
+                     "only. 0 = off")
     .range(0, 3600);
 /*
  * The composited scene is only copied if someone reads it (nfsmw_native_lazy_composite).
@@ -483,18 +483,18 @@ REXCVAR_DEFINE_INT32(nfsmw_native_diag_readers_s, 0, "NFSMW",
 // false by default. Measured: 19,895 of 21,041 copies were recorded anyway because a draw reads it almost
 // every frame: 0 ms saved.
 REXCVAR_DEFINE_BOOL(nfsmw_native_lazy_composite, false, "NFSMW",
+                    "Native renderer (25/09, build 184): the 1-to-1 copy of the composed scene to its texture "
                     "(098B0000, before the HUD) is deferred: it is recorded if a draw samples it before its source "
                     "is written again (the raindrops) and dropped otherwise. Activates after the watching of "
                     "nfsmw_native_diag_readers_s and turns itself off at the first disagreement. false = always "
                     "copied");
 REXCVAR_DEFINE_INT32(nfsmw_native_read_resolved_texels, 4096, "NFSMW",
+                     "Frames slower than this many ms get the three [hitch] lines in the log (who waited for whom, "
+                     "GPU time, new textures). 25 catches the small dips while driving");
+REXCVAR_DEFINE_BOOL(nfsmw_native_invalidate_textures_every_copy, false, "NFSMW",
                      "Native renderer: resolved textures of up to this many texels are also copied to guest "
                      "memory, which the game reads for its exposure (0 = none; 4096 = 64x64, the ones the exposure "
                      "uses; 57600 = 320x180)");
-REXCVAR_DEFINE_BOOL(nfsmw_native_invalidate_textures_every_copy, false, "NFSMW",
-                    "Native renderer: drop the texture caches on every copy (the behavior before build 127). Since "
-                    "127 they are only dropped when a resolved texture is created, remade, prepared or changes its "
-                    "channel order");
 /*
  * On by default. It was written earlier and left off without being measured.
  *
@@ -589,6 +589,7 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_zcull, true, "NFSMW",
                     "driver gives them a ZCULL plane");
 
 REXCVAR_DEFINE_BOOL(nfsmw_native_output_without_wait, true, "NFSMW",
+                    "Native renderer: paints the output of each Swap rotating 3 slots instead of one, so it does "
                     "not wait for the GPU to finish the previous output (on the console the ring waited there 17 "
                     "ms per Swap, almost a vsync). Does not change the image; false goes back to the previous "
                     "behavior");
@@ -1007,7 +1008,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                 slots_.size());
     output_without_wait_ = REXCVAR_GET(nfsmw_native_output_without_wait);
     invalidate_every_copy_ = REXCVAR_GET(nfsmw_native_invalidate_textures_every_copy);
-    REXLOG_INFO("[native] C2: caches de textures dropped en every copy (nfsmw_native_invalidate_textures_every_copy) = {}",
+    REXLOG_INFO("[native] C2: texture caches dropped on every copy (nfsmw_native_invalidate_textures_every_copy) = "
+                "{}",
                 invalidate_every_copy_ ? "SI" : "no");
     REXLOG_INFO("[native] C2: output without waiting for the previous one (nfsmw_native_output_without_wait) = {}",
                 output_without_wait_ ? "SI" : "no");
@@ -1988,7 +1990,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
               "[hitch] waits (ms): game: executor handoff {:.1f} ({}), preparer handoff {:.1f} ({}), room in the "
               "ring {:.1f} ({}), inside sub_826E8EE8 {:.1f} ({}; vtable {:08X}, caller {:08X}) | ring: no work "
               "{:.1f} ({}), WAIT_REG_MEM {:.1f} ({}), GPU fence {:.1f}, output {:.1f} | textures checked {:.1f} "
-              "textures checked {:.1f} MB, deferred {}",
+              "MB, deferred {}",
               delta(e::kHandoffExecutor), times(e::kHandoffExecutor), delta(e::kHandoffPreparer),
               times(e::kHandoffPreparer), delta(e::kRoomRing), times(e::kRoomRing),
               delta(e::kGameMiddle), times(e::kGameMiddle), e::g_vtable_middle.load(std::memory_order_relaxed),
@@ -2009,11 +2011,11 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
           // how many the binding thread bound and how long the ring waited for it
           // (nfsmw_native_texture_binding_thread).
           NFSMW_REPORT_RING("[hitch] ring: {} draws, working {:.1f} ms, textures {:.1f} ms ({} uploads, {:.1f} MB; "
-                           "{} created; fingerprints {:.1f} + {:.1f} ms); waiting for the vertex copy thread "
+                      "{} created; fingerprints {:.1f} + {:.1f} ms); waiting al thread_value de copies de vertices {:.1f} ms "
                       "({} times), ayudandolo {:.1f} ms ({} copies); "
-                           "the ring, {} bound on the thread, waiting for it {:.1f} ms; fingerprints on the "
-                           "thread: {} textures in {:.1f} ms of the thread, copies on the ring {:.1f} ms, {} done "
-                           "by the ring in {:.1f} ms, waiting for it {:.1f} ms",
+                      "create textures {:.1f} ms en el ring, {} bound en el thread_value, esperandolo {:.1f} ms; "
+                      "fingerprints en el thread_value: {} textures en {:.1f} ms del thread_value, copies en el ring {:.1f} ms, {} "
+                      "done_2 por el ring en {:.1f} ms, esperandolo {:.1f} ms",
                       dif(e::g_draws, hitch_draws_), double(dif(e::g_ns_ring_working, hitch_ns_ring_)) / 1e6,
                       double(dif(e::g_ns_textures, hitch_ns_textures_)) / 1e6,
                       dif(e::g_textures_uploads, hitch_textures_uploads_),
@@ -2042,7 +2044,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
            * its handoff wait (the one in the line above): the difference is what the game itself takes.
            */
           NFSMW_REPORT_RING("[hitch] game: el executor sin commands {:.1f} ms ({}) | el preparer: llenando la "
-                           "list {:.1f} ms ({}), of which TreeCull {:.1f} ms ({}); outside the list {:.1f} ms ({})",
+                               "list {:.1f} ms ({}), de ello TreeCull {:.1f} ms ({}); outside de la list {:.1f} ms ({})",
                                delta(e::kExecutorWithoutCommands), times(e::kExecutorWithoutCommands),
                                delta(e::kPreparerList), times(e::kPreparerList),
                                delta(e::kPreparerScenery), times(e::kPreparerScenery),
@@ -2169,8 +2171,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       if (composite_applying_ != address) {
         composite_applying_ = address;
         NFSMW_REPORT_RING("[native] C2 compuesta lazy: {:08X} since {:03X}/{}: {} writes watched, {} "
-                         "their source was written again and 0 after: APPLYING (the copy is deferred; it is "
-                         "recorded before the first draw that reads it and dropped when its source is written)",
+                             "read_3 before de volver a write su source y 0 after: APPLYING (la copy se aplaza; "
+                             "se graba before del first draw que la lea y se tira al write su source)",
                              address, source & 0xFFF, source >> 12, v.writes, v.before);
       }
       return true;
@@ -2222,7 +2224,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         p.target->image != p.source_vk || !copy_image_ || !Record()) {
       composite_stale_ = p.address;
       CompositeDifference(p.address, "the deferred copy can no longer be recorded (the source image or the texture "
-                                       "texture)");
+                                     "changed)");
       return;
     }
     if (draws_) {
@@ -2278,7 +2280,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       } else if (composite_stale_ != 0 && base == composite_stale_) {
         ++composite_reads_late_;
         CompositeDifference(base, "a draw samples it after its copy was dropped (it sees the scene from before the "
-                                  "compose)");
+                                  "composition)");
         composite_stale_ = 0;
       }
     }
@@ -2339,8 +2341,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     const double mp = double(composite_pixels_saved_ - composite_pixels_previous_) / 1e6;
     const double by_frame = frames ? mp / double(frames) : 0.0;
     NFSMW_REPORT_RING("[native] C2 compuesta lazy (build 184): {} copies deferred since el arranque; {} "
-                     "a draw that reads it (exact) and {} before another write; {} dropped when their source was "
-                     "written and {} when another whole one covered it: {:.2f} Mpixels per frame not copied "
+                         "recorded before de un draw que la reads (exact) y {} before de other write; {} dropped al "
+                         "write su source y {} al taparla other whole: {:.2f} Mpixeles por frame sin copy_2 "
                          "(~{:.2f} ms real); reads late {}{}",
                          composite_deferred_, composite_recorded_read_, composite_recorded_other_,
                          composite_dropped_source_, composite_replaced_, by_frame, by_frame * 0.60,
@@ -2512,14 +2514,14 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
           v.ps_before = ps;
           NFSMW_REPORT_RING("[native] C2 readers (build 184): {:08X}, written since {:03X}/{}, la reads el PS n{} "
                                "BEFORE de volver a write su source (after {} writes watched): one copy "
-                           "BEFORE its source is written again (after {} watched writes): a deferred copy covers it",
+                               "deferred la cubre",
                                address, v.source & 0xFFF, v.source >> 12, ps, v.writes);
         }
       } else if (v.late++ == 0) {
         v.ps_late = ps;
         NFSMW_REPORT_RING("[native] C2 readers (build 184): {:08X}, written since {:03X}/{}, la reads el PS n{} "
-                         "its source is written (after {} watched writes): dropping that copy when the source is "
-                         "written would NOT be exact",
+                             "AFTER de write su source (after {} writes watched): tirar esa copy al "
+                             "write el source NO seria exact",
                              address, v.source & 0xFFF, v.source >> 12, ps, v.writes);
       }
     }
@@ -2643,12 +2645,13 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                                v.late,
                                v.late ? fmt::format(" (the first, PS n{}): dropping it would NOT be exact", v.ps_late)
                                          : std::string(v.writes ? " (dropping it when the source is written would "
+                                                                  "be exact)"
                                                                     : ""));
     }
     NFSMW_REPORT_RING("[native] C2 readers de the resolved_2 (build 184, window {}, 2 frames every {} s): {} "
-                     "addresses and {} writes; {} lines written and {} equal to the last one written (not "
-                     "repeated){}; writes nobody reads before another that covers them whole:{} | watched in every "
-                     "frame:{}",
+                         "addresses y {} writes; {} lines written y {} equal a la last_2 written (no se "
+                         "repiten){}; writes que nadie reads before de other que the tapa whole:{} | watched en "
+                         "all los frames:{}",
                          diag_windows_, REXCVAR_GET(nfsmw_native_diag_readers_s), addresses.size(), writes,
                          new_ones, equal,
                          diag_writes_lost_
@@ -3181,13 +3184,13 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       for (const Row& row : rows) {
         const UseClear& u = *row.use;
         list += fmt::format(" | {:03X}/{} {} {}x{}{}: {:.2f} per frame, {:.2f} Mpixels cleared, {:.2f} used (up to "
-                             "(until {}x{})",
+                            "{}x{})",
                              u.base, u.pitch, u.depth ? "prof" : "color", row.width, row.height,
                              u.in_pass ? " (per pass, ZCULL)" : "", double(u.clears) / double(frames),
                              row.clear, row.used, u.max_width, u.max_height);
       }
       NFSMW_REPORT_RING("[native] C2 clears por target (build 184, {} frames): {:.2f} Mpixeles clears y {:.2f} "
-                       "used per frame (spare {:.2f}: ~{:.2f} real ms){}",
+                           "used por frame (spare_2 {:.2f}: ~{:.2f} ms real){}",
                            frames, total_clear, total_used, total_clear - total_used,
                            (total_clear - total_used) * 0.075, list);
     }
@@ -3195,8 +3198,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const double mp =
           double(area_useful_pixels_ - area_useful_pixels_previous_) / 1e6 / double(std::max<uint64_t>(frames, 1));
       NFSMW_REPORT_RING("[native] C2 clear area util (build 184): {} clears de color recortados since el arranque; "
-                       "Mpixels per frame not cleared (~{:.2f} real ms); {} bands completed before a use; {} "
-                       "failures{}",
+                           "{:.2f} Mpixeles por frame sin clear (~{:.2f} ms real); {} bands completed before de "
+                           "un use; {} misses{}",
                            area_useful_clears_, mp, mp * 0.075, area_useful_completed_, area_useful_misses_,
                            area_useful_global_off_ ? " *** OFF BY THE GUARD ***" : " (0 = the image is the "
                                                                                          "same)");
@@ -3231,8 +3234,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       if (!lazy_off_) {
         lazy_off_ = true;
         REXLOG_ERROR("[native] C2 lazy depth: DIFFERENCE, a draw samples {:08X} after its copy was dropped (late "
-                     "copy (read tardia: reads one depth old). Off para el rest de la session: se "
-                     "copy always",
+                     "read: it reads an old depth). Off for the rest of the session: always copied",
                      address);
       }
     }
@@ -4354,7 +4356,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     if (sm_phase_ != kSmOff) {
       sm_phase_ = kSmOff;
       REXLOG_WARN("[native] C2 shadow by minimum: not applied in this session ({}; clue {:08X}); the shadow map is "
-                  "sigue copiando as always",
+                  "still copied as always",
                   reason, datum);
     }
   }
@@ -5262,7 +5264,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         r->second.reads = 0;
       }
       list += fmt::format(" {:08X} {}x{}: {} copies, {} with draws ({:.1f} draws per copy), {:.2f} Mpixels, {} "
-                           "{:.2f} Mpixeles, {} reads{};",
+                          "reads{};",
                            address, c.width, c.height, c.copies, c.with_draws,
                            c.copies ? double(c.draws) / double(c.copies) : 0.0,
                            double(c.pixels) / 1e6, reads,
@@ -5274,7 +5276,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       // Restores are the verdict. If they go up, the swap without a clear saves nothing: the same copy is
       // paid, just later.
       NFSMW_REPORT_RING("[native] C2 resolutions sin copy: {} swaps ({} sin clear, {} de COLOR) y {} "
-                       "restores since startup -> {}",
+                  "restores since el arranque -> {}",
                   swaps_, swaps_without_clear_, swaps_color_, restores_,
                   restores_ == 0 ? "not a single restore: the saving is clean"
                                        : "*** there are restores: the saving is NOT clean ***");
@@ -5283,8 +5285,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       // 0); the other count is the resolves that, with the setting off, would read the stale image.
       if (restores_for_resolve_ || resolve_without_source_ || resolve_content_old_) {
         NFSMW_REPORT_RING("[native] C2 resolver con content valid (build 193): {} times se trajo de lap el "
-                         "back before resolving (before, the resolve read the previous frame's image: the menu "
-                         "flicker); {} without a source; {} read as in 192 (setting off)",
+                             "content before de resolver (before el resolve leia la image del frame previous: el "
+                             "parpadeo del menu); {} sin source; {} read_3 as la 192 (ajuste off)",
                              restores_for_resolve_, resolve_without_source_, resolve_content_old_);
       }
       // And what they cost per frame, which is the only thing that decides. 0.78 real ms per Mpixel
@@ -5295,8 +5297,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const double mp_saving =
           double(pixels_restore_saved_ - pixels_restore_saved_previous_) / 1e6;
       NFSMW_REPORT_RING("[native] C2 restores por frame: {:.2f} Mpixeles copied ({:.2f} ms "
-                       "saved ({:.2f} ms); since startup: {} trimmed to the useful area and {} by swap (lent reads "
-                       "{}{})",
+                  "real) y {:.2f} Mpixeles saved ({:.2f} ms); since el arranque: {} clipped "
+                  "al area util y {} por swap_value (lent read_3 {}{})",
                   mp_rest * byFrame, mp_rest * byFrame * 0.78, mp_saving * byFrame,
                   mp_saving * byFrame * 0.78, restores_clipped_, loans_,
                   lent_read_,
@@ -5321,7 +5323,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const double byFrame = frames > 0.0 ? 1.0 / frames : 0.0;
       const double mp = double(pixels_clears_skipped_ - pixels_clears_skipped_previous_) / 1e6;
       NFSMW_REPORT_RING("[native] C2 clears skipped: {} de color y {} de depth since el arranque; "
-                       "not cleared ({:.2f} real ms)",
+                  "{:.2f} Mpixeles por frame sin clear ({:.2f} ms real)",
                   clears_skipped_, clears_skipped_depth_, mp * byFrame,
                   mp * byFrame * 0.075);
       pixels_clears_skipped_previous_ = pixels_clears_skipped_;
@@ -5345,8 +5347,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const double mp = double(lazy_pixels_saved_ - lazy_pixels_saved_previous_) / 1e6;
       NFSMW_REPORT_RING("[native] C2 depth lazy (build 184): {} resolutions de depth deferred "
                            "since el arranque; {} recorded al muestrearlas, {} before de volver a write su source o "
-                       "when sampled, {} before their source was written again or another resolve, {} replaced by "
-                       "a swap and {} dropped without copying (nobody sampled them): {:.2f} Mpixels per frame not "
+                           "de other resolve, {} replaced por un swap_value y {} dropped sin copy_2 (nadie the "
+                           "sampling): {:.2f} Mpixeles por frame sin copy_2 (~{:.2f} ms real); reads "
                            "late {}{}",
                            lazy_deferred_, lazy_copied_read_, lazy_copied_write_,
                            lazy_replaced_, lazy_dropped_, mp * byFrame, mp * byFrame * 0.60,
@@ -5359,11 +5361,11 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const double byFrame = frames > 0.0 ? 1.0 / frames : 0.0;
       const double mp = double(front_pixels_saved_ - front_pixels_saved_previous_) / 1e6;
       NFSMW_REPORT_RING("[native] C2 front front (build 184): {} copies a front deferred since el arranque; "
-                       "startup; Swaps painted from the target {} and from a retained image {}; {} clears on a "
-                       "spare image ({} without a spare); recorded: {} when sampled, {} before the target was "
-                       "written again or another resolve, {} at the Swap (FXAA, no ramp or another output); {} "
-                       "dropped without copying (another resolve covers them whole): {:.2f} Mpixels per frame not "
-                       "copied (~{:.2f} real ms); {} spare images; late reads {}{}",
+                           "Swaps painted since el target {} y since one image retained {}; {} clears over one "
+                           "image de spare ({} sin spare); recorded: {} al muestrearlas, {} before de volver a "
+                           "write el target u other resolve, {} en el Swap (FXAA, sin ramp u other output); {} dropped "
+                           "sin copy_2 (other resolve the tapa whole): {:.2f} Mpixeles por frame sin copy_2 (~{:.2f} "
+                           "ms real); {} images de spare; reads late {}{}",
                            front_deferred_, front_painted_target_, front_painted_retained_,
                            front_rotations_, front_without_spare_, front_copied_read_,
                            front_copied_write_, front_copied_swap_, front_replaced_, mp * byFrame,
@@ -5376,7 +5378,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     presented_report_copies_ = presented_;
     if (without_swap_[0] || without_swap_[1] || without_swap_[2]) {
       NFSMW_REPORT_RING("[native] C2 copies de depth sin swap since el report previous: {} porque la "
-                       "done",
+                  "order no borra el target, {} porque no se resuelve whole, {} porque no se pudo",
                   without_swap_[0], without_swap_[1], without_swap_[2]);
       without_swap_ = {};
     }
@@ -5577,9 +5579,9 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         postprocess_ = nfsmw::settings::ReadPostprocess();
         RecomputeRamp();
         const auto& p = postprocess_;
-        REXLOG_INFO("[native] C2: postprocess {}: brightness {:.2f}, contrast {:.2f}, saturation {:.2f}, vibrance {:.2f}, "
+        REXLOG_INFO("[native] C2: post-processing {}: brightness {:.2f}, contrast {:.2f}, saturation {:.2f}, "
                     "vibrance {:.2f}, temperature {:.2f}, gamma {:.2f}, tint {:.2f}/{:.2f}/{:.2f} at {:.2f}, "
-                    "{:.2f}; {}",
+                    "vignette {:.2f}, scanlines {:.2f}; {}",
                     p.active ? "on" : "off", p.brightness, p.contrast, p.saturation, p.vibrance,
                     p.temperature, p.gamma, p.tint_r, p.tint_g, p.tint_b, p.tint, p.vignette, p.lines,
                     grading_ ? "with per-pixel work (saturation, vibrance, vignette or scanlines)"
@@ -5674,7 +5676,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const bool fxaa = !since_target && nfsmw::settings::AntialiasingFxaa();
       if (fxaa != fxaa_noted_) {
         fxaa_noted_ = fxaa;
-        REXLOG_INFO("[native] C2: antialiasing on the output: {}", fxaa ? "FXAA" : "ninguno");
+        REXLOG_INFO("[native] C2: antialiasing en la output: {}", fxaa ? "FXAA" : "ninguno");
       }
       pipeline = PipelineRamp((fxaa ? 4 : 0) + (grading_ ? 2 : 0) + (exact ? 1 : 0));
       if (pipeline == VK_NULL_HANDLE) {

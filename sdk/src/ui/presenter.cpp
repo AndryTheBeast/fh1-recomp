@@ -54,9 +54,8 @@ REXCVAR_DEFINE_BOOL(host_present_from_non_ui_thread, true, "UI/Presenter",
  * when this was measured, so it never waits for a vblank.
  */
 REXCVAR_DEFINE_BOOL(host_present_ignore_implicit_vsync, true, "UI/Presenter",
-                    "Present since el thread_value del game aunque la surface tenga vsync implicito "
-                    "(FIFO). Sin esto, con FIFO se pinta en el thread_value de la interfaz y el mailbox tira "
-                    "la mitad de los frames");
+                    "Present from the game thread even if the surface has implicit vsync (FIFO). Without this, "
+                    "with FIFO it paints on the UI thread and the mailbox drops half the frames");
 
 #if REX_PLATFORM_SWITCH
 // Off by default. See the long comment below: it lowers the mean and blows up the variance, and
@@ -94,9 +93,9 @@ REXCVAR_DEFINE_BOOL(host_present_ignore_implicit_vsync, true, "UI/Presenter",
  * queue (see docs/platform-notes.md, Presentation).
  */
 REXCVAR_DEFINE_BOOL(present_own_thread, REX_PRESENT_THREAD_OWN_DEFAULT, "UI/Presenter",
-                    "Present en un thread_value own del presenter en time de inside del thread_value que "
-                    "genera la image. El thread_value del game solo mark que there_is image new_entry y sigue "
-                    "recording, asi que la GPU no se queda sin work mientras se presenta")
+                    "Present on the presenter's own thread instead of inside the thread that produces the image. "
+                    "The game thread only marks that there is a new image and keeps recording, so the GPU does not "
+                    "run out of work while presenting")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 /*
@@ -104,34 +103,30 @@ REXCVAR_DEFINE_BOOL(present_own_thread, REX_PRESENT_THREAD_OWN_DEFAULT, "UI/Pres
  * over 50 ms went from 8.20 % to 47.52 %. Steady beats fast.
  */
 REXCVAR_DEFINE_BOOL(present_thread_without_discards, true, "UI/Presenter",
-                    "El thread_value que genera la image wait a que el presenter coja el frame "
-                    "previous en time de tirarlo. Con el presenter sobrado no wait never; si va "
-                    "justo, frena el game a su ritmo, que es REGULAR. En false se vuelve al "
-                    "comportamiento de la 113: mas FPS nominales y muchisimo mas stuttering");
+                    "The thread that produces the image waits for the presenter to take the previous frame instead "
+                    "of dropping it. With a presenter to spare it never waits; if it is tight, it slows the game "
+                    "to its pace, which is EVEN. false goes back to build 113's behavior: more nominal FPS and "
+                    "much more stuttering");
 
 REXCVAR_DEFINE_INT32(present_thread_wait_max_ms, 50, "UI/Presenter",
-                     "Deadline maximum de esa wait, en ms. Es one red de seguridad por si el "
-                     "presenter se colgara, no un mecanismo: al agotarse se discards as before. "
-                     "0 = wait sin term");
+                     "Maximum time for that wait, in ms. It is a safety net in case the presenter hangs, not a "
+                     "mechanism: when it runs out the frame is dropped as before. 0 = wait with no limit");
 
 REXCVAR_DEFINE_INT32(present_thread_window, 600, "UI/Presenter",
-                     "Frames de la window con la que se juzga si el thread_value de presentacion da "
-                     "abasto. Se looks la wait MEDIA, no the rachas: en la compilacion 115 el game "
-                     "esperaba el 43 % de los frames pero never 90 consecutive, asi que el safe "
-                     "por rachas no jump y el stuttering uploaded del 4,93 % al 6,61 %");
+                     "Frames of the window used to judge whether the presentation thread keeps up. The AVERAGE "
+                     "wait is looked at, not streaks: in build 115 the game waited in 43 % of the frames but never "
+                     "90 in a row, so the streak guard did not trigger and stuttering went up from 4.93 % to 6.61 %");
 
 REXCVAR_DEFINE_INT32(present_thread_wait_avg_max_us, 1500, "UI/Presenter",
-                     "Microseconds que can costarle de media el presenter al game, por "
-                     "frame, before de apagar el thread_value own. 1500 = 1,5 ms over un frame de "
-                     "~38: por encima de eso el thread_value own quita minus de lo que mete. En la 115 "
-                     "iban 5,2 ms de media por frame (12,07 ms en el 43 % de ellos)");
+                     "Microseconds the presenter may cost the game on average, per frame, before its own thread is "
+                     "turned off. 1500 = 1.5 ms over a ~38 ms frame: above that the own thread removes less than "
+                     "it adds. In 115 it was 5.2 ms on average per frame (12.07 ms in 43 % of them)");
 
 
 REXCVAR_DEFINE_INT32(present_thread_grace_frames, 3000, "UI/Presenter",
-                     "Frames de grace before de que la rendicion pueda dispararse. During el "
-                     "arranque y the loads los tres cores estan saturados y el presenter llega "
-                     "late_2 por reasons que no se repiten en race; en la compilacion 114 se rindio "
-                     "a los 34 seconds por eso y la race whole fue por el path old");
+                     "Grace frames before giving up can trigger. During startup and loading the three cores are "
+                     "saturated and the presenter is late for reasons that do not repeat in a race; in build 114 "
+                     "it gave up after 34 seconds because of that and the whole race went the old way");
 
 /*
  * Horizon priority of the new thread. 0x2C is REX_SWITCH_PRIO_PRESENT, the band the SDK itself reserves
@@ -147,8 +142,8 @@ REXCVAR_DEFINE_INT32(present_thread_grace_frames, 3000, "UI/Presenter",
  *     on fences, not using CPU.
  */
 REXCVAR_DEFINE_INT32(present_thread_priority, 0x2C, "UI/Presenter",
-                     "Priority de Horizon del thread_value de presentacion (0x1C-0x3B). 0x2C por default "
-                     "(REX_SWITCH_PRIO_PRESENT). Sin effect outside de la Switch");
+                     "Horizon priority of the presentation thread (0x1C-0x3B). 0x2C by default "
+                     "(REX_SWITCH_PRIO_PRESENT). No effect outside the Switch");
 
 REXCVAR_DEFINE_BOOL(present_letterbox, true, "UI/Presenter",
                     "Enable letterboxing for non-native aspect ratios");
@@ -1438,12 +1433,12 @@ void Presenter::SetPaintModeFromUIThread(PaintMode new_mode) {
     return;
   }
   // Say it in the log. Whether every rendered frame reaches the screen depends on this.
-  REXLOG_INFO("Presenter: mode de painted -> {} (vsync implicito {}, dibujantes de interfaz {})",
+  REXLOG_INFO("Presenter: paint mode -> {} (implicit vsync {}, UI drawers {})",
               new_mode == PaintMode::kGuestOutputThreadImmediately
-                  ? "since el thread_value del game, presentando en el acto"
-                  : (new_mode == PaintMode::kUIThreadOnRequest ? "en el thread_value de la interfaz, a request"
-                                                               : "ninguno"),
-              surface_paint_connection_has_implicit_vsync_ ? "si" : "no", ui_drawers_.size());
+                  ? "from the game thread, presenting right away"
+                  : (new_mode == PaintMode::kUIThreadOnRequest ? "on the UI thread, on request"
+                                                               : "none"),
+              surface_paint_connection_has_implicit_vsync_ ? "yes" : "no", ui_drawers_.size());
   // The own thread is started before the mode is announced, so the game thread never sees
   // kGuestOutputThreadImmediately with the thread half set up.
   if (new_mode == PaintMode::kGuestOutputThreadImmediately) {
@@ -1691,14 +1686,14 @@ void Presenter::StartPaintThreadFromUIThread() {
   if (!paint_thread_) {
     // Not fatal: without the thread, painting keeps happening inside the game thread, as always.
     REXLOG_WARN(
-        "Presenter: no se pudo create el thread_value de presentacion; se presenta en el thread_value del game");
+        "Presenter: could not create the presentation thread; presenting on the game thread");
     return;
   }
   paint_thread_->set_name("Presenter Paint");
   paint_thread_active_.store(true, std::memory_order_release);
   REXLOG_INFO(
-      "Presenter: thread_value de presentacion own en marcha (priority de Horizon {:#x}). El thread_value que "
-      "genera la image ya no se bloquea presentando",
+      "Presenter: own presentation thread running (Horizon priority {:#x}). The thread that produces the image no "
+      "longer blocks presenting",
       uint32_t(REXCVAR_GET(present_thread_priority)));
 }
 
@@ -1718,7 +1713,7 @@ void Presenter::ShutdownPaintThread() {
   }
   rex::thread::Wait(paint_thread_.get(), false);
   paint_thread_.reset();
-  REXLOG_INFO("Presenter: thread_value de presentacion stopped ({} warnings, {} painted, {} discarded)",
+  REXLOG_INFO("Presenter: presentation thread stopped ({} notices, {} painted, {} dropped)",
               paint_thread_warnings_, paint_thread_painted_, paint_thread_discarded_);
 }
 
@@ -1834,15 +1829,15 @@ void Presenter::RequestPaintFromPaintThread() {
   // The log, outside the lock.
   if (give_up && paint_thread_active_.exchange(false)) {
     REXLOG_WARN(
-        "[presenter] el thread_value own no da abasto: el game lleva esperandole {:.2f} ms de media por "
-        "frame, por encima del limit. Se apaga y se vuelve a present since el thread_value del game, "
-        "que es lo que hacia la compilacion 114: minus FPS, pero mas liso",
+        "[presenter] the own thread cannot keep up: the game has been waiting for it {:.2f} ms on average per "
+        "frame, above the limit. It is turned off and presenting goes back to the game thread, as build 114 did: "
+        "fewer FPS, but smoother",
         paint_thread_wait_average_us_ / 1000.0);
   }
   if (warnings % 600 == 0) {
     REXLOG_INFO(
-        "[presenter] thread_value own: {} frames warned, {} presented, {} discarded ({:.1f} %); "
-        "el game espero al presenter {} times, {:.2f} ms de media",
+        "[presenter] own thread: {} frames notified, {} presented, {} dropped ({:.1f} %); the game waited for the "
+        "presenter {} times, {:.2f} ms on average",
         warnings, painted, discarded, 100.0 * double(discarded) / double(warnings), waits,
         waits ? double(wait_ns) / 1e6 / double(waits) : 0.0);
   }
@@ -1895,10 +1890,10 @@ void Presenter::PaintThreadMain() {
      * explain the 18-22 ms it took to record a quad.
      */
     const bool ok = RexSwitchSetCurrentThreadPriorityOk(priority);
-    REXLOG_INFO("[presenter] priority de Horizon {:#x}: {}", uint32_t(priority),
-                ok ? "aceptada por el kernel" : "*** RECHAZADA: el thread_value se queda con la de serie ***");
+    REXLOG_INFO("[presenter] Horizon priority {:#x}: {}", uint32_t(priority),
+                ok ? "accepted by the kernel" : "*** REJECTED: the thread keeps the default one ***");
   } else {
-    REXLOG_WARN("Presenter: present_thread_priority = {} outside de 0x1C-0x3B: se leaves la de serie",
+    REXLOG_WARN("Presenter: present_thread_priority = {} outside 0x1C-0x3B: keeping the default",
                 priority);
   }
 #endif

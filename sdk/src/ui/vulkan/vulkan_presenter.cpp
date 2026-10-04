@@ -66,8 +66,8 @@ REXCVAR_DEFINE_BOOL(present_render_pass_clear, true, "UI/Presenter",
 // this, acquisition uses a fence that is waited on the CPU, without the queue lock, and the paint
 // goes without a semaphore.
 REXCVAR_DEFINE_BOOL(present_wait_acquire_on_cpu, false, "UI/Presenter",
-                    "Wait la image de la cadena de swap_value en la CPU (fence) en time de con un semaphore en el "
-                    "painted, para no stop el canal de la GPU (test de FPS en la Switch)")
+                    "Wait for the swapchain image on the CPU (fence) instead of with a semaphore in the paint, so "
+                    "the GPU channel does not stall (FPS test on the Switch)")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 #if REX_PLATFORM_SWITCH
@@ -161,10 +161,9 @@ REXCVAR_DEFINE_BOOL(vulkan_allow_present_mode_fifo_relaxed, true, "UI/Vulkan",
  * (armGetSystemTick, no syscall): on the order of 1 us out of 39,000.
  */
 REXCVAR_DEFINE_BOOL(present_paint_profile, REX_PRESENT_PROFILE_PAINTED_DEFAULT, "UI/Presenter",
-                    "Measure chunk a chunk el time que el thread_value que pinta pasa inside de "
-                    "PaintAndPresent (wait al submission old, reset del pool, adquisicion, mailbox, "
-                    "recording, candados de la queue, vkQueueSubmit y vkQueuePresentKHR) y volcarlo "
-                    "every 600 frames. Off no cuesta nothing")
+                    "Measure piece by piece the time the painting thread spends inside PaintAndPresent (wait for "
+                    "the old submission, pool reset, acquire, mailbox, recording, queue locks, vkQueueSubmit and "
+                    "vkQueuePresentKHR) and log it every 600 frames. Off costs nothing")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 /*
@@ -199,9 +198,8 @@ REXCVAR_DEFINE_BOOL(present_paint_profile, REX_PRESENT_PROFILE_PAINTED_DEFAULT, 
 // was the sky deferral, but this one touches output synchronization, so it was turned off to return
 // to known ground.
 REXCVAR_DEFINE_BOOL(present_lazy_refresh_seal, false, "UI/Presenter",
-                    "Remove el vkQueueSubmit empty que se hacia en every refresh de la output del "
-                    "game y seal solo cuando there_is que destroy esa image (change de size o "
-                    "off). Off vuelve al submission por frame")
+                    "Remove the empty vkQueueSubmit done on every refresh of the game output and seal only when "
+                    "that image has to be destroyed (resize or shutdown). Off goes back to one submission per frame")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 namespace rex {
@@ -367,14 +365,13 @@ void PaintedDumpSiDue(uint32_t submissions_in_flight) {
   const auto media = [](uint64_t ns) { return double(ns) / 1e6 / 600.0; };
   const auto worst = [](uint64_t ns) { return double(ns) / 1e6; };
   REXLOG_INFO(
-      "[presenter] split de PaintAndPresent, 600 frames (media/worst en ms): "
-      "wait al submission de does {} {:.2f}/{:.2f} | reset del pool {:.2f}/{:.2f} | "
-      "acquire {:.2f}/{:.2f} | mailbox {:.2f}/{:.2f} | descriptor {:.2f}/{:.2f} | intermediate {:.2f}/{:.2f} | pipeline {:.2f}/{:.2f} (rehecha {} times) | effects {:.2f}/{:.2f} | record {:.2f}/{:.2f} | "
-      "prepare el submission {:.2f}/{:.2f} | lock de la queue {:.2f}/{:.2f} | "
-      "vkQueueSubmit {:.2f}/{:.2f} | lock de present {:.2f}/{:.2f} | "
-      "vkQueuePresentKHR {:.2f}/{:.2f} | anticipate {:.2f}/{:.2f} | close {:.2f}/{:.2f} "
-      "|| TOTAL {:.2f} || y before, en el refresh: lock {:.2f}/{:.2f}, "
-      "vkQueueSubmit empty {:.2f}/{:.2f}",
+      "[presenter] PaintAndPresent breakdown, 600 frames (average/worst in ms): wait for the submission from {} "
+      "ago {:.2f}/{:.2f} | pool reset {:.2f}/{:.2f} | acquire {:.2f}/{:.2f} | mailbox {:.2f}/{:.2f} | descriptor "
+      "{:.2f}/{:.2f} | intermediates {:.2f}/{:.2f} | pipeline {:.2f}/{:.2f} (rebuilt {} times) | effects "
+      "{:.2f}/{:.2f} | record {:.2f}/{:.2f} | prepare the submission {:.2f}/{:.2f} | queue lock {:.2f}/{:.2f} | "
+      "vkQueueSubmit {:.2f}/{:.2f} | present lock {:.2f}/{:.2f} | vkQueuePresentKHR {:.2f}/{:.2f} | early acquire "
+      "{:.2f}/{:.2f} | close {:.2f}/{:.2f} || TOTAL {:.2f} || and before, in the refresh: lock {:.2f}/{:.2f}, "
+      "empty vkQueueSubmit {:.2f}/{:.2f}",
       submissions_in_flight, media(g_painted_ns[kChunkWaitSubmissionOld]),
       worst(g_painted_ns_worst[kChunkWaitSubmissionOld]), media(g_painted_ns[kChunkResetPool]),
       worst(g_painted_ns_worst[kChunkResetPool]), media(g_painted_ns[kChunkAcquire]),
@@ -451,7 +448,7 @@ bool VulkanPresenter::PaintContext::Submission::Initialize() {
   fence_create_info.pNext = nullptr;
   fence_create_info.flags = 0;
   if (dfn.vkCreateFence(device, &fence_create_info, nullptr, &acquire_fence_) != VK_SUCCESS) {
-    REXLOG_ERROR("VulkanPresenter: no se pudo create la fence de adquisicion");
+    REXLOG_ERROR("VulkanPresenter: could not create the acquire fence");
     return false;
   }
 
@@ -2053,7 +2050,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
   {
     static std::atomic<bool> noted{false};
     if (!noted.exchange(true)) {  // every test switch logs its value
-      REXLOG_INFO("[presenter] adquisicion expected en la CPU (present_wait_acquire_on_cpu) = {}",
+      REXLOG_INFO("[presenter] acquire waited on the CPU (present_wait_acquire_on_cpu) = {}",
                   acquisition_in_cpu ? "SI" : "no");
     }
   }
@@ -2105,7 +2102,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     ms_total += ms;
     ms_maximum = std::max(ms_maximum, ms);
     if (waits % 600 == 0) {
-      REXLOG_INFO("[presenter] wait de adquisicion en la CPU: {} waits, media {:.2f} ms, maxima {:.2f} ms",
+      REXLOG_INFO("[presenter] acquire wait on the CPU: {} waits, average {:.2f} ms, maximum {:.2f} ms",
                   waits, ms_total / double(waits), ms_maximum);
       ms_maximum = 0.0;
     }
@@ -2822,7 +2819,7 @@ Presenter::PaintResult VulkanPresenter::PaintAndPresentImpl(bool execute_ui_draw
     const uint64_t total = paint_context_.early_hits + paint_context_.early_misses;
     if (total >= last + 600) {
       last = total;
-      REXLOG_INFO("[presenter] adquisicion early: {} de {} frames sin wait ({:.1f} %)",
+      REXLOG_INFO("[presenter] early acquire: {} of {} frames without waiting ({:.1f} %)",
                   paint_context_.early_hits, total,
                   100.0 * double(paint_context_.early_hits) / double(total));
     }

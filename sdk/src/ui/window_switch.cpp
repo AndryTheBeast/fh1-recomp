@@ -195,7 +195,7 @@ static_assert(kButtonA == HidNpadButton_A && kButtonB == HidNpadButton_B &&
                   kButtonPlus == HidNpadButton_Plus && kButtonMinus == HidNpadButton_Minus &&
                   kButtonLeft == HidNpadButton_Left && kButtonUp == HidNpadButton_Up &&
                   kButtonRight == HidNpadButton_Right && kButtonDown == HidNpadButton_Down,
-              "switch_imgui_input.h: los bits no match con HidNpadButton de libnx");
+              "switch_imgui_input.h: the bits do not match libnx's HidNpadButton");
 
 void ReadEntryUi(EntryUi& output, float touch_a_logical_x, float touch_a_logical_y) {
   // Only called by ImGuiDrawer::Draw, on the UI thread, so the state can be
@@ -219,12 +219,12 @@ void ReadEntryUi(EntryUi& output, float touch_a_logical_x, float touch_a_logical
   output.controller_connected = padIsConnected(&controller);
   if (output.controller_connected) {
     output.buttons = padGetButtons(&controller);
-    const HidAnalogStickState izquierdo = padGetStickPos(&controller, 0);
-    const HidAnalogStickState derecho = padGetStickPos(&controller, 1);
-    output.stick_left_x = izquierdo.x;
-    output.stick_left_y = izquierdo.y;
-    output.stick_der_x = derecho.x;
-    output.stick_der_y = derecho.y;
+    const HidAnalogStickState left = padGetStickPos(&controller, 0);
+    const HidAnalogStickState right = padGetStickPos(&controller, 1);
+    output.stick_left_x = left.x;
+    output.stick_left_y = left.y;
+    output.stick_der_x = right.x;
+    output.stick_der_y = right.y;
   }
 
   HidTouchScreenState touch{};

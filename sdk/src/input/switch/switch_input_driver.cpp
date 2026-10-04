@@ -396,7 +396,7 @@ void SwitchInputDriver::DispatchMenuShortcuts(Slot& slot, uint64_t held) {
       if (!window || !window->app_context().CallInUIThread(press)) {
         press();
       }
-      REXLOG_INFO("shortcut de menu: {}", rex::ui::VirtualKeyToString(vk));
+      REXLOG_INFO("menu shortcut: {}", rex::ui::VirtualKeyToString(vk));
     }
     slot.menu_shortcuts = now ? (slot.menu_shortcuts | bit) : (slot.menu_shortcuts & ~bit);
   }
@@ -411,7 +411,7 @@ void SwitchInputDriver::DispatchMenuShortcuts(Slot& slot, uint64_t held) {
   const bool ab_before = (slot.menu_shortcuts & kBitAb) != 0;
   if (ab_now && !ab_before) {
     RexSwitchPerfToggleAb();
-    REXLOG_INFO("shortcut de menu: tests A/B de GPU");
+    REXLOG_INFO("menu shortcut: GPU A/B tests");
   }
   slot.menu_shortcuts = ab_now ? (slot.menu_shortcuts | kBitAb)
                                  : (slot.menu_shortcuts & ~kBitAb);
@@ -561,10 +561,10 @@ X_RESULT SwitchInputDriver::SetDeviceVibration(DeviceId id, X_INPUT_VIBRATION* v
   }
 
   // See the vibration_sent comment in Slot: same value as the last one sent, nothing to do.
-  const uint16_t izquierdo = uint16_t(vibration->left_motor_speed);
-  const uint16_t derecho = uint16_t(vibration->right_motor_speed);
-  if (slot->vibration_sent && slot->vibration_left == izquierdo &&
-      slot->vibration_right == derecho) {
+  const uint16_t left = uint16_t(vibration->left_motor_speed);
+  const uint16_t right = uint16_t(vibration->right_motor_speed);
+  if (slot->vibration_sent && slot->vibration_left == left &&
+      slot->vibration_right == right) {
     return X_ERROR_SUCCESS;
   }
 
@@ -582,8 +582,8 @@ X_RESULT SwitchInputDriver::SetDeviceVibration(DeviceId id, X_INPUT_VIBRATION* v
     return X_ERROR_FUNCTION_FAILED;
   }
   slot->vibration_sent = true;
-  slot->vibration_left = izquierdo;
-  slot->vibration_right = derecho;
+  slot->vibration_left = left;
+  slot->vibration_right = right;
   return X_ERROR_SUCCESS;
 }
 

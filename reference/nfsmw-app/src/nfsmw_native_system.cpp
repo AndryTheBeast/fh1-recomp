@@ -88,6 +88,7 @@
  */
 #if defined(XXH_IMPLEM_13a8737387)
 #error "xxhash.h was already included with its implementation before this point: XXH_FORCE_MEMORY_ACCESS 0 would "
+       "come too late"
 #endif
 #undef XXH_FORCE_MEMORY_ACCESS
 #define XXH_FORCE_MEMORY_ACCESS 0
@@ -106,9 +107,7 @@ std::string Summary();
 #endif
 
 REXCVAR_DEFINE_STRING(nfsmw_renderer, "xenos", "NFSMW",
-                      "xenos = emulacion de la GPU; native = renderer native en desarrollo "
-                      "(pieza C1: el game corre sin emulacion y la pantalla sample un color de "
-                      "test)")
+                      "xenos = Xbox GPU translation layer; native = the native Vulkan renderer")
     .allowed({"xenos", "native"})
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
@@ -198,7 +197,7 @@ REXCVAR_DEFINE_BOOL(nfsmw_native_im_immediate_cache, true, "NFSMW",
                     "with the patched fetches) identical byte for byte to one already seen reuses its byte-swapped "
                     "copy, its identification, its fingerprint and its generation, without swapping or identifying "
                     "again. It starts by checking every hit against the usual path and turns itself off at the "
-                    "as before")
+                    "first disagreement. false = no cache, as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 // Game frames, one per Swap (nfsmw_d3d_trace.cpp). Only for the NoteGameByAhead measurement.
@@ -317,7 +316,6 @@ void ReportDeferred(std::string line) {
  * presenter went without a core 70 % of the time.
  */
 REXCVAR_DEFINE_INT32(nfsmw_native_ring_priority, 0x2D, "NFSMW",
-                     "Switch: priority de Horizon del thread_value del ring (0x1C-0x3B). 0x2D por "
                      "Switch: Horizon priority of the ring thread (0x1C-0x3B). 0x2D by default, one step below the "
                      "presenter (0x2C) and two below the audio (0x2B). Raising it to 0x2C brings back the split of "
                      "build 113, in which only half the frames reached the screen");
@@ -375,7 +373,6 @@ REXCVAR_DEFINE_INT32(nfsmw_native_diag_frame_s, 0, "NFSMW",
                      "Native renderer: after this many seconds, logs every draw and every copy of one whole frame "
                      "(0 = no; tests only)");
 REXCVAR_DEFINE_STRING(nfsmw_native_diag_vertices_ps, "", "NFSMW",
-                      "Renderer native: en el frame trazado, para los draws con estos PS "
                       "Native renderer: in the traced frame, for the draws with these PS (comma-separated numbers) "
                       "logs the VS fetches and the bytes of their first vertices and texels (tests only)");
 // The game measures with an occlusion query how much of the sun is visible (sub_82225438: GetData, Issue(BEGIN),
@@ -389,7 +386,7 @@ REXCVAR_DEFINE_INT32(nfsmw_native_occlusion, 1, "NFSMW",
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_STRING(nfsmw_native_diag_constants_ps, "", "NFSMW",
                       "Native renderer (tests only): PS numbers (comma-separated) whose first 12 constants are "
-                      "12 primeras constants, as mucho every nfsmw_native_diag_constants_ms");
+                      "logged, at most every nfsmw_native_diag_constants_ms");
 REXCVAR_DEFINE_INT32(nfsmw_native_diag_constants_ms, 250, "NFSMW",
                      "Native renderer (tests only): minimum interval between constant logs per PS")
     .range(0, 60000);
@@ -1045,7 +1042,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       const uint32_t renderer = read_be(0x82A2D1AC);
       const uint32_t info = Register(rex::graphics::XE_GPU_REG_RB_SURFACE_INFO);
       REXLOG_INFO("[native] C2 occlusion {}: ZPD at {:08X} ({}), marks here {} and 32 before {}; host samples {} "
-                  "scale {}, written {}; bins {:016X}/{:016X}; RB_SURFACE_INFO {:08X} (pitch {}, MSAA {}), "
+                  "({}), scale {}, written {}; bins {:016X}/{:016X}; RB_SURFACE_INFO {:08X} (pitch {}, MSAA {}), "
                   "RB_DEPTH_INFO {:08X}; game AA mode {}, quality {}",
                   warnings_occlusion_, address, que, marks_here, marks_before, measurements, measurement ? "measured" : "not "
                                                                                                                        "measured",
@@ -2701,8 +2698,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
               microcode::g_patches_in_its_room.load(std::memory_order_relaxed) != 0) {
             im_shortcut_phase_ = kImShortcutApplying;
             NFSMW_REPORT_RING("[native] C5a IM_LOAD sin memcmp: {} loads checked contra el memcmp, 0 "
-                             "disagreements and {} in-place patches seen: APPLYING, the memcmp is skipped if the "
-                             "version has not changed (1 in {} is still checked)",
+                                 "desacuerdos y {} patches en su room seen_2: APPLYING, el memcmp se salta si la "
+                                 "version no ha cambiado (1 de every {} se sigue checking)",
                                  im_shortcut_checked_,
                                  microcode::g_patches_in_its_room.load(std::memory_order_relaxed),
                                  kImShortcutCheckEvery);
@@ -2947,8 +2944,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       if (imm_phase_ == kImmWatching && imm_checked_ >= kImmALook) {
         imm_phase_ = kImmApplying;
         NFSMW_REPORT_RING("[native] C5a IM_LOAD_IMMEDIATE con cache: {} hits checked contra el path de "
-                         "disagreements: APPLYING, hits are no longer swapped nor identified (1 in {} is still "
-                         "checked)",
+                             "always y 0 desacuerdos: APPLYING, los hits ya no giran ni identifican (1 de "
+                             "every {} se sigue checking)",
                              imm_checked_, kImmCheckEvery);
       }
       if (imm_phase_ == kImmApplying) {
@@ -3163,8 +3160,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
           first = fmt::format("; el first pending es function {} type {} count {}",
                                 int(r.function), r.args[0], CountOfRegister(r));
         }
-        REXLOG_WARN("[native] C5b: draw del ring sin reg_entry de Draw*: type {} count {} "
-                    "({} pending_2{})",
+        REXLOG_WARN("[native] C5b: ring draw without a Draw* registration: type {} count {} ({} pending{})",
                     type, count, pending_.size(), first);
       }
       UseIdentityOfRing();
@@ -3732,7 +3728,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     last_time_report_ = now;
     if (seconds > 0.0) {
       NFSMW_REPORT_BY(defer_report,
-          "[native] times: ring {:.1f} ms/s; draws {:.1f} us/draw ({}); copies {:.1f} us/copy; "
+          "[native] times: ring {:.1f} ms/s; draws {:.1f} us/draw ({}); copies {:.1f} us/copy; present {:.2f} "
           "ms/Swap including the GPU wait",
           double(time_ring_ns_) / 1e6 / seconds,
           draws_measured_ ? double(time_draws_ns_) / 1e3 / double(draws_measured_) : 0.0,
@@ -3757,8 +3753,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
          */
         const uint64_t d_migrations = migrations_ring_ - migrations_ring_previous_;
         NFSMW_REPORT_BY(defer_report, "[native] wakes del ring: {:.0f} writes de CP_RB_WPTR/s, {:.0f} laps/s, {:.0f} "
-                                     "with data/s ({:.2f} writes per lap with data), {:.0f} 4 ms waits "
-                                     "exhausted/s; core {} with {:.0f} migrations/s ({:.2f} per lap)",
+                    "con data/s ({:.2f} writes por lap con data), {:.0f} waits de 4 ms exhausted/s; "
+                    "core {} con {:.0f} migrations/s ({:.2f} por lap)",
                     double(d_writes) / seconds, double(d_laps) / seconds, double(d_with_data) / seconds,
                     d_with_data ? double(d_writes) / double(d_with_data) : 0.0, double(d_exhausted) / seconds,
                     core_ring_, double(d_migrations) / seconds,
@@ -3797,7 +3793,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       // Phase 2 of the Direct3D-level renderer (ProcessMarker). Its time shows up as "op 10".
       if (markers_applied_ || markers_checked_ || markers_bad_) {
         NFSMW_REPORT_BY(defer_report, "[native] markers D3D (phase 2): {} applied ({:.1f} ranges y {:.1f} words every uno; {} "
-                                     "each; {} ranges by the usual path), {} checked against their packets ({} "
+                    "ranges por el path de always), {} checked contra sus packets ({} different), {} mal "
                     "formados; path fast {} ({} ranges checked)",
                     markers_applied_,
                     markers_applied_ ? double(marker_ranges_) / double(markers_applied_) : 0.0,
@@ -3810,8 +3806,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       // Phase 2b: the draw record in the marker (MatchDraw).
       if (draws_with_register_of_marker_ || registers_of_marker_rejected_ || checks_draw_) {
         NFSMW_REPORT_BY(defer_report, "[native] reg_entry de draw en el marker (phase 2b): {} draws sin lookup, {} register_values "
-                                     "up as always), {} checked against the lookup ({} different, {} with another "
-                                     "registration and the same shaders)",
+                    "del marker no aceptados (type, count o shaders: se busco as always), {} checked "
+                    "contra la lookup ({} different, {} con other reg_entry y los mismos shaders)",
                     draws_with_register_of_marker_, registers_of_marker_rejected_, checks_draw_,
                     checks_draw_different_, checks_draw_other_register_);
         draws_with_register_of_marker_ = registers_of_marker_rejected_ = 0;
@@ -3833,8 +3829,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
           groups_seen += shadow_photo_.mask[g] != 0;
         }
         NFSMW_REPORT_BY(defer_report, "[native] shadow D3D: {} draws compared ({} photos lost; {} de {} groups del mirror "
-                                     "groups learned) | state {} different of {} | fetch {} of {} | constants {} "
-                                     "of {} | registers with differences: {}{}",
+                    "aprendidos) | state {} different de {} | fetch {} de {} | constants {} de {} | register_values "
+                    "con differences: {}{}",
                     shadow_draws_, shadow_lost_, groups_seen, kGroupsMirror, shadow_state_different_,
                     shadow_state_compared_, shadow_fetch_different_, shadow_fetch_compared_,
                     shadow_constants_different_, shadow_constants_compared_, worst.size(),
@@ -3883,7 +3879,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       targets_->TimeGpu(gpu_ns, gpu_jobs);
       const uint64_t presented_interval = presented - presented_previous_gpu_;
       NFSMW_REPORT_BY(defer_report, "[native] C2: copies={} (de depth {}) clears={} (de depth {}) "
-                                   "rejections={}; GPU {:.2f} ms per Swap ({} jobs measured)",
+                  "presented={} rejections={}; GPU {:.2f} ms por Swap ({} jobs measured)",
                   copies, targets_->CopiesDepth(), clears,
                   targets_->ClearsDepth(), presented, rejections,
                   presented_interval
@@ -3897,10 +3893,10 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         targets_->StatisticsOcclusion(oc);
         if (d(0) || d(1) || d(2) || d(4)) {
           NFSMW_REPORT_BY(defer_report, "[native] C2 occlusion: mode {}; queries del game empezadas {}, terminadas con measurement {} y "
-                                       "without a partner {}; measured written: average {:.1f}, historic maximum "
-                                       "{}; finished by target: small (scale 1) {} (maximum {}), scene (scale of "
-                                       "the AA mode) {} (maximum {}); host: ranges {} (no room {}), queries "
-                                       "published {}, samples {} (historic maximum per query {})",
+                      "sin measurement todavia {}, sin su final {}, fingidas outside de pair {}; written measurements: media "
+                      "{:.1f}, maxima historica {}; terminadas por target: pequeno (scale 1) {} (maxima {}), de "
+                      "scene (scale del mode de AA) {} (maxima {}); del host: ranges {} (sin room {}), queries "
+                      "publicadas {}, sample_total {} (maxima historica por query {})",
                       REXCVAR_GET(nfsmw_native_occlusion), d(0), d(1), d(2), d(3), d(4),
                       d(1) ? double(d(5)) / double(d(1)) : 0.0, occlusion_counters_[6], occlusion_by_target_[0],
                       occlusion_max_by_target_[0], occlusion_by_target_[1], occlusion_max_by_target_[1],
@@ -3926,7 +3922,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         const uint64_t d_jobs = jobs - jobs_gpu_previous_;
         const double ms_jobs = double(ns_jobs - ns_work_gpu_previous_) / 1e6;
         NFSMW_REPORT_BY(defer_report, "[native] C2: jobs de GPU por clock de pared: {} ({:.1f} ms; {:.2f} ms every uno; "
-                                     "ms per Swap)",
+                    "{:.2f} ms por Swap)",
                     d_jobs, ms_jobs, d_jobs ? ms_jobs / double(d_jobs) : 0.0,
                     presented_interval ? ms_jobs / double(presented_interval) : 0.0);
         jobs_gpu_previous_ = jobs;
@@ -3954,8 +3950,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
                  double(presented_interval);
         };
         NFSMW_REPORT_BY(defer_report, "[native] C2: GPU por Swap: shadows {:.2f} ms, scene {:.2f}, reflection {:.2f}, "
-                                     "{:.2f}, 320 (cube and blur) {:.2f}, small {:.2f}, copies {:.2f}, clears "
-                                     "{:.2f}, rest {:.2f}, scene without depth {:.2f}, gap between jobs {:.2f}",
+                    "320 (cube y blur) {:.2f}, smaller {:.2f}, copies {:.2f}, clears {:.2f}, "
+                    "rest {:.2f}, scene sin depth {:.2f}, gap between jobs {:.2f}",
                     ms(kGpuShadows), ms(kGpuScene), ms(kGpuReflection), ms(kGpu320),
                     ms(kGpuSmaller), ms(kGpuCopies), ms(kGpuClears), ms(kGpuOthers),
                     ms(kGpuSceneWithoutDepth), ms(kGpuGapBetweenJobs));
@@ -4051,7 +4047,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
                                    double(dib_ps[e]) / double(frames));
             }
             NFSMW_REPORT_BY(defer_report, "[native] C2 fragments de {} por pixel shader ({} frames, {:.2f} M y {:.0f} "
-                                         "{:.0f} draws per frame):{}",
+                        "draws por frame):{}",
                         kTypesPs[c], frames, double(total) / 1e6 / double(frames),
                         double(draws) / double(frames), line);
           }
@@ -4073,7 +4069,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
             scale_marks_ns_ += advance_ns;
             const double scale = scale_real_ns_ / scale_marks_ns_;
             NFSMW_REPORT_BY(defer_report, "[native] C2: scale de the marks de GPU {:.3f} en este interval ({:.3f} acumulada; time "
-                                         "per Swap {:.2f} ms",
+                        "real between reports / advance de the marks); GPU real por Swap {:.2f} ms",
                         real_ns / advance_ns, scale,
                         presented_interval
                             ? double(gpu_ns - gpu_ns_previous_) / 1e6 / double(presented_interval) * scale
@@ -4104,7 +4100,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
           const auto c = [&](uint32_t i) { return buckets[i] - buckets_swap_previous_[i]; };
           NFSMW_REPORT_BY(defer_report, "[native] C2: intervals between Swaps: <15 ms {} | 15-18 {} | 18-25 {} | 25-30 {} | 30-36 {} | "
                       "36-50 {} | 50-60 {} | 60-75 {} | 75-100 {} | 100-150 {} | >=150 {}; "
-                                       "{} | >=150 {}; worst frame {:.1f} ms; overlapping jobs on the GPU {}",
+                      "worst frame {:.1f} ms; jobs solapados en la GPU {}",
                       c(0), c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), worst_ms,
                       overlaps - overlaps_gpu_previous_);
         }
@@ -4121,7 +4117,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
           blo_prev = blocks_constants_; blosin_prev = blocks_constants_without_change_;
           if (esc > 0 || blo > 0) {
             NFSMW_REPORT_BY(defer_report, "[native] C6 constants del game: {} writes loose ({} sin change, {:.1f} %) | "
-                                         "{} blocks ({} unchanged, {:.1f} %)",
+                        "{} blocks ({} sin change, {:.1f} %)",
                         esc, sin_c, esc ? 100.0 * double(sin_c) / double(esc) : 0.0,
                         blo, blosin, blo ? 100.0 * double(blosin) / double(blo) : 0.0);
           }
@@ -4148,8 +4144,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
           dib_prev = dib_total;
           if (fe > 0 || ee > 0) {
             NFSMW_REPORT_BY(defer_report, "[native] C6 generations: fetch {} writes ({} sin change), {} changes "
-                                         "({:.2f} per draw) | framing {} writes ({} unchanged), {} changes ({:.2f} "
-                                         "per draw); draws {}",
+                        "({:.2f} por draw) | framing {} writes ({} sin change), {} changes "
+                        "({:.2f} por draw); draws {}",
                         fe, fs, fg, dib ? double(fg) / double(dib) : 0.0,
                         ee, es, eg, dib ? double(eg) / double(dib) : 0.0, dib);
           }
@@ -4164,8 +4160,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         const auto media = [&](int ns, int times) { return d(times) ? double(d(ns)) / 1e6 / double(d(times)) : 0.0; };
         if (d(0) || d(2) || d(5) || d(8)) {
           NFSMW_REPORT_BY(defer_report, "[native] C2: present (ms por time): wait a la output previous {:.2f} ({}); submission del work: "
-                                       "output submission: lock {:.2f}, vkQueueSubmit {:.2f} ({}); "
-                                       "RefreshGuestOutput: before the call {:.2f}, inside {:.2f}, after {:.2f} "
+                      "lock de la queue {:.2f}, vkQueueSubmit {:.2f} ({}); submission de la output: lock {:.2f}, "
+                      "vkQueueSubmit {:.2f} ({}); RefreshGuestOutput: before de la call {:.2f}, inside {:.2f}, "
                       "after {:.2f} ({})",
                       media(1, 0), d(0), media(3, 2), media(4, 2), d(2), media(6, 5), media(7, 5), d(5),
                       media(9, 8), media(10, 8), media(11, 8), d(8));
@@ -4224,7 +4220,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         vegetation_soon_previous_ = d.vegetation_soon;
         if (presented_interval) {
           NFSMW_REPORT_BY(defer_report, "[native] C6 vegetation de shadows tirada soon: {:.0f} por frame ({} en el "
-                                       "interval); saves the indices, textures, upload and pass of each one",
+                      "interval); se ahorran indices, textures, upload y pass de every uno",
                       double(soon) / double(presented_interval), soon);
         }
       }
@@ -4236,7 +4232,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         discard_without_previous_ = sin;
         if (dcon + dsin) {
           NFSMW_REPORT_BY(defer_report, "[native] C6 discard early en la scene: {} draws lo permiten, {} lo impiden "
-                                       "(alpha test, kill or depth) = {:.0f} %",
+                      "(test de alpha, kill o depth) = {:.0f} %",
                       dsin, dcon, 100.0 * double(dcon) / double(dcon + dsin));
         }
       }
@@ -4262,14 +4258,14 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         const auto delta = [&](size_t i) { return counters[i] - counters_previous_[i]; };
         NFSMW_REPORT_BY(defer_report, "[native] C6 counters: passes {} submissions por upload full {} ({:.1f} ms) "
                     "vertices {:.1f} MB indices {:.1f} MB samplers {} (cache {}); "
-                                     "{:.1f} ms in pass changes ({:.1f} us each), {:.1f} ms copying vertices",
+                    "{:.1f} ms en changes de pass ({:.1f} us every uno), {:.1f} ms copiando vertices",
                     delta(0), delta(1), double(delta(2)) / 1e6, double(delta(3)) / 1048576.0,
                     double(delta(4)) / 1048576.0, delta(5), delta(6), double(delta(7)) / 1e6,
                     delta(0) ? double(delta(7)) / 1e3 / double(delta(0)) : 0.0,
                     timed ? double(delta(8)) / 1e6 * double(recorded) / double(timed) : 0.0);
         if (presented_interval) {
           NFSMW_REPORT_BY(defer_report, "[native] C6 vertices sin repeat: {} bindings reaprovechados, {:.2f} MB que "
-                                       "({:.2f} MB per frame, {:.0f} % of the uploaded){}",
+                      "NO se han copied ({:.2f} MB por frame, {:.0f} % de los uploaded){}",
                       ddelta(0), double(ddelta(1)) / 1048576.0,
                       double(ddelta(1)) / 1048576.0 / double(presented_interval),
                       delta(3) + ddelta(1)
@@ -4285,8 +4281,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
                     delta(9), double(delta(10)) / 1e6,
                     delta(9) ? double(delta(10)) / 1e3 / double(delta(9)) : 0.0, delta(11));
         NFSMW_REPORT_BY(defer_report, "[native] C6 passes: por buffer de commands new_value {}, por targets {}, "
-                                     "a copy or clear {}; {:.1f} ms in vkCmdBegin/EndRenderPass; open area {:.1f} "
-                                     "Mtexels ({:.2f} Mtexels per frame)",
+                    "resumed after copy o clear {}; {:.1f} ms en vkCmdBegin/EndRenderPass; "
+                    "area open {:.1f} Mtexels ({:.2f} Mtexels por frame)",
                     delta(12), delta(13), delta(14), double(delta(15)) / 1e6,
                     double(delta(19)) / 1e6,
                     presented_interval ? double(delta(19)) / 1e6 / double(presented_interval)
@@ -4315,8 +4311,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         if (presented_interval) {
           // Draws without color, with and without a required pixel shader.
           NFSMW_REPORT_BY(defer_report, "[native] C6 draws sin color por frame: {:.0f} con el pixel shader de sobra, "
-                                       "shader, {:.0f} that need it (alpha test, kill or depth); in the shadow map "
-                                       "{:.0f} with the alpha test set and {:.0f} without it",
+                      "{:.0f} que lo necesitan (test de alpha, kill o depth); en el map de shadows "
+                      "{:.0f} con la test de alpha set y {:.0f} sin ella",
                       double(d.draws_ps_useless - draws_ps_useless_previous_) /
                           double(presented_interval),
                       double(d.draws_ps_needed - draws_ps_needed_previous_) /
@@ -4344,7 +4340,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
           shared_changed_previous_ = d.shared_changed;
           if (looked > 0) {
             NFSMW_REPORT_BY(defer_report, "[native] C6 constants shared: {} de {} draws cambian los 488 bytes "
-                                         "({:.1f} %); the others only pay the memcmp",
+                        "({:.1f} %); los others solo pagan el memcmp",
                         changed, looked, 100.0 * double(changed) / double(looked));
           }
         }
@@ -4370,7 +4366,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
               return fmt::format("[{}]={}/{}/{}", i, ramp_gamma_[i][0], ramp_gamma_[i][1], ramp_gamma_[i][2]);
             };
             NFSMW_REPORT_BY(defer_report, "[native] C2 ramp de gamma: writes mode {} index {} sequential {} PWL {} 30 bits {} "
-                                         "bits {} 1926 {} mask {} (value {}); entries of the 256 table different "
+                        "1926 {} mask {} (valid {}); entries de la table de 256 different_2 de la identity {}; "
                         "{} {} {} {} {} (identity: i*1023/255); version {}",
                         writes_ramp_[0], writes_ramp_[1], writes_ramp_[2], writes_ramp_[3],
                         writes_ramp_[4], writes_ramp_[5], writes_ramp_[6], mask_ramp_, different_2,
@@ -4394,7 +4390,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         }
         if (delta(16) || delta(17)) {
           NFSMW_REPORT_BY(defer_report, "[native] C6 vertices repeated: {:.1f} MB copied; {:.1f} MB repeated en el "
-                                       "same frame and {:.1f} MB equal to an earlier frame; {:.1f} ms in hashes",
+                      "same frame y {:.1f} MB equal a un frame previous; {:.1f} ms en hashes",
                       double(delta(3)) / 1048576.0, double(delta(16)) / 1048576.0,
                       double(delta(17)) / 1048576.0, double(delta(18)) / 1e6);
         }
@@ -4409,7 +4405,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     if (shaders_.loaded()) {
       const StatisticsShaders e = shaders_.Statistics();
       NFSMW_REPORT_BY(defer_report, "[native] C5a: loads={} different={} identified={} without_identify={} "
-                                   "pairs={}",
+                  "ambiguous={}; draws con VS y PS={} sin VS={} sin PS={}; pairs VS/PS={}",
                   e.loads + loads_cached_, e.different, e.identified, e.without_identify, e.ambiguous,
                   draws_identified_, draws_without_vs_, draws_without_ps_, pairs_.size());
       // IM_LOAD without memcmp (LoadShaderCached).
@@ -4479,10 +4475,10 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       const StatisticsHooks g = StatisticsOfHooks();
       NFSMW_REPORT_BY(defer_report, "[native] C5b: shaders created VS={} (known {}) PS={} (known {}); "
                   "draws matched={} sin reg_entry={} register_values skipped={} lost_count={}; "
-                                   "matched={} without registration={} registrations skipped={} lost={}; with "
-                                   "VS={} with PS={}; registrations with shaders different from the IM_LOADs={} "
-                                   "(draws left without registration because of that={}); draws with the ring "
-                                   "identity={}; VS variants={} (different length {}, elements without fetch {})",
+                  "con VS={} con PS={}; register_values con shaders different de los IM_LOAD={} "
+                  "(draws que se remain sin reg_entry por eso={}); draws con la identity "
+                  "del ring={}; variants VS={} "
+                  "(length different {}, elements sin fetch {})",
                   g.created_vs, g.known_vs, g.created_ps, g.known_ps,
                   draws_matched_, draws_without_register_, registers_skipped_, g.lost_count,
                   draws_with_vs_, draws_with_ps_, candidates_incoherent_,

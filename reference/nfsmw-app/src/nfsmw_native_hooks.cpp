@@ -28,11 +28,12 @@ REXCVAR_DEFINE_BOOL(nfsmw_d3d_marker_registration, true, "NFSMW",
                     "Native renderer (25/09, phase 2b of the Direct3D-level renderer): the FlushState marker of "
                     "each Draw* carries its registration (VS, PS, arguments) and the ring uses it without the "
                     "queue or the MatchDraw lookup. It starts by checking against the lookup and turns itself off "
-                    "first disagreement. false = as before")
+                    "at the first disagreement. false = as before")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 // Shadow map vegetation filtered on the game thread (see DecideVegetation).
 REXCVAR_DEFINE_BOOL(nfsmw_d3d_game_vegetation, true, "NFSMW",
+                    "Native renderer (25/09, build 184): the DrawVertices and DrawIndexedVertices the ring would "
                     "drop as shadow-map vegetation (colorless, with alpha test or discard) are skipped entirely on "
                     "the game thread: no FlushState, DRAW_INDX or registration. It starts by watching (the ring "
                     "checks the verdict of each draw) and turns itself off at the first disagreement. false = as "
@@ -164,7 +165,7 @@ void TurnOffDraw() {
   const RegisterDraw& b = g_draw_lookup;
   const RegisterDraw& m = g_draw_marker;
   REXLOG_ERROR("[d3d_marker] draw registration: DIFFERENCE with the ring lookup ({}): lookup {} (function {} type "
-               "{} type {} VS {:08X} PS {:08X}), marker {} (function {} type {} VS {:08X} PS {:08X}). Phase 2b OFF "
+               "{} VS {:08X} PS {:08X}), marker {} (function {} type {} VS {:08X} PS {:08X}). Phase 2b OFF for the "
                "rest of the session: registrations go back to the queue",
                kQue[g_draw_that < 4 ? g_draw_that : 0], g_draw_there_is_lookup ? "with registration" : "without "
                                                                                                   "registration",
@@ -184,7 +185,7 @@ void ReportDraw() {
   g_i_next_ms = now + 10000;
   if (!first) {
     NFSMW_REPORT_DEFERRED("[d3d_marker] reg_entry de draw (phase 2b), last 10 s: {} en el marker ({} checking), {} "
-                         "through the queue, {} without FlushState | phase {} | checked on the ring {} of {}",
+                "por la queue, {} sin FlushState | phase {} | checked en el ring {} de {}",
                 g_i_in_marker, g_i_checking, g_i_by_queue, g_i_sin_flushstate,
                 g_draw_off.load(std::memory_order_relaxed)     ? "OFF"
                 : g_draw_applying.load(std::memory_order_relaxed) ? "applying"
@@ -345,7 +346,7 @@ uint32_t DecideModeDraw() {
     g_draw_applying.store(true, std::memory_order_relaxed);
     REXLOG_INFO("[d3d_marker] draw registration: {} draws checked against the ring lookup, 0 disagreements: the "
                 "marker already carries the registration and the ring does not look it up (1 in {} is still "
-                "checking)",
+                "checked)",
                 equal, kCheckDrawEvery);
   }
   return (++g_turn_draw & (kCheckDrawEvery - 1)) == 0 ? kDrawCheck : kDrawApply;
@@ -705,7 +706,7 @@ void TurnOffVegetation() {
   const DetailVegetation& a = g_detail;
   const uint16_t b = g_flags;
   REXLOG_ERROR("[vegetation] DIFFERENCE with the ring ({}): game {} (reason {}, settings {}, occlusion {}, block "
-               "targets {}, would_skip {}, sample {}; phase {}); ring: structure {}, settings {}, occlusion {}, "
+               "{}, targets {}, would skip {}, sample {}; phase {}); ring: structure {}, settings {}, occlusion "
                "{}, early discard in Draw {}, RB_MODECONTROL {:08X}, RB_COLOR_MASK {:08X}, RB_COLORCONTROL {:08X}, "
                "PS n{} (outputs {:X}, discards {}), VS n{}. Vegetation filter in the game OFF for the rest of the "
                "session: every Draw* goes back to the ring",

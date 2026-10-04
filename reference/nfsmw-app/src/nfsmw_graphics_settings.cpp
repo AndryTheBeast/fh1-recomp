@@ -59,7 +59,7 @@ REXCVAR_DEFINE_INT32(nfsmw_switch_gpu_mhz, 460, "Graphics",
 REXCVAR_DEFINE_BOOL(nfsmw_switch_ram_1600, false, "Graphics",
                     "Switch: accept the high GPU profile even if it raises the memory to 1600 MHz. NO by default: "
                     "if none leaves the RAM where it was, the GPU stays as it was. The [apm] log says which one "
-                    "was_writable. El log [apm] dice which entro");
+                    "was applied");
 
 REXCVAR_DEFINE_BOOL(nfsmw_switch_saltynx, true, "Graphics",
                     "Switch: publishes the FPS and the resolution where the console overlays read them (SaltyNX) "
@@ -93,6 +93,7 @@ REXCVAR_DEFINE_BOOL(nfsmw_switch_reverse_nx_clocks, false, "Graphics",
  * frame.
  */
 REXCVAR_DEFINE_STRING(nfsmw_fps_limit, "60", "Graphics",
+                      "Maximum game FPS. 60: no limit of its own (the game runs at the pace of a 60 Hz vblank). "
                       "30: a fixed 30 FPS pace, without ups and downs, with the game at its normal speed. Applied "
                       "on restart")
     .allowed({"60", "30"})
@@ -147,10 +148,9 @@ REXCVAR_DEFINE_STRING(nfsmw_antialiasing, "off", "Graphics",
 // less halo.
 // natural is the default: compared on the console, original still showed a noticeable blue halo.
 REXCVAR_DEFINE_STRING(nfsmw_sky_glow, "natural", "Graphics",
-                      "Glow del sky. natural (por default): el glow del game sin el blue saturated que leaves "
                       "Sky glow. natural (default): the game's glow without the saturated blue that leaves fringes "
                       "on trees and roofs; colored lights unchanged. original: like the Xbox 360, with those blue "
-                      "minus. Sin cost")
+                      "fringes. soft: almost no sky halo; single-color lights (brakes, police) glow less. No cost")
     .allowed({"original", "natural", "soft"});
 
 // Optional post-processing, applied live (visible when changed with the menu open). Option lists for the

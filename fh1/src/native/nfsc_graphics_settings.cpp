@@ -332,15 +332,15 @@ void HideSettingsWithoutEffect() {
   // native renderer: they do not exist there. On the Switch they are built into the executable and do show
   // up in the menu. They are hidden by name in both cases.
   std::string registered;
-  std::string sin_registrar;
+  std::string not_registered;
   for (const std::string& name : hidden) {
-    std::string& list = rex::cvar::GetFlagInfo(name) ? registered : sin_registrar;
+    std::string& list = rex::cvar::GetFlagInfo(name) ? registered : not_registered;
     list += (list.empty() ? "" : ", ") + name;
   }
   rex::ui::HideSettingsInMenu(hidden);
   REXLOG_INFO("[settings] menu: left out, because they do nothing with the native renderer or the Graphics "
               "category replaces them: {}; not registered in this build: {}",
-              registered.empty() ? "ninguno" : registered, sin_registrar.empty() ? "ninguno" : sin_registrar);
+              registered.empty() ? "none" : registered, not_registered.empty() ? "none" : not_registered);
 }
 
 Postprocess ReadPostprocess() {

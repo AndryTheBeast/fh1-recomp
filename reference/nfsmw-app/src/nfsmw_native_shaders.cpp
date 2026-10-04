@@ -24,6 +24,7 @@
  */
 #if defined(XXH_IMPLEM_13a8737387)
 #error "xxhash.h was already included with its implementation before this point: XXH_FORCE_MEMORY_ACCESS 0 would "
+       "come too late"
 #endif
 #undef XXH_FORCE_MEMORY_ACCESS
 #define XXH_FORCE_MEMORY_ACCESS 0

@@ -1,4 +1,4 @@
-// FH1 copy of nfsmw-nx's shader library (reference/nfsmw-app/src/nfsmw_shader_library.*), accepting FH1's
+// FH1 copy of nfsmw-nx's shader library (reference/nfsmw-app/src/nfsc_shader_library.*), accepting FH1's
 // 2008 shader containers. Native renderer step N0 (docs/native-renderer-fh1.md).
 #pragma once
 

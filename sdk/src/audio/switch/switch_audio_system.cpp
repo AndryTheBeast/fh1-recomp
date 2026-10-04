@@ -29,15 +29,13 @@ extern "C" void RexSwitchPerfMax(unsigned id, u64 value);
 
 REXCVAR_DEFINE_BOOL(audio_mute, false, "Audio", "Mute audio output");
 REXCVAR_DEFINE_BOOL(audio_switch_pump, true, "Audio",
-                    "Request al game one frame every 5,333 ms (pump de 187,5 Hz, as "
-                    "MarathonRecomp-NX) en time de 4 consecutive al consumir every buffer de audout, que "
-                    "dejaban sin packet a la voice del server de audio del game (audio robotico); "
-                    "se reads al open el audio");
+                    "Ask the game for a frame every 5.333 ms (187.5 Hz pump, like MarathonRecomp-NX) instead of 4 "
+                    "in a row when each audout buffer is consumed, which left the game's audio server voice "
+                    "without a packet (robotic audio); read when the audio opens");
 REXCVAR_DEFINE_INT32(audio_switch_frames_in_queue, 10, "Audio",
-                     "Con audio_switch_pump: frames del game que se mantienen en queue before de audout "
-                     "(colchon; 10 = 53 ms, 6 until la build 105). Mas queue leaves wait al game sin cut la "
-                     "output, a change de latency: nfsc_audio_wait_server_ms wait until 30 ms; se reads "
-                     "al open el audio");
+                     "With audio_switch_pump: game frames kept queued before audout (cushion; 10 = 53 ms, 6 up to "
+                     "build 105). More queue lets the game wait without cutting the output, at the cost of "
+                     "latency: the app's audio server wait (nfsmw-nx) is up to 30 ms; read when the audio opens");
 
 namespace rex::audio::nx {
 
@@ -203,7 +201,7 @@ bool SwitchAudioSystem::StartOutput() {
   auto output = std::make_unique<Output>();
   output->pump = REXCVAR_GET(audio_switch_pump);
   output->frames_in_queue = static_cast<size_t>(std::clamp(REXCVAR_GET(audio_switch_frames_in_queue), 2, 32));
-  REXLOG_INFO("SwitchAudioSystem: pump de 187,5 Hz {}, {} frames en queue", output->pump ? "active" : "off",
+  REXLOG_INFO("SwitchAudioSystem: 187.5 Hz pump {}, {} frames queued", output->pump ? "on" : "off",
               output->frames_in_queue);
 
   Result rc = audoutInitialize();

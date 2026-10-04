@@ -1,6 +1,20 @@
 # Handoff (2026-10-04): where the native renderer stands, and the next task (English names)
 
-## Next task (user request, 2026-10-04): everything in English
+## DONE 2026-10-04: English names
+The rename below was done on 2026-10-04 (branch `english-rename`). What changed for daily use:
+- Native renderer: `--nfsc_renderer=native` (was `--nfsmw_renderizador=nativo`); the shader library next to
+  fh1.exe is `nfsc_shaders.nfsp`. Files are `fh1/src/native/nfsc_*` with the same names as nfsc-recomp.
+- `fh1_msaa_4x_as_1x`, `fh1_vertices_10_11_11_mask`; SDK settings follow nfsc-recomp (`nfsc_io_*`, `audio_dump_*`...).
+- Gap files and tools: `fh1/gaps.toml`, `fh1/*_gaps.toml`, `*_gaps_exclude.txt`, `tools/gaps.py`, `gaps_pass.py`
+  (`--gaps`, `--exclude`, `--rests`), `gaps_iterate.sh`, `merge_continuations.py`, `check_symbols.py`;
+  `shaders/fh1_pack_library.cpp`.
+- How it was done: names taken from nfsc-recomp by aligning his English files with the Spanish ones (same code,
+  so the two projects stay easy to diff); other names translated word by word; messages taken from his files.
+- Left: the log-message texts of the Most Wanted-only files in `reference/nfsmw-app` (names are English, the
+  message texts are still partly Spanish); `mesa/mesa-switch-nfsmw.patch` untouched; Switch-only SDK files were
+  renamed but cannot be compiled on this PC.
+
+## The task as it was written (user request, 2026-10-04): everything in English
 The user wants the Spanish code translated to English: Stevens' (nfsmw-nx) code in this repo and our own.
 GoatHonks already did it for nfsc-recomp (his ROADMAP: "Housekeeping: English names, DONE 2026-10-03").
 His updated repo is at `C:\Users\andre\Desktop\FH1-recomp\repos\nfsc-recomp-main\` (one folder up from before;

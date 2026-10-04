@@ -31,17 +31,16 @@
 
 REXCVAR_DEFINE_BOOL(audio_mute, false, "Audio", "Mute audio output");
 REXCVAR_DEFINE_INT32(audio_sdl_burst_frames, 0, "Audio",
-                     "Diagnostic: el driver SDL saca the frames del game de N en N, con N "
-                     "liberaciones consecutive, as el driver de la Switch con buffers de 4 frames; "
-                     "0 o 1 = one a one, as always");
+                     "Diagnostic: the SDL driver takes the game's frames N at a time, with N releases in a row, "
+                     "like the Switch driver with 4-frame buffers; 0 or 1 = one at a time, as always");
 REXCVAR_DEFINE_BOOL(audio_sdl_pump, false, "Audio",
-                    "Diagnostic: un thread_value asks one frame del game every 5,333 ms (as la pump del "
-                    "driver de la Switch) y SDL leaves de free el semaphore al consumir");
+                    "Diagnostic: a thread asks the game for a frame every 5.333 ms (like the Switch driver's pump) "
+                    "and SDL stops releasing the semaphore when it consumes");
 REXCVAR_DEFINE_INT32(audio_dump_output_s, 0, "Audio",
-                     "Diagnostic: seconds de lo que el driver SDL delivery al vulkan_device (con los "
-                     "silencios por missing de frames) que se guardan en audio_output.wav; 0 = nothing");
+                     "Diagnostic: seconds of what the SDL driver hands to the device (with the silences from "
+                     "missing frames) saved to audio_output.wav; 0 = nothing");
 REXCVAR_DEFINE_INT32(audio_dump_output_since_s, 0, "Audio",
-                     "Diagnostic: seconds de output SDL que se saltan before del dump");
+                     "Diagnostic: seconds of SDL output skipped before the dump");
 
 namespace rex::audio::sdl {
 
@@ -93,7 +92,7 @@ void RecordOutput(const float* data, int bytes, uint32_t channel_count) {
     file.write("data", 4);
     u32(bytes_data);
     file.write(reinterpret_cast<const char*>(dump_output.sample_total.data()), bytes_data);
-    REXAPU_INFO("[audio] dump de la output SDL: {} sample_total por canal, {} channel_count, en {}",
+    REXAPU_INFO("[audio] SDL output dump: {} samples per channel, {} channels, in {}",
                 dump_output.sample_total.size() / channel_count, channel_count, path.string());
   }
   dump_output.sample_total = std::vector<float>();
@@ -106,7 +105,7 @@ void CountFrame(bool silence) {
     return;
   }
   if (last_report_output.time_since_epoch().count() != 0) {
-    REXAPU_INFO("[audio] SDL en 10 s: {} frames con data y {} de silence por missing de frames",
+    REXAPU_INFO("[audio] SDL in 10 s: {} frames with data and {} of silence from missing frames",
                 frames_with_data, frames_of_silence);
   }
   frames_with_data = 0;
@@ -201,7 +200,7 @@ bool SDLAudioDriver::Initialize() {
   if (REXCVAR_GET(audio_sdl_pump)) {
     pump_active_ = true;
     pump_ = std::thread([this]() { Pump(); });
-    REXAPU_INFO("audio: pump de diagnostic a 187,5 Hz active");
+    REXAPU_INFO("audio: diagnostic pump at 187.5 Hz active");
   }
 
   return true;

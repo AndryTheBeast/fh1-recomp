@@ -151,7 +151,7 @@
 "0x8912AF38" = { }   # thunk
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x890BAE98" = { }   # rest
 "0x890C5980" = { }   # rest
 "0x8919E828" = { }   # rest
@@ -159,16 +159,16 @@
 "0x891F166C" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x890C5998" = { }   # rest
 "0x8919E840" = { }   # rest
 "0x891EBE08" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x891EBE38" = { }   # rest
 
 
-# Rests of gaps (tools/gaps_pass.py --restos)
+# Rests of gaps (tools/gaps_pass.py --rests)
 "0x891EBE60" = { }   # rest
 # Continuations (tools/merge_continuations.py)

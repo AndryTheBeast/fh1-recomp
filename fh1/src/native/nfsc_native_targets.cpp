@@ -1429,7 +1429,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       } else {
         REXLOG_INFO("[native] C2: variant {} of the output pass (exact {}, grading {}, FXAA {}) created in {:.1f} "
                     "ms",
-                    index, (index & 1) ? "si" : "no", (index & 2) ? "si" : "no", (index & 4) ? "si" : "no",
+                    index, (index & 1) ? "yes" : "no", (index & 2) ? "yes" : "no", (index & 4) ? "yes" : "no",
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - before).count());
       }
     }
@@ -2849,8 +2849,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                              ? fmt::format(" ({} writes not noted because of the cap of {} per address)",
                                            diag_writes_lost_, kDiagMaxWrites)
                              : std::string(),
-                         spare_2.empty() ? std::string(" ninguna") : spare_2,
-                         watched.empty() ? std::string(" ninguna") : watched);
+                         spare_2.empty() ? std::string(" none") : spare_2,
+                         watched.empty() ? std::string(" none") : watched);
     CompositeReport();  // nfsc_native_lazy_composite
   }
 
@@ -6155,7 +6155,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const bool fxaa = !since_target && nfsc::settings::AntialiasingFxaa();
       if (fxaa != fxaa_noted_) {
         fxaa_noted_ = fxaa;
-        REXLOG_INFO("[native] C2: antialiasing on the output: {}", fxaa ? "FXAA" : "ninguno");
+        REXLOG_INFO("[native] C2: antialiasing on the output: {}", fxaa ? "FXAA" : "none");
       }
       pipeline = PipelineRamp((fxaa ? 4 : 0) + (grading_ ? 2 : 0) + (exact ? 1 : 0));
       if (pipeline == VK_NULL_HANDLE) {

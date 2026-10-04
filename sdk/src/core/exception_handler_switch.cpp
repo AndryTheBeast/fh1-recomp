@@ -113,8 +113,8 @@ alignas(16) uint32_t g_rex_exc_busy[REX_EXC_SLOTS];
 }
 
 static_assert(sizeof(ThreadExceptionDump) <= REX_EXC_DUMP,
-              "el dump ya no fits en la slot");
-static_assert(REX_EXC_SLOTS == 8, "el assembler compare contra 8 a mano");
+              "the dump no longer fits in the slot");
+static_assert(REX_EXC_SLOTS == 8, "the assembler compares against 8 by hand");
 
 /*
  * The exception entry, replacing libnx's
@@ -383,11 +383,11 @@ void ScanStack(CrashBuf& b, uint64_t stack, uint64_t base, uint64_t text_lo, uin
   stack &= ~uint64_t(7);
   MemoryInfo mi;
   if (!QueryReadable(stack, 8, &mi)) {
-    Append(b, "stack ilegible en 0x%016" PRIx64 "\n", stack);
+    Append(b, "unreadable stack at 0x%016" PRIx64 "\n", stack);
     return;
   }
   const uint64_t end = std::min(mi.addr + mi.size, stack + 0x10000);
-  Append(b, "posibles retornos en la stack (0x%016" PRIx64 "):\n", stack);
+  Append(b, "possible return addresses on the stack (0x%016" PRIx64 "):\n", stack);
   int hits = 0;
   for (uint64_t p = stack; p + 8 <= end && hits < 48; p += 8) {
     const uint64_t v = *reinterpret_cast<const uint64_t*>(p);
@@ -467,12 +467,12 @@ extern "C" void RexSwitchCrashLog(const char* reason, const ThreadExceptionDump*
     u32 page_info = 0;
     if (R_SUCCEEDED(svcQueryMemory(&fm, &page_info, ctx->far.x))) {
       Append(b,
-             "far en region 0x%016" PRIx64 "+0x%" PRIx64 " type 0x%x permissions 0x%x\n",
+             "far in region 0x%016" PRIx64 "+0x%" PRIx64 " type 0x%x permissions 0x%x\n",
              fm.addr, fm.size, fm.type, fm.perm);
     }
     const uint64_t gm = reinterpret_cast<uint64_t>(RexGmBase());
     if (gm && ctx->far.x >= gm && ctx->far.x < gm + RexGmSize()) {
-      Append(b, "far inside de la memory_block del guest: 0x%08" PRIx64 "\n", ctx->far.x - gm);
+      Append(b, "far inside guest memory: 0x%08" PRIx64 "\n", ctx->far.x - gm);
     }
     for (int i = 0; i < 29; ++i) {
       Append(b, "x%-2d 0x%016" PRIx64 "%s", i, ctx->cpu_gprs[i].x, (i % 3 == 2) ? "\n" : "  ");
@@ -483,7 +483,7 @@ extern "C" void RexSwitchCrashLog(const char* reason, const ThreadExceptionDump*
   // Frame chain: the ELF keeps x29 as the frame pointer (the Atmosphere report of
   // the first abort walked it completely). More reliable than the scan below,
   // which remains as a fallback for when the chain breaks.
-  Append(b, "cadena de marcos:\n");
+  Append(b, "frame chain:\n");
   uint64_t frame = ctx ? ctx->fp.x : stack;
   for (int i = 0; i < 40 && (frame & 7) == 0 && QueryReadable(frame, 16, &mi); ++i) {
     const uint64_t next = reinterpret_cast<const uint64_t*>(frame)[0];
@@ -507,8 +507,8 @@ extern "C" void RexSwitchCrashLog(const char* reason, const ThreadExceptionDump*
 
 namespace rex::arch {
 
-static_assert(sizeof(vec128_t) == 16, "vec128_t ya no mide 16 bytes");
-static_assert(sizeof(FpuRegister) == 16, "FpuRegister ya no mide 16 bytes");
+static_assert(sizeof(vec128_t) == 16, "vec128_t is no longer 16 bytes");
+static_assert(sizeof(FpuRegister) == 16, "FpuRegister is no longer 16 bytes");
 
 namespace {
 
@@ -752,7 +752,7 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
   // not another exception: it ends with error 2345-0102.
   (void)far;
   (void)esr;
-  RexSwitchCrashLog(data_abort ? "miss de access a memory_block" : "excepcion de CPU", ctx,
+  RexSwitchCrashLog(data_abort ? "memory access fault" : "CPU exception", ctx,
                     ctx->sp.x, pc);
   diagAbortWithResult(MAKERESULT(Module_Libnx, 102));
 }

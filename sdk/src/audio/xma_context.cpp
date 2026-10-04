@@ -50,16 +50,16 @@ extern "C" {
 // https://github.com/koolkdev/libertyv/blob/master/libav_wrapper/xma2dec.c
 
 REXCVAR_DEFINE_INT32(audio_dump_xma_s, 0, "Audio",
-                     "Diagnostic: seconds de every context_id XMA que se guardan en "
-                     "xma_<context_id>_frames/output_<hz>.wav junto al ejecutable; 0 = nothing");
+                     "Diagnostic: seconds of each XMA context saved to xma_<context>_frames/output_<hz>.wav next "
+                     "to the executable; 0 = nothing");
 REXCVAR_DEFINE_INT32(audio_dump_xma_since_s, 0, "Audio",
-                     "Diagnostic: seconds since el first audio XMA before de begin a dump");
+                     "Diagnostic: seconds after the first XMA audio before dumping starts");
 REXCVAR_DEFINE_INT32(audio_dump_xma_contexts, 12, "Audio",
-                     "Diagnostic: contexts XMA que se vuelcan as mucho");
+                     "Diagnostic: maximum number of XMA contexts dumped");
 REXCVAR_DEFINE_INT32(audio_dump_xma_mb, 32, "Audio",
-                     "Diagnostic: megabytes as mucho de audio XMA acumulado sin write");
+                     "Diagnostic: maximum MB of XMA audio accumulated without writing");
 REXCVAR_DEFINE_INT32(audio_dump_xma_min_s, 2, "Audio",
-                     "Diagnostic: seconds minimums de un sonido XMA que se guardan cuando ends");
+                     "Diagnostic: minimum seconds of an XMA sound to save it when it ends");
 
 namespace {
 
@@ -113,8 +113,8 @@ void WriteDumpXmaInThread(uint32_t context_id, int type, const XmaDump& v) {
   file.write("data", 4);
   u32(bytes);
   file.write(reinterpret_cast<const char*>(v.sample_total.data()), bytes);
-  REXAPU_INFO("XMA: dump {} del context_id {}: {} sample_total a {} Hz, {} channel_count",
-              type ? "de output" : "de frames", context_id, v.sample_total.size() / v.channel_count,
+  REXAPU_INFO("XMA: dump {} of context {}: {} samples at {} Hz, {} channels",
+              type ? "output" : "frames", context_id, v.sample_total.size() / v.channel_count,
               v.frequency, v.channel_count);
 }
 
@@ -215,7 +215,7 @@ void DumpXma(uint32_t context_id, int type, uint32_t frequency, uint32_t channel
   }
   if (v.sample_total.empty() && type == 0 && noted_xma < 64) {
     ++noted_xma;
-    REXAPU_INFO("XMA: context_id {} con audio a {} Hz, {} channel_count", context_id, frequency, channel_count);
+    REXAPU_INFO("XMA: context {} with audio at {} Hz, {} channels", context_id, frequency, channel_count);
   }
   if (v.sample_total.empty()) {
     v.sequence = ++sequence_dumps_xma;
@@ -359,9 +359,9 @@ void XmaContext::NoteProduction(bool produced, uint8_t reason, const XMA_CONTEXT
   in_silence_ = false;
   const double ms = std::chrono::duration<double, std::milli>(now - silence_since_).count();
   if (ms >= 50.0 && lines.fetch_add(1, std::memory_order_relaxed) < 200) {
-    REXLOG_INFO("[xma] silence: el context_id {} estuvo {:.0f} ms sin producir y vuelve a sonar ({} passes empty, "
-                "last reason {}: 1 solo vaciar, 2 sin entry, 3 sin advance, 4 error; entries {}{}, buffer actual {}, "
-                "bucles {})",
+    REXLOG_INFO("[xma] silence: context {} was {:.0f} ms without producing and sounds again ({} empty passes, last "
+                "reason {}: 1 only drain, 2 no input, 3 no progress, 4 error; inputs {}{}, current buffer {}, "
+                "loops {})",
                 id_, ms, silence_passes_, silence_reason_, uint32_t(data.input_buffer_0_valid),
                 uint32_t(data.input_buffer_1_valid), uint32_t(data.current_buffer), uint32_t(data.loop_count));
   }
