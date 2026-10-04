@@ -84,6 +84,19 @@ Grey tint, second round (2026-10-04 late, user: "only the Dolby intro has deep b
   with the smear / speckle glitches below, so re-measure after those; (c) loading screens: the dark / white boxes
   behind the text are missing on native.
 
+NEXT (user report 2026-10-04 ~17:45, session stopped by the usage limit): loading screens and menus.
+- Boxes behind the text missing (black box behind the title, white box behind the body text, so the dark body text
+  is nearly invisible), text edges ragged, and the loading-screen background picture is sometimes black (it was
+  there in one run at 40 s and black in the next; reproduced: build_logs	est-ld-*).
+- One-frame trace of the black loading screen (`--fh1_native_diag_frame_s=41`, build_logs	est-ld-*.log, lines
+  with `[trace]`): the UI is drawn into the 1280 target with guest format 10 (rt0 000A0000, shares the image of
+  format 2). Order: PS n716 (full-screen rectangle, the background composite: textures f54 x2, f6 x2), then the
+  boxes = VS n1089 / PS n1212 with a k_DXT5A texture (f59, swizzle 76D = RGB one, alpha from the texture), text =
+  VS n1683 / PS n1778 (geometry, no texture), icons = VS n1650 / PS n658. Blend 07060706, colorctl 8700000C
+  (alpha test on). Nothing is rejected, so the box draws run and produce nothing visible.
+- Not looked at yet: the HLSL of n1212 / n1089 (build_logs\shaders\hlsl), the alpha test value, the DXT5A
+  (BC4) upload for these textures, and why the background (n716 inputs) is black in some runs.
+
 Known but not done:
 - Loading screens and menus: text on black now (not white). The emulated GPU may show a video or picture behind
   them: compare a loading screen and the pause/main menus on both renderers before calling this item finished.
