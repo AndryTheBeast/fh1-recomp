@@ -48,7 +48,7 @@ Those are best removed one at a time with a festival screenshot after each, not 
 (Details and the planned fix for 1 are in docs/handoff-english-rename.md, "State of the native renderer".)
 1. Packed (k_10_11_11) POSITIONS: draws that use them are still rejected by default (mask 0xFFFE), so vegetation,
    billboards and whatever else uses them are missing. With `--fh1_vertices_10_11_11_mask=65535` the festival still
-   turns black (test 2026-10-04 15:50, `build_logs	est-vid-packed-*-95s.png`).
+   turns black (test 2026-10-04 15:50, `build_logs\test-vid-packed-*-95s.png`).
    Done 2026-10-04: the vertex index. Vertex shaders now start with `r0.x = SV_VertexID` as on the console
    (translator, NFSMW_RECOMP), vertex shaders are compiled with `-fvk-support-nonzero-base-vertex` (index of the
    draw, not index + vertexOffset) and the device enables `shaderDrawParameters` (sdk vulkan_device.cpp,
@@ -59,7 +59,7 @@ Those are best removed one at a time with a festival screenshot after each, not 
    modes of the fetch, `remapInput`), and check whether those shaders also fetch from guest memory (`fh1Fetch`
    returns 0 while `g_GuestBase` is 0).
 1b. Green car: the player's car turns bright green after a while (user report 2026-10-04; it is orange in the first
-   seconds). Not understood yet; `build_logs	est-green-*` has a screenshot every 20 s.
+   seconds). Not understood yet; `build_logs\test-green-*` has a screenshot every 20 s.
 2. Speckled edges: depth/stencil fills drawn at 640 pitch 4x MSAA and used by the 1280x720 1x passes
    (`--fh1_msaa_4x_as_1x=true` turned the picture pink/black; needs `--fh1_dump_resolved_at_s=N`).
 3. White title / menu background: the frame composite pixel shader outputs white.
