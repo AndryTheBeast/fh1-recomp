@@ -177,6 +177,9 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [x] Glows through walls: on both renderers, the user takes it for the game's own behavior; measured mode kept
         behind `--fh1_native_occlusion=1` — 2026-10-05
   - [x] Smooth edges seen by the user while driving ("edges look good now") — 2026-10-05
+  - [ ] **Design creator (paint shop > Paint car): wheels as magenta boxes, flat car body, booth without shading,
+        empty "Leaving paint shop" dialog** (user's pictures, 2026-10-05): first thing next session
+  - [ ] Thumbnail wrong again when a car is saved with a new modification (user, 2026-10-05)
   - [ ] Night colors at the festival: the native picture is warm grey where the emulated one is blue (340 s mean
         color 69 55 49 against 63 60 56, brightness equal): the night color grading; next thing to look at
   - [ ] Races, garage, car photos on the native renderer (the user drives there)

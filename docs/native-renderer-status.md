@@ -6,7 +6,34 @@ screen or a view switch (confirmed by the user), the festival's brightness equal
 5/20/35/92/129 against 5/19/35/92/129) and alpha to mask covers 0 to 4 samples; see the "fourth session" section.
 Earlier the same day: soft reflections, the console's gamma curve, smooth edges, the loading-screen freeze.
 
-**Open list (2026-10-05, end of the fourth session):**
+**The user drove the fourth session's build and confirmed its fixes ("I can confirm all the fixes for this session
+are fixed").** What they reported next, to fix first:
+
+- **0. The design creator (paint shop > Design creator > Paint car / Color select) is wrong on the native
+  renderer** (the user's pictures: `build_logs\reference\user-20261005-design-creator-a-paint-car-menu.webp`,
+  `-b-leaving-dialog.webp`, `-c-color-select.webp`). What they show: the paint booth is flat grey and white with
+  no shading (ceiling lamps as plain white bars); the car body is one flat cyan with its lower half black, no
+  reflections; **every wheel is a solid magenta box** (and a magenta block under the front bumper); the people
+  standing behind the car look right; the "Leaving paint shop" dialog has an empty black body (no text) with a
+  dotted pattern. Not looked at yet. Where to start: both renderers in that screen (the unattended test reaches
+  the paint shop with `auto_test.ps1 -Autoplay "...;60+0.3=x"`; one more A press at about 70 s opens the design
+  creator, which changes nothing in the save until a design is saved), the log's `(cause N)` lines that appear
+  there, a trace (`draw VS n-1 ... no registration` = a shader the library lacks: `--fh1_dump_ring_shaders` +
+  `tools\fh1_synth_containers.py`, as for the mirrors), then a RenderDoc capture of each renderer and
+  `tools\rdc_tex_stats.py` / `rdc_draw_textures.py` on the wheel and body draws. Guesses, to be checked and not
+  trusted: a flat magenta box is what a draw with the wrong vertex data or a missing texture looks like here; the
+  flat cyan body is the paint without its environment map (the booth probably has its own cube map or a
+  different reflection pass); the booth without shading may be a missing light map.
+- **0b. The thumbnail bug is back: saving a car with a new modification gives a wrong thumbnail** (the user: "the
+  thumbnail bug is here again when I save the car with a new modification"). On the emulated GPU the car photos
+  were fixed on 2026-10-01 by `readback_resolve=fast` (the game reads the resolved picture back from guest
+  memory to make the photo). The native renderer's resolves do not reach guest memory
+  (`--fh1_native_read_resolved_float` copies only the small float pictures and is off): find which resolve the
+  photo comes from (a trace while the user saves, `run_native_capture.bat` + "now") and copy that one to guest
+  memory in the console's format. Ask the user first whether the wrong thumbnail shows on the native renderer
+  only or on the emulated one too, and what it looks like.
+
+**Open list after those two (2026-10-05, end of the fourth session):**
 
 - **A. Races, garage, car photos on the native renderer** (the rest of the user's item 5; the paint shop is done,
   see "Item 5" in the fourth session's section). The user drives there.

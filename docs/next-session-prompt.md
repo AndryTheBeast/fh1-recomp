@@ -1,4 +1,4 @@
-# Prompt for the next session (written 2026-10-05, at the end of the fourth session of that day)
+# Prompt for the next session (written 2026-10-05, at the end of the fourth session of that day, after the user's drive)
 
 Paste the block below as the first message of a new Claude session opened in `C:\Users\andre\Desktop\FH1-recomp`.
 
@@ -6,26 +6,31 @@ Paste the block below as the first message of a new Claude session opened in `C:
 Read fh1-recomp/CLAUDE.md, then fh1-recomp/docs/native-renderer-status.md, and work on the native renderer
 (run_fh1.bat --fh1_renderer=native).
 
-Where we are: the first-person view works (world, mirrors, hands, dashboard), the brightness no longer jumps after
-a loading screen or a view switch, the picture is as bright as the emulated one, the crowd's edges use 0 to 4
-samples, and the paint shop shows its blurred background again. Glows of tail lights through walls show on both
-renderers: leave them.
+Where we are: I drove the last build and everything fixed last time is confirmed (first-person view, no more
+brightness jumps, picture as bright as the emulated one, crowd edges, the paint shop's blurred background). Glows
+of tail lights through walls show on both renderers: leave them.
 
-First ask me what I saw when I drove the last build (first-person view while driving, the crowd up close, a race,
-the garage, a car photo), then fix what I report, one thing at a time, in my order. If I report nothing:
-1. Races, garage and car photos on the native renderer against the emulated GPU (I drive there; menus with a
-   blurred background use the depth of field that was fixed last time: look at them first).
-2. Frame time while driving: if a busy place drops below 30 fps, measure it (the [fps] lines and "real GPU per
-   Swap" in the log, with and without --fh1_native_ssaa=false) and tell me the numbers before changing anything.
-3. The small things left in the status document's list (the depth pre-pass draws alpha to mask solid, two
-   texture formats replaced by empty ones, the scene after FXAA kept in 8 bits).
+Fix these, in this order, one at a time:
+1. FIRST: the design creator (paint shop > Design creator > Paint car) is broken on the native renderer: the
+   wheels are solid magenta boxes, the car body is flat cyan with a black lower half and no reflections, the
+   paint booth has no shading, and the "Leaving paint shop" dialog is an empty black box. My pictures are in
+   build_logs\reference\user-20261005-design-creator-*.webp. Compare with the emulated GPU in the same screen.
+2. The thumbnail bug is back: when I save the car with a new modification its thumbnail is wrong. Ask me whether
+   it also happens on the emulated GPU and what it looks like before you start.
+3. Night colors at the festival: the native picture is warm grey where the emulated one is blue (the status
+   document has the numbers).
+4. Races, garage and car photos on the native renderer (I drive there).
 After each one: show me the comparison, commit and push, then go on to the next.
 
-For a view or a screen that only the native renderer gets wrong, capture both renderers with RenderDoc and compare
-the numbers pass by pass (tools\view_capture.ps1, auto_test.ps1 -RenderDoc -Triggers, tools\rdc_tex_stats.py): the
-status document's fourth session section has the method. For a spot the unattended test does not reach I start
-run_native_capture.bat or run_emulated_capture.bat, drive there, stop and type "now", and you run
-tools\capture_now.ps1. Tell me exactly what to run and when.
+For a screen that only the native renderer gets wrong, capture both renderers with RenderDoc and compare the
+numbers pass by pass before guessing (tools\view_capture.ps1, auto_test.ps1 -RenderDoc -Triggers,
+tools\rdc_tex_stats.py, tools\rdc_draw_textures.py): the status document's fourth session section has the method.
+The unattended test can enter the paint shop by itself (X at the festival); never save a design or buy anything
+with it. For a spot it does not reach I start run_native_capture.bat or run_emulated_capture.bat, go there, stop
+and type "now", and you run tools\capture_now.ps1. Tell me exactly what to run and when.
+
+If a busy place drops below 30 fps, measure it (the [fps] lines and "real GPU per Swap" in the log, with and
+without --fh1_native_ssaa=false) and tell me the numbers before changing anything.
 
 Rules:
 - Compare every change against the emulated GPU at the same second or the same spot (tools\auto_test.ps1, with
