@@ -277,6 +277,11 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
   (`--fh1_native_ssaa`, smooth edges, still 30 fps parked); the shared constants block is 256 words; AMD has no blit
   for depth formats (the scene's resolved depth stays at twice the size). Measured occlusion queries are prepared
   behind `--fh1_native_occlusion=1` (the tail lights lose most of their halo with it: not the default).
+- End of that session, from the user's drive: edges good, night colors fine, glows through walls accepted as the
+  game's own behavior. Two faults to fix first next time: the first-person view breaks the picture (white world,
+  broken interior) and the picture is too bright for ~2.5 s after a loading screen (native only, not every run).
+- One comparison of two runs is not a result when the thing compared comes and goes: on 2026-10-05 an option was
+  blamed for the brightness overshoot from one run each, and the next run showed the overshoot with it off.
 - A resolve only gives the pitch of its texture (a multiple of 32). A texture narrower than that (the cube levels
   of 16x16 and less) must get its width from the fetch constant, or it is read with empty columns.
 - Before chasing a difference between two screenshots of the festival, check that it is not the moment: lights and

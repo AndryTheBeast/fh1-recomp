@@ -1,4 +1,4 @@
-# Prompt for the next session (written 2026-10-05, at the end of the third session of that day)
+# Prompt for the next session (written 2026-10-05, at the end of the third session of that day, after the user's drive)
 
 Paste the block below as the first message of a new Claude session opened in `C:\Users\andre\Desktop\FH1-recomp`.
 
@@ -7,23 +7,21 @@ Read fh1-recomp/CLAUDE.md, then fh1-recomp/docs/native-renderer-status.md, and w
 (run_fh1.bat --fh1_renderer=native).
 
 Where we are: reflections on chrome and paint are soft, textures use the console's gamma curve, the scene is
-drawn with four samples per pixel (smooth edges) and the loading-screen freeze after a new shader library is
-fixed. All of that was tested parked at the festival only. First ask me what I saw when I drove it (edges,
-reflections, speed in busy places, anything that flashes), and fix what I report.
+drawn with four samples per pixel (I drove it: edges look good, night colors are fine) and the loading-screen
+freeze after a new shader library is fixed. Glows of tail lights through walls show on both renderers: leave
+them.
 
-Then, in this order, one at a time:
-1. Glows of lamps and tail lights through walls and other cars. The measured mode exists
-   (--fh1_native_occlusion=1) but the tail lights lose most of their red halo with it. I will drive it behind a
-   wall and behind a car and tell you what I see; find out what the game does with the counts (the boxes of the
-   tail lights seem to count almost nothing) and make hidden lights lose their glow without shrinking the
-   visible ones.
-2. The picture is still a little darker than the emulated one, and at night green and blue are lower over the
-   whole picture (sky 29 29 35 against 30 40 50). The scene before post-processing matches, so compare the
-   post-processing step by step (exposure, bloom, the color grading lookup texture 136FB000) with a RenderDoc
-   capture of the emulated GPU taken at night at the festival.
-3. Crowd brighter than the emulated one and with hard cut-out edges (alpha to mask: now that the scene has four
+Fix these, in this order, one at a time:
+1. FIRST: when I switch to the first-person view the game completely breaks: the world gets white and the
+   interior of the car is all messed up. I attach pictures. Compare with the emulated GPU in the same view.
+2. The picture is too bright for about 2.5 seconds right after a loading screen and then snaps back to normal
+   (native only, not in every run; the status document has the measurements and what is already ruled out).
+   Check whether the short brightness jumps I see while driving are the same thing.
+3. The picture is still a little darker than the emulated one (the scene before post-processing matches, so
+   compare the post-processing step by step with a RenderDoc capture of the emulated GPU).
+4. Crowd brighter than the emulated one and with hard cut-out edges (alpha to mask: now that the scene has four
    samples per pixel, cover 0 to 4 of them instead of testing at one half).
-4. Races, garage, car photos and paint shop on the native renderer.
+5. Races, garage, car photos and paint shop on the native renderer.
 After each one: show me the comparison, commit and push, then go on to the next.
 
 If a busy place drops below 30 fps with the smooth edges, measure it (the [fps] lines and "real GPU per Swap" in

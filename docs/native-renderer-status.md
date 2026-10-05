@@ -3,10 +3,33 @@
 Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, third session:
 the reflections are soft like the emulated ones, textures use the console's gamma curve, the loading-screen
 freeze has its cause and a fix, and the scene is drawn with four samples per pixel (smooth edges); see the two
-"third session" sections. **The user has not seen any of it yet: ask for a drive first** (edges, reflections,
-speed in busy places). Open list, in order: the occlusion queries measured for real (prepared behind
-`--fh1_native_occlusion=1`, needs the user's eyes), the rest of item 3 (post-processing still a little dark,
-green and blue low at night), then items 5-8.
+"third session" sections. The user drove it the same day: "edges look good now", the night colors are fine for
+them, and the glow of the tail lights through a wall "is starting to feel like a game feature/bug" (it shows on
+the emulated GPU too; `build_logs\reference\user-20261005-glow-through-wall.webp`), so the default stays.
+
+**Open list, in the user's order (2026-10-05, end of the third session):**
+
+- **A. First-person view breaks the picture** (user: "the world gets white, the interior of the car is all messed
+  up"). Not looked at yet; the user brings pictures. Start with both renderers at the same spot in that view
+  (`run_native_capture.bat` / `run_emulated_capture.bat`, then `tools\capture_now.ps1`), the `(cause N)` lines
+  that appear when the view changes, and a one-frame trace. A white world is what a flat clear color or depth
+  bytes in a color target look like (see `--fh1_native_depth_fill_color`), and the cockpit view draws the car's
+  interior in its own pass: check its render target, its clears and whether it is a 4x pass (the scene's 4x
+  passes are supersampled since this session: try `--fh1_native_ssaa=false` first, it is the newest change).
+- **B. The picture is too bright for about 2.5 seconds right after a loading screen**, then snaps to normal
+  (user: "the brightness randomly gets higher during gameplay for a split second and then comes back to normal
+  ... it happened right after the loading screen"). Measured at the festival (`test-ovN-*` native, `test-ovX-*`
+  emulated, a shot every second; mean brightness of the window): native 66 76 75 51 50 50, emulated 51 55 55 54
+  54. It is a step, not a fade, and it does not happen in every run (1 of 4 runs had none), with no log line at
+  the moment it ends. Ruled out: the biased reading of the luminance texture (`--fh1_native_texture_signs`; the
+  overshoot is there with it on and off; it is off by default again). Not checked: whether it was there before
+  this session (try `--fh1_native_ssaa=false`, `--fh1_native_gamma_pwl=false`, `--fh1_native_cube_levels=false`
+  one at a time), and what the exposure reads in those frames: the adapted luminance (1FCA6000, 32x32
+  k_32_FLOAT) is first created as a texture read from memory and only then resolved, so the composite's vertex
+  shader (VS n3064) may read zeros at first. Tool: `python %TEMP%\flash.py` is gone with the session; the method
+  was `auto_test.ps1 -Shots "44,45,...,56"` and the mean of each shot.
+- C. Then: the rest of item 3 (the final picture a little darker than the emulated one), the crowd's cut-out
+  edges (item 5), races, garage, car photos, paint shop, items 6-8.
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
 GoatHonks' nfsc-recomp renderer; his later fixes are ported by hand when they work for FH1
@@ -284,7 +307,8 @@ native after, emulated) and `test-ssaaN-*` (58, 100, 300, 340 s) with `test-read
   - Numbers: 30 fps for the whole parked run (day to night); the GPU's time per frame went from 19.5 to 21.1 ms.
     Busy scenes while driving are not measured yet (the user drives). The ground also shows its fine texture now,
     like the emulated picture (mean horizontal gradient of the night picture 1.22 before, 1.33 now, emulated 1.37).
-- **Sign modes of textures** (`--fh1_native_texture_signs`): the sign byte of the fetch constant, swizzled, rides in
+- **Sign modes of textures** (`--fh1_native_texture_signs`, **off by default** since the end of the session: no
+  measured benefit): the sign byte of the fetch constant, swizzled, rides in
   bits 15-22 of the slot's exponent scale (the gamma mark of part 1 is now mode 3 of it) and `fh1Gamma` applies
   mode 1, biased (value * 2 - 1). Two textures at the festival use other modes than gamma: the adapted luminance
   (1FCA6000, k_32_FLOAT, signs 55, biased) and one k_DXN normal map (signs 2A, signed, now in BC5_SNORM). The
