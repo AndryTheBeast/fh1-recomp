@@ -8,8 +8,9 @@ Read fh1-recomp/CLAUDE.md, then fh1-recomp/docs/native-renderer-status.md, and w
 
 Done last time and seen by me: the blue outline on the car, the headlights lighting the road, the map screen's
 circle selector. Now the open list of the status document, in this order:
-1. Ask me for a normal drive on the native renderer first (day and night, a race if I have time) and for what
-   still looks wrong: nobody has looked at motion blur, frame drops and flashing since the fixes.
+1. I drove the fixed build (day, night, a race): everything looks normal. One thing to settle: the rectangular
+   patch under the car that has a different texture. I do not know whether the real Xbox shows it too: compare
+   the same spot on the emulated GPU first, and tell me what you find before changing anything.
 2. Chrome and paint are sharper and whiter than the emulated ones (parked at the festival at night:
    build_logs\test-parkN-*-340s.png against test-parkX-*-340s.png). The reflection cube map has one level here
    and nine on the console; the game renders the smaller ones itself (1C9F9000, 1CA59000, 1CA71000 ...).
