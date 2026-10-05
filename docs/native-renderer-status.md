@@ -278,6 +278,7 @@ Compare `build_logs\reference\spot-roadX-*.png` (emulated), `spot-roadN-*.png` (
 - **Blue outline, blue rear window, blue stripe under the tail lights, blue bumper** (day and night, only at
   some places). Compare `build_logs\reference\spot-darkN-*.png` and `user-day-20261005-f-*.webp` (before) with
   `spot-afterclear-*.png` (after): pixels on the car with blue 40 above red and green, 19,091 before, 0 after.
+  The user confirmed it after driving the fixed build ("there's no blue outline anymore").
   - **Cause.** The game clears each face of the reflection cube map (k_2_10_10_10_FLOAT, base 0, 256 pitch,
     2x) with the resolve's clear value **00701003**. That value is packed like the target: three 10-bit 7e3
     floats (3, 4 and 7: 0.006, 0.008, 0.014, nearly black) and 2 bits of alpha. `Copy` read every clear value
