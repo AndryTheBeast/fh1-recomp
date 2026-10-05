@@ -217,6 +217,11 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         3.2 s freezes the game). To do: record every pipeline a play-through needs (festival, roads, day and
         night, races, garage, paint shop, menus) into a list shipped next to the library, build all of them before
         the title screen with a progress display, and keep the driver's pipeline cache on disk between runs
+  - [ ] **After the first pre-release (user, 2026-10-06): the ground is not drawn at the Horizon Outpost of Montano
+        Plains** (native renderer, at night, step 1 build of the shipped pipeline list, so before the background
+        compiler existed): the road and the gravel in front of the stage are there, the ground under the tents and
+        the stage is a dark hole. Screenshots: `build_logs\reference\user-outpost-ground-missing-20261006-night.webp`
+        and `-map.webp` (where it is). Not looked at: check the same spot on the emulated GPU and by day first
   - [ ] Make the native renderer the default once it matches the emulated picture
 
 ## Tools (done)
