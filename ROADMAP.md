@@ -226,6 +226,9 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         road should be, with sharp straight edges (`user-ground-missing-2-20261006-dusk.webp`, `-map.webp`). Two
         spots close together, day and night: one cause is likely (a ground material of that area). Not looked at:
         check the same spots on the emulated GPU first
+  - [ ] **After the first pre-release (user, 2026-10-06): textures do not load in races** (native renderer, same
+        session and build as the item above; no screenshot yet: ask the user which race, which surfaces and
+        whether they stay missing or appear late). May be the same fault as the missing ground
   - [ ] Make the native renderer the default once it matches the emulated picture
 
 ## Tools (done)
