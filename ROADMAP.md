@@ -17,7 +17,7 @@ play, 26-28 in the busiest spots.
 | --- | --- | --- |
 | Emulated Xbox 360 GPU, D3D12 (default) | `run_fh1.bat` | correct, 30 fps; F3 frame monitor |
 | Emulated Xbox 360 GPU, Vulkan | `run_fh1.bat --gpu_backend=vulkan` | correct, 28-30 fps |
-| **Native renderer** (Vulkan, in progress) | `run_fh1.bat --fh1_renderer=native` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps (animated crowd, soft edges, right exposure); evening car color fixed 2026-10-05; bloom (red glow of the tail lights), the slightly dark picture and driving still to do |
+| **Native renderer** (Vulkan, in progress) | `run_fh1.bat --fh1_renderer=native` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps (animated crowd, soft edges, right exposure); evening car color and the glow of lights fixed 2026-10-05; the slightly dark picture, 4x MSAA and the driving check still to do |
 
 ## Stage 1 — Translate the game (done)
 
@@ -134,7 +134,11 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         EDRAM; the fill now reaches the color target) — 2026-10-05
   - [ ] Coloured specks on the car's outline when driving at night (clamp pushed 2026-10-05; the user has to
         confirm)
-  - [ ] Daylight brightness and contrast; glow around lights (bloom)
+  - [x] Glow around lights (the red glow of the tail lights): not the bloom but the game's occlusion queries;
+        answered with 1000 samples like the emulated GPU (`--fh1_native_occlusion=0`, the default) — 2026-10-05
+  - [ ] Occlusion queries measured for real (a glow hidden behind an object; needs the 4x samples and the sum
+        over the three scene strips)
+  - [ ] Picture slightly darker than the emulated one (median 30 against 40 at evening, 36 against 40 by day)
   - [ ] Light outlines on edges, stair-stepped shadow edges (scene drawn with 1 sample instead of 4)
   - [ ] Crowd brighter than the emulated one, hard cut-out edges
   - [ ] 2x MSAA reflection cube map and its resolves

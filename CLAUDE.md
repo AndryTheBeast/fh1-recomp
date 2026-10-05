@@ -232,8 +232,9 @@ giant polygon flashes gone). Late that night, unattended: **crowd animations and
 fixed** (animated people, FXAA outlines, HDR resolved textures, exposure; the user has not seen them yet: ask).
 **2026-10-05: the green car at evening is fixed** (the game clears the shadow / headlight mask through a depth
 buffer on the same EDRAM; `--fh1_native_depth_fill_color`). Next: the rest of that document's open list (ask the
-user about the specks at night and for a short drive, then bloom = the red glow of the tail lights, the slightly
-dark picture, 4x MSAA). The shader library and fh1.exe must be built from the same sources (the shared
+user about the specks at night and for a short drive, then the slightly dark picture, 4x MSAA). The red glow of
+the tail lights was fixed the same day (occlusion queries answered like the emulated GPU,
+`--fh1_native_occlusion=0`). The shader library and fh1.exe must be built from the same sources (the shared
 constants block changed size that night). ROADMAP.md is the checklist of
 everything done and still open (keep it that way: one line per item, `[x]` / `[ ]`, details in
 docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0-N5).

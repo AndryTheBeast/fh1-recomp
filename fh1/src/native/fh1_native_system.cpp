@@ -383,10 +383,16 @@ REXCVAR_DEFINE_STRING(fh1_native_diag_vertices_ps, "", "FH1",
 // The game measures with an occlusion query how much of the sun is visible (sub_82225438: GetData, Issue(BEGIN),
 // a draw and Issue(END)) and uses it to turn off the flare when trees or terrain cover it. With the faked count of
 // 1000 samples the flare was always drawn in full: sky burned to white and blue or purple halos in the trees.
-REXCVAR_DEFINE_INT32(fh1_native_occlusion, 1, "FH1",
-                     "Native renderer: the game's occlusion queries (the sun flare). 1 = measured on the GPU, like "
-                     "the Xbox 360; 0 = faked count of 1000 samples (the behavior before build 146: the flare is "
-                     "never hidden); 2 = faked count of 0 samples (tests only: never a flare)")
+// FH1 (2026-10-05): the default is 0, what the emulated GPU does. FH1 sizes the glow of every light (the red glow
+// of the tail lights, the festival lamps) with these queries, one small box per light drawn in each of the three
+// scene strips. Measured here they give about 64 samples on average where the emulated GPU's answer is 1000, and
+// the glows all but vanish (tail lights without their red halo). Measuring them properly needs the scene's 4x
+// samples and the sum over the strips: until then, the reference's answer.
+REXCVAR_DEFINE_INT32(fh1_native_occlusion, 0, "FH1",
+                     "Native renderer: the game's occlusion queries (the glow of lights, the sun flare). 0 = faked "
+                     "count of 1000 samples, as the emulated GPU answers (a glow is never hidden); 1 = measured on "
+                     "the GPU (FH1: far too few samples today, the glows vanish); 2 = faked count of 0 samples "
+                     "(tests only: never a glow)")
     .range(0, 2)
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_STRING(fh1_native_diag_constants_ps, "", "FH1",

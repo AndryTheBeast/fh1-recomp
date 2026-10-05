@@ -72,7 +72,14 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
    GPU at the same second (`auto_test.ps1 -RenderDoc`) to compare the mask's green channel and the cube map faces.
    The float images (scene, bloom chain, cube faces) are not written by `--fh1_dump_resolved_at_s` yet (8-bit
    only): add that first.
-3. **Brightness and glow in daylight**: the big difference is fixed (exposure). The native picture is now a
+3. **The glow part is DONE 2026-10-05** (see "What was fixed on 2026-10-05": it was not the bloom). Left of this
+   item: the picture is a little darker than the emulated one (brightness percentiles 5/25/50/75/95 at 95 s:
+   native 4/11/30/90/169, emulated 5/13/40/100/176; at 58 s 4/12/36/82/115 against 5/15/40/92/126). In the raw
+   scene before post-processing the emulated ground and car body are already brighter (compare the scene
+   resolved to 1C4E1000 with the capture's 1280x720 R10G10B10A2 texture, which is the scene / 4): start there,
+   with the car and ground shaders' inputs (the cube map has one level here and nine on the console; cause 422 =
+   a k_24_8 texture replaced by an empty one, bound by the cube map pass's draws as t8). The old notes:
+   **Brightness and glow in daylight**: the big difference is fixed (exposure). The native picture is now a
    little darker than the emulated one (median 33 against 38 at 58 s) and the tail lights still have no red glow
    (bloom). Candidates: the console cuts the resolved scene at 4.0 (10 bits after exp_bias -2) and the float
    texture does not, so the measured luminance can be higher and the exposure lower; the bloom chain (not dumped
@@ -193,6 +200,25 @@ Compare `build_logs\reference\test-fill-20261005-95s.png` (native after) with `t
   capture (identical); the difference was in a texture, so the mask was saved from the capture after each of
   its passes and compared channel by channel with the native dump; then each pass's state (vertices, depth
   test, blend) was read from the capture.
+
+### The red glow of the tail lights (same day)
+
+Compare `build_logs\reference\test-glow-20261005-95s.png` (native) with `test-fillX-20261005-95s.png` (emulated).
+
+- It was listed as "bloom", but the bloom chain works (1DE5D000 has the picture). The glow is already in the
+  emulated GPU's scene before post-processing. FH1 draws one small box per light inside an occlusion query (VS
+  n2396 / PS n455, quad list of 24 vertices, no color, once in each of the three scene strips) and sizes the
+  light's glow with the number of samples that passed. The emulated GPU does not measure: it answers 1000. The
+  native renderer measured (`--fh1_native_occlusion=1`, inherited from the NFS renderer, made for the sun flare)
+  and got 64 samples on average (largest 796): the glows all but vanished.
+- Now `--fh1_native_occlusion=0` is the default: 1000 samples, as the reference. Rear panel mean color at 95 s:
+  emulated 98 44 45, native before 57 35 30, native now 87 38 33. A glow is never hidden by an object in front
+  of the light (same as the emulated GPU).
+- To measure for real later: the count must be in the scene's 4x samples and summed over the three strips (each
+  strip issues the query's begin and end again and only sees its own rows); the log line `[native] C2 occlusion:
+  mode ...` gives the counts every 20 s.
+- The user saw the glow in a test window started with the option and took it for an effect of the green fix:
+  a clean run of the pushed build (no options) had no glow at 80, 95 and 100 s.
 
 ## What was fixed on 2026-10-04, and why (so the same causes are recognised again)
 
