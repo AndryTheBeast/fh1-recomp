@@ -221,7 +221,11 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         Plains** (native renderer, at night, step 1 build of the shipped pipeline list, so before the background
         compiler existed): the road and the gravel in front of the stage are there, the ground under the tents and
         the stage is a dark hole. Screenshots: `build_logs\reference\user-outpost-ground-missing-20261006-night.webp`
-        and `-map.webp` (where it is). Not looked at: check the same spot on the emulated GPU and by day first
+        and `-map.webp` (where it is). **A second spot the same session**, at dusk, on the road just east of that
+        outpost (Montano Plains, towards Clear Springs): a large flat dark grey patch where the ground beside the
+        road should be, with sharp straight edges (`user-ground-missing-2-20261006-dusk.webp`, `-map.webp`). Two
+        spots close together, day and night: one cause is likely (a ground material of that area). Not looked at:
+        check the same spots on the emulated GPU first
   - [ ] Make the native renderer the default once it matches the emulated picture
 
 ## Tools (done)
