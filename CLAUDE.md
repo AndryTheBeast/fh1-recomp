@@ -244,9 +244,10 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
   emulated GPU does this by itself; the native renderer has separate images and needs each case handled. When
   a native picture is wrong only in some channels or keeps old contents, compare that render target after each
   pass with a RenderDoc capture of the emulated GPU (tools/rdc_*.py) before reading shaders.
-- Next session (2026-10-05): the prompt is in docs/next-session-prompt.md. Waiting on the user: a night drive to
-  say whether the blue rims / orange dots are gone (`--fh1_native_float_cut`). New from the user: the map
-  screen's circle selector does not appear on the native renderer (not looked at yet).
+- Next session (2026-10-05): the prompt is in docs/next-session-prompt.md. The user's night drive after both
+  fixes: the blue outline on the car is still there; new: the headlights do not light the road; the map
+  screen's circle selector does not appear. Nothing of the three is looked at yet (the user's choice: next
+  session). The night road is not reached by the unattended test: the user has to drive there.
 - A test window started with a temporary option looks like the normal game to the user: say so before they
   look (on 2026-10-05 a glow seen in such a window was taken for an effect of the build).
 - Do not edit sources while a build is running: a header changed in the middle gives a mixed build (it happened on

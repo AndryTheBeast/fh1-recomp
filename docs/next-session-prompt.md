@@ -1,4 +1,4 @@
-# Prompt for the next session (written 2026-10-05)
+# Prompt for the next session (written 2026-10-05, after the user's night drive)
 
 Paste the block below as the first message of a new Claude session opened in `C:\Users\andre\Desktop\FH1-recomp`.
 
@@ -6,20 +6,24 @@ Paste the block below as the first message of a new Claude session opened in `C:
 Read fh1-recomp/CLAUDE.md, then fh1-recomp/docs/native-renderer-status.md, and work on the native renderer
 (run_fh1.bat --fh1_renderer=native).
 
-Order:
-1. Ask me first what I saw on my night drive with the build of 2026-10-05 (the cut of float pictures at the
-   console's ceiling): are the blue rims on the chrome and the rear window and the orange dots on the car's
-   outline gone? If not, follow "If the specks are still there" in the status document.
-2. The map screen: the circle selector (the cursor you move over the map) does not appear. Compare the map screen
-   on both renderers (I will tell you how I open it, or ask me for a screenshot), then find its draw with a
-   one-frame trace and a RenderDoc capture of the emulated GPU, the way the green car was found.
-3. Then the rest of the open list in the status document, in its order: the picture slightly darker than the
-   emulated one (start from the raw scene before post-processing), stair-stepped edges (4x MSAA), and measuring
-   the lights' visibility for real instead of always answering "visible".
+Order (all three were seen by me driving at night on 2026-10-05; my screenshots are in
+build_logs\reference\user-night-20261005-*):
+1. The blue outline on the car at night is still there after both fixes: a thin blue line exactly on the car's
+   silhouette (roof edge, rear window frame, bumper rim), and the rear window and bumper look blue. Follow "Blue
+   outline at night" in the status document.
+2. The headlights are on (the lamps glow) but they do not light the road in front of the car.
+3. The map screen: the circle selector (the cursor you move over the map) does not appear.
+Then the rest of the open list in the status document, in its order: the picture slightly darker than the
+emulated one, stair-stepped edges (4x MSAA), measuring the lights' visibility for real.
+
+For 1 and 2 you need the night road, which the unattended test does not reach (it stops at the festival at
+evening). Ask me to drive to a spot and tell you the second, or use the dump-on-demand option, and take the same
+spot on the emulated GPU with a RenderDoc capture: compare the pictures pass by pass, the way the green car was
+found. Tell me exactly what to run and when.
 
 Rules:
-- Compare every change against the emulated GPU at the same second (tools\auto_test.ps1, with and without
-  --fh1_renderer=native) and show me the numbers or a crop.
+- Compare every change against the emulated GPU at the same second or the same spot (tools\auto_test.ps1, with
+  and without --fh1_renderer=native) and show me the numbers or a crop.
 - I test driving by hand. Ask me for a short drive when you need one, and tell me when the build is ready: I must
   not start the game while a build is running.
 - If you start a test with a temporary option, say so before I look at the window, so I do not take its picture

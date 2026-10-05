@@ -132,9 +132,9 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] Driving check after these fixes (motion blur while moving, frame drops) — the user drives
   - [x] Evening: flat green car (the game clears the shadow / headlight mask through a depth buffer on the same
         EDRAM; the fill now reaches the color target) — 2026-10-05
-  - [ ] Blue rims on chrome and glass, orange dots on the car's outline when driving at night (user,
-        2026-10-05: still there after the first clamp; second fix the same day = fetches of float pictures cut
-        at the console's ceiling, `--fh1_native_float_cut`; the user has to drive at night and confirm)
+  - [ ] Blue outline on the car's silhouette at night, blue rear window and bumper (user, 2026-10-05: still
+        there after both fixes of that day: the clamp at 0 and the cut at the console's ceiling)
+  - [ ] Night: the headlights are on but do not light the road in front of the car (user, 2026-10-05)
   - [ ] Map screen: the circle selector does not appear (user, 2026-10-05; for the next session)
   - [x] Glow around lights (the red glow of the tail lights): not the bloom but the game's occlusion queries;
         answered with 1000 samples like the emulated GPU (`--fh1_native_occlusion=0`, the default) — 2026-10-05

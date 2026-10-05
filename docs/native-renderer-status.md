@@ -27,8 +27,9 @@ Compare `build_logs\reference\test-festX-*` (emulated, correct) with `test-a2m-*
 below. What is left of B is items 4 and 5 of this list (one sample instead of 4x MSAA).
 
 **Item 2 (the green car at evening) and the glow of item 3 were done on 2026-10-05.** The prompt for the next
-session is `docs/next-session-prompt.md`. The order for what is left: item 0 (ask the user what the night drive
-showed), the map screen's missing circle selector (item 0b), then items 3, 4, 5. The user's order had been (2026-10-05, after looking at
+session is `docs/next-session-prompt.md`. The order for what is left (the user's, after the night drive of 2026-10-05): the blue outline at night (item
+0), the headlights that do not light the road (item 0a), the map screen's missing circle selector (item 0b),
+then items 3, 4, 5. The user's order had been (2026-10-05, after looking at
 the result: "you fixed a lot of things"): the green car at evening first (item 2), then the other things on
 this list. The user also drove at night and
 sent two crops: coloured specks (blue, orange) exactly on the car's silhouette, "the sharpening still looks kinda
@@ -50,12 +51,46 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
    are 2x MSAA on the console and drawn at one sample here), a texture format still replaced by an empty one
    (cause 422 = k_24_8 not coming from a resolve).
 
+0a. **Night: the headlights are on but do not light the road** (user, 2026-10-05,
+   `build_logs\reference\user-night-20261005-c-headlights-no-ground-light.webp`: the lamps and their glow are
+   there, the road in front of the car is as dark as everywhere else). Not looked at. What is known from the
+   green-car work: the lighting of headlights and brake lights is deferred. PS n56 writes exp2(-light) of one
+   light into green, blue and alpha of the shadow mask (1CE2D000) from the scene depth, a 1D falloff texture
+   (132D9000, k_16) and a beam texture (136AC000); every shader that is lit reads those channels when its
+   boolean psDeferredHeadlightEnable is set (the car paint: PS n1265, `-log2(mask) * dynamicLights5`). At the
+   festival at evening that mask now matches the emulated one for the brake lights (255 124 138 191), so on the
+   night road check, in this order: (1) the mask there against a RenderDoc capture of the emulated GPU at the
+   same spot (is PS n56 drawn for the headlights, with which lightParams / lightColourTint; the emulated
+   capture of the festival had one n56 draw); (2) the road and terrain shaders: do they have the
+   psDeferredHeadlightEnable branch and is their boolean set (`--fh1_native_diag_constants_ps=<n>` prints the
+   booleans; bool4 bit 30 for the car paint), and what they do with the mask's channels; (3) the raw scene
+   (1C4E1000) of both: at the festival the emulated ground and car body were already brighter before
+   post-processing, which may be the same missing light as item 3's darker picture.
+
 0b. **Map screen: the circle selector does not appear** (user, 2026-10-05, "we'll leave that issue for the next
    session"). Nothing looked at yet. Start: both renderers on the map screen (ask the user how to get there or
    for a screenshot), a one-frame trace there (`--fh1_native_diag_frame_s`), the log's `(cause N)` lines, and a
    RenderDoc capture of the emulated GPU to find the selector's draw (`tools/rdc_draw_state.py`).
 
-0. **Blue rims and orange dots on the car at night: second fix 2026-10-05, the user has to confirm.** The
+0. **Blue outline at night: STILL THERE after both fixes (user's night drive, 2026-10-05).** Screenshots:
+   `build_logs\reference\user-night-20261005-b-rear-blue-outline.webp` and `-d-outline-crop.png` (after both
+   fixes), `-a-blue-rims.webp` (after the first only). What they show: a blue line one pixel wide exactly on
+   the car's silhouette against the road (roof edge, window frame, sides), the rear window's slats and the
+   bumper's lower half blue-violet, the body almost black (in the user's emulated night crop of the morning the
+   car is orange). The orange dots are not in the new screenshots. So the cut did not remove it, and it is
+   probably not a few huge pixels: the line follows every silhouette edge evenly. Suspects, most likely first:
+   (1) the scene is drawn with one sample where the console has 4x MSAA: on a silhouette pixel the console
+   averages car and road, here the pixel is all car, lit at a grazing angle where the paint and chrome
+   shaders' fresnel term goes to full reflection of the (blue, night) sky cube map; and the mask / depth the
+   post-processing reads were made at another sample position (the 4x clears drawn at twice the scale);
+   (2) the reflection cube map has one level here and nine on the console (1C879000 256x256, then 1C9F9000,
+   1CA59000, 1CA71000 ... rendered by the game): chrome and glass sample the sharp level 0 where the console
+   takes a blurred, darker one, which would also explain the blue window and bumper; build the cube map with
+   its levels from those resolves and compare; (3) the game's FXAA (PS n2283) on the mask or the scene
+   brightening an edge. Start by taking the same night spot on both renderers (the user drives; the unattended
+   test stops at the festival) and compare the raw scene 1C4E1000 with the capture's: if the blue line is
+   already in the raw scene it is 1 or 2, if not it is post-processing. The notes of the second fix:
+   **Blue rims and orange dots on the car at night: second fix 2026-10-05.** The
    user's screenshot after the first clamp (night road, native): blue on the chrome trim, the bumper edges and
    the rear window, a few orange dots on the outline. Second fix: `--fh1_native_float_cut` (on by default).
    The console resolves the float scene into 10 bits with exponent bias -2 (cube map -4) and the fetch
@@ -67,7 +102,7 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
    size. Measured at the festival (not at night on the road, where the user saw it): brightness unchanged
    (58 s: 4/12/36/82/115, 95 s: 4/12/31/92/168), mean horizontal gradient 1.39 -> 1.56 at 58 s and 1.31 -> 1.44
    at 95 s (emulated 1.50 and 1.41: the FXAA now sees the same three pictures as on the console), 30 fps.
-   **If the specks are still there**: (1) take the user's spot with a dump (`--fh1_dump_resolved_at_s=-1` and
+   What was planned if it did not work (it did not): (1) take the user's spot with a dump (`--fh1_dump_resolved_at_s=-1` and
    a file named dump_now, or ask the user for the second) and read the `[fh1] dump_resolved float` lines for
    the scene and the cube map: where are the huge / negative / NaN values, and which draw writes them (the
    chrome shader PS n259 and the glass are the surfaces that showed blue); (2) the blend inside the float
