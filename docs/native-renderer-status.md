@@ -25,6 +25,35 @@ Compare `build_logs\reference\test-festX-*` (emulated, correct) with `test-a2m-*
 **Items A (crowd animations) and B (over-sharp picture) were done on 2026-10-04 late night**: see "What was fixed"
 below. What is left of B is items 4 and 5 of this list (one sample instead of 4x MSAA).
 
+**The user's order for the next session (2026-10-05, after looking at the result: "you fixed a lot of things"):
+the green car at evening first (item 2), then the other things on this list.** The user also drove at night and
+sent two crops: coloured specks (blue, orange) exactly on the car's silhouette, "the sharpening still looks kinda
+wrong". See item 0.
+
+How to start on item 2 (in this order, each step is small):
+
+1. Make `--fh1_dump_resolved_at_s` write the float images too (scene 1C4E1000, bloom chain, cube faces 1C879000..):
+   today only the 8-bit ones are written, and the evening problem is in pictures that became float. Tone-map for
+   the PNG (for example x / (1 + x), then gamma) and say so in the file name.
+2. One RenderDoc capture of the emulated GPU at the same second (`auto_test.ps1 -RenderDoc -ExtraArgs
+   "--renderdoc_capture_seconds=97"`, then `tools/rdc_dump.py`): the shadow mask (1CE2D000), the cube map faces and
+   the scene before post-processing, next to the native dumps of second 97.
+3. The car's rear panel is the question: find its draw in a one-frame trace (`--fh1_native_diag_frame_s=97`: the
+   draws with the cube map 1C879000 just before the tail lights), log its pixel constants day and evening
+   (`--fh1_native_diag_constants_ps=<n>`), and check each of its textures in the dumps. Suspects, most likely
+   first: the shadow mask's green channel (1 everywhere but the sky at evening: it may be a second light's mask
+   whose stencil-tested passes PS n800 / n56 do not do here what they do on the console), the cube map (its faces
+   are 2x MSAA on the console and drawn at one sample here), a texture format still replaced by an empty one
+   (cause 422 = k_24_8 not coming from a resolve).
+
+0. **Coloured specks on silhouettes while driving at night** (user's crops, 2026-10-05). Cause found the same day:
+   since the resolved scene is a float image it keeps negative values and NaN (the car paint's grazing-angle terms
+   make them on silhouettes), which the console's unsigned formats cannot hold; the post-processing turns them into
+   blue or orange pixels. Fetches of such pictures now cut them to 0 (`fh1Exp` in `shader_common.h`: the renderer
+   writes a negative exponent scale for a float resolved picture). **Check the result line at the end of "What was
+   fixed"**; if specks are still there, the next suspect is blending inside the float target itself (a NaN written
+   once stays under every later blend) and the fix is to clamp in the shaders' color output for float targets.
+
 1. **Driving has not been checked since the fixes of 2026-10-04 night.** The user drives by hand: ask for a short
    drive first. To look at: motion blur while moving (the velocity pass now gets real depth and stencil; the car's
    own stencil value, 21, picks its matrix), frame drops (185-230 ms frames were seen before), anything that
@@ -144,6 +173,11 @@ Late night session (crowd animation, over-sharp picture, brightness). Compare `b
   gradient = sharpness): emulated 5/16/38/90/123, gradient 1.53; native before 4/20/52/121/167, gradient 2.24; native
   after 4/12/33/80/114, gradient 1.35. So it is now slightly darker and softer than the emulated picture (was much
   brighter and harder).
+- 2026-10-05, the clamp for float pictures (item 0): built and run (festival at dusk with three seconds of
+  throttle, `build_logseference	est-clamp-20261005-102s.png`): daylight numbers unchanged, 30 fps, no specks on
+  the silhouette. **Not proven**: the specks were never reproduced here before the change either (the user saw them
+  driving on the road at night); the user has to look again. In the user's night crop the car is orange, not green:
+  the green of item 2 belongs to the festival at evening (stage lights nearby), not to night in general.
 - After any change to `shaders/XenosRecomp` or `shader_common.h` every shader changes: `fh1_retranslate_changed.py
   --apply` takes ~6 minutes for all 3,850, then repack and copy. **The library and fh1.exe must match** (the shared
   constants block grew: `Fh1BlockShared v[61]` = `kUboBytesShared`).

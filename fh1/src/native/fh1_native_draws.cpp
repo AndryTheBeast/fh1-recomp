@@ -9095,6 +9095,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         if (exp_bias_) {
           exp_scale_out = std::ldexp(1.0f, exp_fetch + resolved->exp_bias);
         }
+        // A picture kept in a float image where the console has an unsigned format: negative = "cut negative
+        // values and NaN to 0" (fh1Exp in shader_common.h).
+        if (resolved->format == VK_FORMAT_R16G16B16A16_SFLOAT && resolved->exp_bias != 0) {
+          exp_scale_out = -exp_scale_out;
+        }
         // One trace per size, to check in the log that the 1/size constant of resolved textures is no longer
         // 0 (that was the cause of the shadow flicker).
         if (warnings_invsize_resolved_.insert(uint64_t(resolved->width) << 32 | resolved->height).second) {
@@ -9269,6 +9274,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         const uint64_t key_resolved = key ^ 0x9E3779B97F4A7C15ull ^ (uint64_t(format_faces) << 40);
         if (exp_bias_) {
           exp_scale_out = std::ldexp(1.0f, exp_fetch + faces[0]->exp_bias);
+        }
+        if (format_faces == VK_FORMAT_R16G16B16A16_SFLOAT && faces[0]->exp_bias != 0) {
+          exp_scale_out = -exp_scale_out;
         }
         Texture& texture = textures_[key_resolved];
         if (texture.image.image == VK_NULL_HANDLE) {

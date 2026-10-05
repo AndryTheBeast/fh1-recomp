@@ -254,6 +254,14 @@ float4 fh1FetchAt(uint c, float indexValue, bool rounded, uint stride, int offse
 }
 #endif
 
+// FH1: exponent scale of a texture fetch (<sampler>_ExpScale, written by the renderer). A negative scale marks a
+// resolved picture kept in a float image: the console stores it in an unsigned format, which has no negative values
+// and no NaN (a float image keeps both, and they came out as coloured specks on silhouettes), so they are cut to 0.
+float fh1Exp(float v, float s) { return s < 0.0 ? max(v, 0.0) * -s : v * s; }
+float2 fh1Exp(float2 v, float s) { return s < 0.0 ? max(v, 0.0) * -s : v * s; }
+float3 fh1Exp(float3 v, float s) { return s < 0.0 ? max(v, 0.0) * -s : v * s; }
+float4 fh1Exp(float4 v, float s) { return s < 0.0 ? max(v, 0.0) * -s : v * s; }
+
 // FH1: implicit-level sampling is only allowed in pixel shaders; vertex shaders use level 0.
 #ifdef FH1_VERTEX_SHADER
 #define FH1_SAMPLE(TEXTURE, SAMPLER, COORD) (TEXTURE).SampleLevel(SAMPLER, COORD, 0)

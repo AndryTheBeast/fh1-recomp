@@ -438,7 +438,11 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
             out += "1.0 - ";
     #endif
 
+#ifdef NFSMW_RECOMP
+        out += "fh1Exp(tfetch";  // closed after the swizzle with the slot's exponent scale
+#else
         out += "tfetch";
+#endif
         break;
     }
     case FetchOpcode::GetTextureWeights:
@@ -507,8 +511,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
     // FH1: the texture's exponent bias (fetch constant exp_adjust, plus the bias of the resolve that made the
     // image): a power-of-two scale on the fetched value, which the renderer writes per slot (<sampler>_ExpScale,
     // 1.0 when there is none). FXAA reads the scene three times at 1, 1/2 and 1/4 this way.
+    // A negative scale marks a picture kept in a float image: the console's unsigned formats hold neither negative
+    // values nor NaN, so fh1Exp cuts them to 0 first (shader_common.h).
     if (instr.opcode == FetchOpcode::TextureFetch)
-        print(" * {}_ExpScale", constNamePtr);
+        print(", {}_ExpScale)", constNamePtr);
 #endif
 
     out += ";\n";
