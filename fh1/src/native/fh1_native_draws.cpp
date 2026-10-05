@@ -1170,6 +1170,22 @@ using rex::ui::vulkan::VulkanDevice;
 constexpr uint32_t kRegConstantsVs = 0x4000;
 constexpr uint32_t kRegConstantsPs = 0x4400;
 constexpr uint32_t kRegFetch = 0x4800;
+
+// FH1: the exponent scale of a fetch from a resolved picture kept in a float image (fh1Exp in shader_common.h).
+// Negative = cut negative values and NaN to 0; its mantissa carries the cut at the top, 2^(the fetch's exponent
+// adjust), which is where the console's unsigned resolved format ends (fh1_native_float_cut; INT32_MIN or the
+// option off = no cut). `scale` is a power of two.
+REXCVAR_DEFINE_BOOL(fh1_native_float_cut, true, "FH1",
+                    "Native renderer: fetches of a resolved picture kept in a float image are cut at the value the "
+                    "console's 10-bit resolved format ends at (4 for the scene, 16 for the reflection cube map). "
+                    "false = no cut, as before (blue rims and orange dots on the car at night, darker picture)");
+inline float ExpScaleFloatPicture(float scale, int32_t exp_fetch) {
+  if (exp_fetch == INT32_MIN || !REXCVAR_GET(fh1_native_float_cut)) {
+    return -scale;
+  }
+  const int32_t code = std::clamp(exp_fetch, -16, 15) + 17;  // 1..32
+  return -scale * (1.0f + float(code) / 64.0f);
+}
 constexpr uint32_t kRegBooleans = 0x4900;
 constexpr uint32_t kRegistersConstants = 0x400;  // 256 constants x 4
 
@@ -9107,7 +9123,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         // A picture kept in a float image where the console has an unsigned format: negative = "cut negative
         // values and NaN to 0" (fh1Exp in shader_common.h).
         if (resolved->format == VK_FORMAT_R16G16B16A16_SFLOAT && resolved->exp_bias != 0) {
-          exp_scale_out = -exp_scale_out;
+          exp_scale_out = ExpScaleFloatPicture(exp_scale_out, exp_bias_ ? exp_fetch : INT32_MIN);
         }
         // One trace per size, to check in the log that the 1/size constant of resolved textures is no longer
         // 0 (that was the cause of the shadow flicker).
@@ -9285,7 +9301,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           exp_scale_out = std::ldexp(1.0f, exp_fetch + faces[0]->exp_bias);
         }
         if (format_faces == VK_FORMAT_R16G16B16A16_SFLOAT && faces[0]->exp_bias != 0) {
-          exp_scale_out = -exp_scale_out;
+          exp_scale_out = ExpScaleFloatPicture(exp_scale_out, exp_bias_ ? exp_fetch : INT32_MIN);
         }
         Texture& texture = textures_[key_resolved];
         if (texture.image.image == VK_NULL_HANDLE) {

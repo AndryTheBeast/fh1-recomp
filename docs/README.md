@@ -3,6 +3,7 @@
 | Document | What it is |
 | --- | --- |
 | [native-renderer-status.md](native-renderer-status.md) | **Start here.** State of the native renderer, the open picture problems in order, how to test |
+| `next-session-prompt.md` | The message to paste to start the next session |
 | [native-renderer-fh1.md](native-renderer-fh1.md) | The plan of the native renderer (phases N0-N5) and what was reused |
 | [performance-review.md](performance-review.md) | Where the frame time goes, and what to cut for the Switch |
 | [history/](history/) | Finished work: the detailed log of everything done (`roadmap-history.md`), the English rename, the paused experiments on the emulated GPU's render targets |

@@ -257,10 +257,33 @@ float4 fh1FetchAt(uint c, float indexValue, bool rounded, uint stride, int offse
 // FH1: exponent scale of a texture fetch (<sampler>_ExpScale, written by the renderer). A negative scale marks a
 // resolved picture kept in a float image: the console stores it in an unsigned format, which has no negative values
 // and no NaN (a float image keeps both, and they came out as coloured specks on silhouettes), so they are cut to 0.
-float fh1Exp(float v, float s) { return s < 0.0 ? max(v, 0.0) * -s : v * s; }
-float2 fh1Exp(float2 v, float s) { return s < 0.0 ? max(v, 0.0) * -s : v * s; }
-float3 fh1Exp(float3 v, float s) { return s < 0.0 ? max(v, 0.0) * -s : v * s; }
-float4 fh1Exp(float4 v, float s) { return s < 0.0 ? max(v, 0.0) * -s : v * s; }
+// Since 2026-10-05 the same unsigned format's upper end too. The console resolves the float scene into 10 bits
+// with a negative exponent bias and the fetch multiplies it back: the value is cut at 1 in between, so a fetch
+// never returns more than 2^(its own exponent adjust) (4 for the scene, 16 for the reflection cube map). A float
+// image has no such cut: single pixels reached 32,000 here, the game's FXAA, bloom and reflections spread them
+// (blue rims on chrome and glass, orange dots on the car's outline at night) and the exposure read a brighter
+// scene than the console's (a darker picture). The renderer packs the cut into the scale: -s = 2^e * (1 + code /
+// 64), scale = 2^e, cut = 2^(code - 17); code 0 = no cut (DrawsVulkan: ExpScaleFloatPicture).
+void fh1ExpFloat(float s, out float scale, out float cut)
+{
+    float exponent;
+    float mantissa = frexp(-s, exponent);  // [0.5, 1)
+    float code = round((mantissa * 2.0 - 1.0) * 64.0);
+    scale = ldexp(1.0, exponent - 1.0);
+    cut = code > 0.5 ? ldexp(1.0, code - 17.0) : asfloat(0x7f7fffff);
+}
+float4 fh1Exp(float4 v, float s)
+{
+    if (s >= 0.0)
+        return v * s;
+    float scale, cut;
+    fh1ExpFloat(s, scale, cut);
+    // "v > 0" is false for NaN as well
+    return min(select(v > 0.0, v, 0.0) * scale, cut);
+}
+float3 fh1Exp(float3 v, float s) { return fh1Exp(float4(v, 0.0), s).xyz; }
+float2 fh1Exp(float2 v, float s) { return fh1Exp(float4(v, 0.0, 0.0), s).xy; }
+float fh1Exp(float v, float s) { return fh1Exp(float4(v, 0.0, 0.0, 0.0), s).x; }
 
 // FH1: implicit-level sampling is only allowed in pixel shaders; vertex shaders use level 0.
 #ifdef FH1_VERTEX_SHADER

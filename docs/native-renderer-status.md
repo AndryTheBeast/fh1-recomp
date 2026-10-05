@@ -26,8 +26,9 @@ Compare `build_logs\reference\test-festX-*` (emulated, correct) with `test-a2m-*
 **Items A (crowd animations) and B (over-sharp picture) were done on 2026-10-04 late night**: see "What was fixed"
 below. What is left of B is items 4 and 5 of this list (one sample instead of 4x MSAA).
 
-**Item 2 (the green car at evening) was done on 2026-10-05.** The order for what is left: item 0 (ask the user
-whether the specks are still there), then items 3, 4, 5. The user's order had been (2026-10-05, after looking at
+**Item 2 (the green car at evening) and the glow of item 3 were done on 2026-10-05.** The prompt for the next
+session is `docs/next-session-prompt.md`. The order for what is left: item 0 (ask the user what the night drive
+showed), the map screen's missing circle selector (item 0b), then items 3, 4, 5. The user's order had been (2026-10-05, after looking at
 the result: "you fixed a lot of things"): the green car at evening first (item 2), then the other things on
 this list. The user also drove at night and
 sent two crops: coloured specks (blue, orange) exactly on the car's silhouette, "the sharpening still looks kinda
@@ -49,7 +50,32 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
    are 2x MSAA on the console and drawn at one sample here), a texture format still replaced by an empty one
    (cause 422 = k_24_8 not coming from a resolve).
 
-0. **Coloured specks on silhouettes while driving at night** (user's crops, 2026-10-05). Cause found the same day:
+0b. **Map screen: the circle selector does not appear** (user, 2026-10-05, "we'll leave that issue for the next
+   session"). Nothing looked at yet. Start: both renderers on the map screen (ask the user how to get there or
+   for a screenshot), a one-frame trace there (`--fh1_native_diag_frame_s`), the log's `(cause N)` lines, and a
+   RenderDoc capture of the emulated GPU to find the selector's draw (`tools/rdc_draw_state.py`).
+
+0. **Blue rims and orange dots on the car at night: second fix 2026-10-05, the user has to confirm.** The
+   user's screenshot after the first clamp (night road, native): blue on the chrome trim, the bumper edges and
+   the rear window, a few orange dots on the outline. Second fix: `--fh1_native_float_cut` (on by default).
+   The console resolves the float scene into 10 bits with exponent bias -2 (cube map -4) and the fetch
+   multiplies it back, so a fetch never returns more than 2^(its exponent adjust): 4 for the scene (2 and 1
+   for the FXAA's other two taps), 16 for the cube map. The float images here had no ceiling (single pixels
+   of 32,208 in the resolved scene at the festival, with 248 negative values and 48 NaN). `fh1Exp` in
+   `shader_common.h` now cuts at that ceiling; the renderer packs it into the mantissa of the (negative)
+   exponent scale (`ExpScaleFloatPicture` in `fh1_native_draws.cpp`), so the shared constants did not change
+   size. Measured at the festival (not at night on the road, where the user saw it): brightness unchanged
+   (58 s: 4/12/36/82/115, 95 s: 4/12/31/92/168), mean horizontal gradient 1.39 -> 1.56 at 58 s and 1.31 -> 1.44
+   at 95 s (emulated 1.50 and 1.41: the FXAA now sees the same three pictures as on the console), 30 fps.
+   **If the specks are still there**: (1) take the user's spot with a dump (`--fh1_dump_resolved_at_s=-1` and
+   a file named dump_now, or ask the user for the second) and read the `[fh1] dump_resolved float` lines for
+   the scene and the cube map: where are the huge / negative / NaN values, and which draw writes them (the
+   chrome shader PS n259 and the glass are the surfaces that showed blue); (2) the blend inside the float
+   target keeps a NaN or an infinite value under every later draw: clamp the shaders' color output for float
+   targets (the console's 7e3 format ends at 31.875 and has no negative values); (3) the cube map has one
+   level here and nine on the console (the game renders them: 1C9F9000, 1CA59000, ...): chrome samples the
+   sharp level where the console samples a blurred one. The first clamp's notes:
+   **Coloured specks on silhouettes while driving at night** (user's crops, 2026-10-05). Cause found the same day:
    since the resolved scene is a float image it keeps negative values and NaN (the car paint's grazing-angle terms
    make them on silhouettes), which the console's unsigned formats cannot hold; the post-processing turns them into
    blue or orange pixels. Fetches of such pictures now cut them to 0 (`fh1Exp` in `shader_common.h`: the renderer
