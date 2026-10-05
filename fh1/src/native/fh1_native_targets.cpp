@@ -6248,7 +6248,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       DumpLogFloat(name_file, stats);
     }
     std::error_code ec;
-    const std::filesystem::path folder = std::filesystem::current_path() / "dump_resolved";
+    const std::filesystem::path folder = std::filesystem::current_path() / dump_folder_;
     std::filesystem::create_directories(folder, ec);
     FH1_DUMP_LOG(folder, name_file, rgba, image.width, image.height);
     FH1_DUMP_LOG(folder, std::string("alpha_") + name_file, alpha, image.width, image.height);
@@ -6257,6 +6257,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     dfn_.vkFreeMemory(device_, memory_block, nullptr);
   }
   uint32_t dump_res_done_ = 0;
+  std::string dump_folder_ = "dump_resolved";
+  uint32_t dump_count_ = 0;
   bool dump_rt_pending_ = false;
   uint32_t dump_rt_done_ = 0;
   bool dump_frame_pending_ = false;
@@ -6274,9 +6276,14 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       // checked twice a second, the file is removed.
       static uint32_t count = 0;
       std::error_code ec;
-      if (done || ++count % 30 != 0 || !std::filesystem::remove("dump_now", ec)) {
+      if (++count % 30 != 0 || !std::filesystem::remove("dump_now", ec)) {
         return;
       }
+      // FH1: on demand it can be asked again; each dump after the first gets its own folder (dump_resolved_2, ...).
+      if (++dump_count_ > 1) {
+        dump_folder_ = "dump_resolved_" + std::to_string(dump_count_);
+      }
+      dump_res_done_ = dump_rt_done_ = dump_frame_done_ = 0;
     } else if (done || seconds <= 0 ||
                std::chrono::steady_clock::now() - start < std::chrono::seconds(seconds)) {
       return;
@@ -6340,7 +6347,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     SendWork(true);
     WaitGpu();
     std::error_code ec;
-    const std::filesystem::path folder = std::filesystem::current_path() / "dump_resolved";
+    const std::filesystem::path folder = std::filesystem::current_path() / dump_folder_;
     std::filesystem::create_directories(folder, ec);
     uint32_t n = 0;
     for (DumpEntry& v : list) {

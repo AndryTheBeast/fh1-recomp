@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -450,11 +451,19 @@ void UpdateRenderDocCaptureOnSwap() {
   static std::vector<double> pending_seconds;
   static uint64_t first_swap = 0;
   static bool capturing = false;
+  // "-1" instead of a list: a capture each time a file named capture_now appears in the working
+  // folder (checked every 15 swaps, the file is removed).
+  static bool on_demand = false;
+  static uint32_t swaps = 0;
   if (!initialized) {
     initialized = true;
     std::string list = REXCVAR_GET(renderdoc_capture_seconds);
     if (list.empty()) {
       return;
+    }
+    if (list == "-1") {
+      on_demand = true;
+      list.clear();
     }
     for (size_t start = 0; start < list.size();) {
       size_t end = list.find(',', start);
@@ -485,8 +494,13 @@ void UpdateRenderDocCaptureOnSwap() {
   }
   double seconds =
       double(now - first_swap) / double(rex::chrono::Clock::QueryHostTickFrequency());
+  std::error_code ec;
+  bool requested = on_demand && ++swaps % 15 == 0 && std::filesystem::remove("capture_now", ec);
   if (!pending_seconds.empty() && seconds >= pending_seconds.back()) {
     pending_seconds.pop_back();
+    requested = true;
+  }
+  if (requested) {
     api->api_1_0_0()->StartFrameCapture(nullptr, nullptr);
     capturing = true;
     REXGPU_INFO("RenderDoc: capturing the guest frame after {:.1f} s", seconds);

@@ -2515,7 +2515,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     diag_constants_active_ = !REXCVAR_GET(fh1_native_diag_constants_ps).empty();
     if (tracing_) {
       tracing_ = false;
-      trace_done_ = true;
+      trace_done_ = REXCVAR_GET(fh1_native_diag_frame_s) != -1;  // on demand it can be asked again
       REXLOG_INFO("[trace] end of frame: {} lines", traces_);
       return;
     }

@@ -89,7 +89,7 @@ struct PushConstants
 struct Fh1BlockVs { float4 v[256]; };
 // FH1: pixel shaders use all 256 constants (NFS: 224).
 struct Fh1BlockPs { float4 v[256]; };
-struct Fh1BlockShared { float4 v[61]; };  // FH1: 244 words (nfsc-recomp: loop constants at 122-153; FH1 154-163, exponent scales 164-179, ranked fetches 180-243)
+struct Fh1BlockShared { float4 v[63]; };  // FH1: 252 words (booleans 244-251; nfsc-recomp: loop constants at 122-153; FH1 154-163, exponent scales 164-179, ranked fetches 180-243)
 [[vk::binding(0, 4)]] ConstantBuffer<Fh1BlockVs> g_UboVertex;
 [[vk::binding(1, 4)]] ConstantBuffer<Fh1BlockPs> g_UboPixel;
 [[vk::binding(2, 4)]] ConstantBuffer<Fh1BlockShared> g_UboShared;
@@ -98,6 +98,11 @@ struct Fh1BlockShared { float4 v[61]; };  // FH1: 244 words (nfsc-recomp: loop c
 #define FH1_SHARED_FLOAT(B) g_UboShared.v[(B) / 16][((B) % 16) / 4]
 
 #define g_Booleans                 (NFSMW_UBO ? FH1_SHARED_UINT(256) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 256))
+// FH1: all 256 boolean constants (words 244-251 = registers BOOL_000_031..BOOL_224_255; pixel shader b<n> is
+// bit 128 + n). g_Booleans only holds b0-b15 of each stage, and FH1's shaders go past that (the scenery's
+// bEnableDeferredLightContribution is b100: the headlights did not light the road).
+#define g_BooleanWord(W)           (NFSMW_UBO ? FH1_SHARED_UINT(976 + (W) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 976 + (W) * 4))
+#define FH1_BOOL(N)                ((g_BooleanWord((N) >> 5) >> ((N) & 31)) & 1u)
 #define g_SwappedTexcoords         (NFSMW_UBO ? FH1_SHARED_UINT(260) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 260))
 #define g_HalfPixelOffset          (NFSMW_UBO ? float2(FH1_SHARED_FLOAT(264), FH1_SHARED_FLOAT(268)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 264))
 #define g_AlphaThreshold           (NFSMW_UBO ? FH1_SHARED_FLOAT(272) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 272))
@@ -131,6 +136,7 @@ struct Fh1BlockShared { float4 v[61]; };  // FH1: 244 words (nfsc-recomp: loop c
 uint g_SpecConstants();
 
 #define g_InputRemap(LOC) 0xFFF
+#define FH1_BOOL(N) ((g_Booleans >> ((N) & 31)) & 1u)
 
 #endif
 

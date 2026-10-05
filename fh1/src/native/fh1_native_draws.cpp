@@ -1221,7 +1221,7 @@ constexpr size_t kMaxRegistersList = 4096;
 // (68) and function (69), NDC (64-73) and g_InputRemap for the 16 locations (74-89).
 // 90 words up to g_InputRemap (bytes 296..359) and 32 more for 1/size of the 16 texture slots (bytes
 // 360..487), which avoid querying the texture size on every sample.
-constexpr uint32_t kWordsShared = 244;  // NFSC: + 32 loop constants (words 122-153); FH1: g_GuestBase / g_FetchAddress (154-163), exponent scales (164-179), ranked fetches (180-243)
+constexpr uint32_t kWordsShared = 252;  // FH1: all 256 booleans (244-251); NFSC: + 32 loop constants (words 122-153); FH1: g_GuestBase / g_FetchAddress (154-163), exponent scales (164-179), ranked fetches (180-243)
 constexpr uint32_t kWordFetchRankAddress = 180;  // FH1: g_FetchRankAddress, one word per declared fetch 0-31
 constexpr uint32_t kWordFetchRankParam = 212;    // FH1: g_FetchRankParam
 constexpr uint32_t kWordExpScale = 164;  // FH1: <sampler>_ExpScale, one float per fetch constant 0-15
@@ -1339,7 +1339,7 @@ constexpr uint32_t kSkyFramesTest = 90;
 constexpr uint32_t kSkyFramesWithOne = 90;
 constexpr VkDeviceSize kUboBytesVs = 256 * 16;
 constexpr VkDeviceSize kUboBytesPs = 256 * 16;  // NFSC: whole pixel constant bank
-constexpr VkDeviceSize kUboBytesShared = 61 * 16;  // FH1: matches Fh1BlockShared (v[61])
+constexpr VkDeviceSize kUboBytesShared = 63 * 16;  // FH1: matches Fh1BlockShared (v[63])
 constexpr uint32_t kRemapIdentity = 0xFFF;
 constexpr uint32_t kMaxVerticesByDraw = uint32_t(1) << 20;
 constexpr uint32_t kMemoryPhysical = 0x20000000;
@@ -1805,6 +1805,7 @@ VkFormat FormatAttribute(uint32_t format, bool entry_whole, bool con_signo, bool
 constexpr uint16_t kSwizzleRRRR = 0;
 constexpr uint16_t kSwizzleRGGG = (1 << 3) | (1 << 6) | (1 << 9);
 constexpr uint16_t kSwizzleRGBA = (1 << 3) | (2 << 6) | (3 << 9);
+constexpr uint16_t kSwizzleAAAA = 3 | (3 << 3) | (3 << 6) | (3 << 9);
 constexpr uint16_t kSwizzleBGRA = 2 | (1 << 3) | (0 << 6) | (3 << 9);
 
 struct FormatTexture {
@@ -1850,6 +1851,11 @@ bool FormatTextureOf(uint32_t format, FormatTexture& f) {
       return true;
     case 59:  // k_DXT5A
       f = {VK_FORMAT_BC4_UNORM_BLOCK, 4, 8, 2, kSwizzleRRRR};
+      return true;
+    case 58:  // k_DXT3A: the alpha half of a DXT3 block (16 texels of 4 bits). No host format has it alone:
+              // PrepareTexture widens each block to a BC2 one (same alpha half, empty color half). FH1's map
+              // screen draws its circle selector with one.
+      f = {VK_FORMAT_BC2_UNORM_BLOCK, 4, 8, 2, kSwizzleAAAA};
       return true;
     case 24:  // k_16
       f = {VK_FORMAT_R16_UNORM, 1, 2, 2, kSwizzleRRRR};
@@ -3536,6 +3542,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     }
     shared[64] = (r[kRegBooleans] & 0xFFFF) | ((r[kRegBooleans + 4] & 0xFFFF) << 16);
     shared[65] = 0;  // g_SwappedTexcoords
+    for (uint32_t i = 0; i < 8; ++i) {  // FH1: every boolean (FH1_BOOL in shader_common.h)
+      shared[244 + i] = r[kRegBooleans + i];
+    }
     // NFSC: the live loop constants (SHADER_CONSTANT_LOOP_00-31) for the loops of shaders without definitions.
     std::memcpy(&shared[122], &r[gr::XE_GPU_REG_SHADER_CONSTANT_LOOP_00], 32 * sizeof(uint32_t));
     {  // NFSC diagnostic: loop constants as the shaders see them (logged when one changes, at most 40 lines)
@@ -9641,7 +9650,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
          * reading from a copy of the bytes this hash covers. If any read falls outside them, or ReadLevel
          * would go past memory, the texture continues on the usual path.
          */
-        if (!texture.image.prepared && fingerprints_phase_ != kFingerprintsOff && !diag_mips_ && tile_fast_ >= 0) {
+        // FH1: not k_DXT3A (58), whose data is widened after the read (below); the thread does not do that.
+        if (!texture.image.prepared && fingerprints_phase_ != kFingerprintsOff && !diag_mips_ && tile_fast_ >= 0 &&
+            format != 58) {
           std::array<size_t, 16> offsets{};
           std::array<size_t, 16> layer_level{};
           size_t bytes_plan = 0;
@@ -9823,7 +9834,16 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     } else {
       OrderOfAlways(data, tf.unit_order, order);
     }
-    if (diag_mips_ && texture.levels > 1 && read_base && !volume) {
+    if (format == 58) {  // FH1: k_DXT3A blocks (8 bytes) become BC2 blocks (16): alpha half, then an empty color half
+      std::vector<uint8_t> wide(data.size() * 2, 0);
+      for (size_t i = 0; i + 8 <= data.size(); i += 8) {
+        std::memcpy(wide.data() + i * 2, data.data() + i, 8);
+      }
+      data.swap(wide);
+      for (uint32_t n = 0; n < texture.levels; ++n) {
+        texture.offset_level[n] *= 2;
+      }
+    } else if (diag_mips_ && texture.levels > 1 && read_base && !volume) {
       ReviewMips(base, format, width, height, tf, texture, bytes_layer_level, data);
     }
     /*
