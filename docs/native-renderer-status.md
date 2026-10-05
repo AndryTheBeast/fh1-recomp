@@ -35,6 +35,19 @@ too upwards, even going inside the rim": fixed after that); nobody has driven th
   both). Not looked at: capture both renderers at 320 s (`auto_test.ps1 -RenderDoc -Triggers "320"`) and compare
   the composite's inputs with `tools\rdc_tex_stats.py` (the color grading cube changes with the time of day; the
   scene before post-processing matched at dusk in the third session, not checked at night).
+  - **Measured again in the sixth session, after its fixes** (`test-ng6N-*` / `test-ng6X-*`, same chase view on
+    both; picture `build_logs\reference\night-340s-sixth-session-native-left-emulated-right.png`): still there.
+    340 s: brightness 5/28/52/79/147 against 5/28/55/80/147, mean color 72 55 51 against 66 59 56 (300 s: 74 58 54
+    against 68 62 60). By region, native / emulated for red, green, blue: sky 1.06 0.88 0.85, crowd 1.10 0.93
+    0.90, ground 1.11 0.94 0.91, the car 1.08 0.97 1.01. So it is one tint over the whole scene (less on the
+    car's own paint): the color grading or a light color the game computes, not single draws. No 16-bit float
+    read-back happens in free roam. Suspects to check with numbers, in this order: (1) the constants of a ground
+    draw and of the composite at 320 s on both renderers (`rdc_constants.py` against
+    `--fh1_native_diag_constants_ps`): a fog, ambient or grading value that differs is computed by the game, and
+    then the sixth session's method applies (memory dump of both, write trap); (2) three 32x1 resolves of 10-bit
+    floats (1CA92000, 1CA93000, 1CA94000) that nothing here writes back to guest memory: compare that memory on
+    both renderers with `--fh1_dump_memory=1CA92000:3000 --fh1_dump_memory_at_s=330`; (3) the grading cube
+    (136FB000) at night with `rdc_tex_stats.py`.
 - D. Then: frame time while driving, items 6-8 below, the depth pre-pass drawing alpha to mask draws solid.
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
