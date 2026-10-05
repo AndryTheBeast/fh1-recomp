@@ -23,7 +23,7 @@ in daylight and at evening is close to it; driving at night works since 2026-10-
 no blue on the car, map selector); reflections soft and textures on the
 console's gamma curve since the third session of 2026-10-05; smooth edges (four samples per pixel) since the
 same day; first-person view, brightness jumps and the darker picture fixed in the fourth session (brightness now
-equal to the emulated picture at the festival); still open: races, garage, car photos and paint shop not checked. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+equal to the emulated picture at the festival); design creator fixed in the fifth session except for the car's black sides and tyres in its booth; still open: that, the thumbnail of a saved car, night colors, races, garage and car photos. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
 docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
 the frame time goes and what to cut for the Switch.
 
@@ -306,6 +306,28 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
   at the same time).
 - The game remembers the camera view between runs, and the unattended tests change it (`tools\view_capture.ps1`
   presses RB): check the view of a shot before comparing two runs, and tell the user their camera may have changed.
+
+- 2026-10-05, fifth session: the design creator (booth, wheels, paint color, dialog text) is fixed except for the
+  car's black sides and tyres in the booth (vertex constants c37-c39, the ambient light the game computes, are 0 on
+  the native renderer: docs/native-renderer-status.md, item 0). Details there, "fifth session".
+- A draw inside a visibility query that kills its pixels (PA_SC_VIZ_QUERY bits 0 and 7) paints nothing on the
+  console: the emulated GPU drops it, and so does the native renderer now (the wheels' magenta boxes).
+- A fill through the depth buffer (the green car's trick) is also how Direct3D clears the tile-aligned part of a
+  4x target: it must reach the color target before a resolve as well as before a draw, only inside its own
+  rectangle, and its bytes are known from the rectangle's Z and stencil reference.
+- A resolve can target a rectangle anywhere inside a larger texture: the destination address is then a tile in the
+  middle of it (the livery's sides), not only a row of tiles further down (the scene's strips).
+- Inherited speed-ups can be faults in FH1: `fh1_shadows_without_vegetation` dropped every colorless draw with an
+  alpha test (stencil masks of dialogs, tree shadows). It is off. Suspect the Carbon / Most Wanted special cases
+  first when a draw is missing.
+- The shader translator had three faults in cube lookups and loops (nested loops shared `aL`, `cube()` kept two
+  directions, the cube instruction's operand order was ignored for 240 of 940 lookups). When a shader's output is
+  wrong and its textures and constants are right, read its HLSL for loops and for the helpers of shader_common.h.
+- When a draw is wrong and its textures match, compare its constants on both renderers (tools/rdc_constants.py
+  against --fh1_native_diag_constants_ps / _vs) before reading any shader: on 2026-10-05 a lighting cube was
+  blamed four times before the constants showed three vertex constants at 0.
+- The first run with a new option or a new shader library can freeze on a loading screen (a frame of more than
+  about 3.2 s while pipelines compile): run it again before believing it.
 
 Local folder layout (2026-10-04): `build_logs\reference\` = the screenshots, traces and logs the documents
 refer to; `build_logs\archive-2026-10-04\` = every earlier test, run and build log (nothing there is needed

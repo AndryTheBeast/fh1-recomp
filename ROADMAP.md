@@ -177,14 +177,30 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [x] Glows through walls: on both renderers, the user takes it for the game's own behavior; measured mode kept
         behind `--fh1_native_occlusion=1` — 2026-10-05
   - [x] Smooth edges seen by the user while driving ("edges look good now") — 2026-10-05
-  - [ ] **Design creator (paint shop > Paint car): wheels as magenta boxes, flat car body, booth without shading,
-        empty "Leaving paint shop" dialog** (user's pictures, 2026-10-05): first thing next session
+  - [x] Design creator: booth without shading (a vertex shader uploaded at run time, added to the library) — 2026-10-05
+  - [x] Design creator: magenta boxes on the wheels (draws inside a pixel-killing visibility query are not drawn,
+        as on the emulated GPU) — 2026-10-05
+  - [x] Design creator: cyan car body (livery pieces resolved into a rectangle of the 2048x2048 texture; a fill
+        through the depth buffer reaches its target before a resolve, with the bytes of its own Z and stencil)
+        — 2026-10-05
+  - [x] Empty "Leaving paint shop" dialog (`fh1_shadows_without_vegetation` off: it dropped stencil masks; trees
+        cast shadows again) — 2026-10-05
+  - [x] Shader translator: loops inside loops, cube lookups in a loop, cube lookups with another operand order
+        (240 of 940 were looked up in permuted directions) — 2026-10-05
+  - [ ] **Design creator / paint booth: the car's sides and tyres are black, no gloss, no "BOSS 429" badge**: the
+        vertex constants c37-c39 (ambient light, set by the game) are 0 on the native renderer; see the status
+        document: first thing next session
   - [ ] Thumbnail wrong again when a car is saved with a new modification (user, 2026-10-05)
   - [ ] Night colors at the festival: the native picture is warm grey where the emulated one is blue (340 s mean
         color 69 55 49 against 63 60 56, brightness equal): the night color grading; next thing to look at
   - [ ] Races, garage, car photos on the native renderer (the user drives there)
   - [ ] Frame time while driving (185-230 ms frames were seen; render-target copies rejected)
-  - [ ] Remove the Carbon / Most Wanted special cases left in the draw code, one at a time
+  - [ ] Remove the Carbon / Most Wanted special cases left in the draw code, one at a time (user's item 5; the
+        first one found by a fault: `fh1_shadows_without_vegetation`)
+  - [ ] Carbon's fps counter and frame time viewer on F3 for the native renderer (user's item 6)
+  - [ ] 13 shaders still on an old translation (loop constants i0 / i16 not declared: DXC rejects the new HLSL)
+  - [ ] The game stops sending commands after one frame of about 3.2 s (new pipelines compiled in the ring: seen
+        again on 2026-10-05 with a new option's first run)
   - [ ] Make the native renderer the default once it matches the emulated picture
 
 ## Tools (done)

@@ -121,10 +121,20 @@ class ContextTargets {
   // FH1: a depth-only rectangle is about to fill that depth buffer (Z written without a test). When an 8-bit color
   // target on the same EDRAM (same base and pitch) is drawn into next, it first receives the depth buffer's
   // bytes, as on the console: the game clears the shadow / headlight mask to white that way (Z = 1, stencil FF).
-  virtual void NoteFillDepth(uint32_t base, uint32_t format, uint32_t pitch) {
+  // x0..y1: the rectangle in the pixels of that image (the fill only reaches those; several fills add up).
+  // word_known: the rectangle has one Z and replaces the stencil, so the EDRAM word it leaves is known (word =
+  // depth << 8 | stencil) and is written as it is; otherwise the bytes are taken from the depth image.
+  virtual void NoteFillDepth(uint32_t base, uint32_t format, uint32_t pitch, int32_t x0, int32_t y0, int32_t x1,
+                             int32_t y1, bool word_known, uint32_t word) {
+    (void)word_known;
+    (void)word;
     (void)base;
     (void)format;
     (void)pitch;
+    (void)x0;
+    (void)y0;
+    (void)x1;
+    (void)y1;
   }
   // fh1_native_lazy_depth. While set, the depth textures requested belong to a sample the
   // shader does not take (the final composite without blur) and do not force a copy.

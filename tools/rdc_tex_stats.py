@@ -121,6 +121,13 @@ def run():
                 out.write("  %s res %d %dx%dx%d levels %d %s (%d bytes): %s\n" % (
                     label, int(rid), t.width, t.height, t.depth, t.mips, t.format.Name(),
                     len(controller.GetTextureData(t.resourceId, rd.Subresource(0, 0, 0))), s or "(not decoded)"))
+                # A cube map or an array: the other faces too (face 0 alone hid a cube whose faces differ).
+                for face in range(1, min(t.arraysize, 6)):
+                    try:
+                        s = stats(controller, t, face)
+                    except Exception as e:
+                        s = "failed: %s" % e
+                    out.write("      face %d: %s\n" % (face, s or "(not decoded)"))
         try:
             targets = state.GetOutputTargets()
             for k, o in enumerate(targets):

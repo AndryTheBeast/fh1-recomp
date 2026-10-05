@@ -1,4 +1,4 @@
-# Prompt for the next session (written 2026-10-05, at the end of the fourth session of that day, after the user's drive)
+# Prompt for the next session (written 2026-10-05, at the end of the fifth session of that day)
 
 Paste the block below as the first message of a new Claude session opened in `C:\Users\andre\Desktop\FH1-recomp`.
 
@@ -6,31 +6,39 @@ Paste the block below as the first message of a new Claude session opened in `C:
 Read fh1-recomp/CLAUDE.md, then fh1-recomp/docs/native-renderer-status.md, and work on the native renderer
 (run_fh1.bat --fh1_renderer=native).
 
-Where we are: I drove the last build and everything fixed last time is confirmed (first-person view, no more
-brightness jumps, picture as bright as the emulated one, crowd edges, the paint shop's blurred background). Glows
-of tail lights through walls show on both renderers: leave them.
+Where we are: last session fixed most of the design creator (paint shop > Design creator): the booth is shaded,
+the magenta boxes on the wheels are gone, the car has its paint color, the "Leaving paint shop" dialog has its
+text. I have not driven that build yet. Glows of tail lights through walls show on both renderers: leave them.
 
 Fix these, in this order, one at a time:
-1. FIRST: the design creator (paint shop > Design creator > Paint car) is broken on the native renderer: the
-   wheels are solid magenta boxes, the car body is flat cyan with a black lower half and no reflections, the
-   paint booth has no shading, and the "Leaving paint shop" dialog is an empty black box. My pictures are in
-   build_logs\reference\user-20261005-design-creator-*.webp. Compare with the emulated GPU in the same screen.
+1. FIRST: in the paint booth of the design creator the car's sides and its TYRES are black, the paint has no
+   gloss and the "BOSS 429" badge is missing (build_logs\reference\design-creator-after-20261005-native-left-
+   emulated-right.png). The status document's item 0 has what is known: every texture and pixel constant of the
+   body draw matches the emulated GPU; the vertex constants c37-c39 (ambient light, set by the game) are 0 on
+   the native renderer. Follow its "next steps" and do not forget the tyres.
 2. The thumbnail bug is back: when I save the car with a new modification its thumbnail is wrong. Ask me whether
    it also happens on the emulated GPU and what it looks like before you start.
 3. Night colors at the festival: the native picture is warm grey where the emulated one is blue (the status
-   document has the numbers).
+   document has the numbers; 240 cube lookups were corrected last session, so measure again first).
 4. Races, garage and car photos on the native renderer (I drive there).
+5. Clean up any Most Wanted and Carbon code left that has no use on our native renderer (one piece at a time,
+   with a festival comparison after each).
+6. Bring Carbon's fps counter and frame time viewer (F3) to our native renderer, for more debugging options.
 After each one: show me the comparison, commit and push, then go on to the next.
 
 For a screen that only the native renderer gets wrong, capture both renderers with RenderDoc and compare the
-numbers pass by pass before guessing (tools\view_capture.ps1, auto_test.ps1 -RenderDoc -Triggers,
-tools\rdc_tex_stats.py, tools\rdc_draw_textures.py): the status document's fourth session section has the method.
-The unattended test can enter the paint shop by itself (X at the festival); never save a design or buy anything
-with it. For a spot it does not reach I start run_native_capture.bat or run_emulated_capture.bat, go there, stop
-and type "now", and you run tools\capture_now.ps1. Tell me exactly what to run and when.
+numbers pass by pass before guessing (auto_test.ps1 -RenderDoc -Triggers, tools\rdc_pixel_history.py,
+tools\rdc_tex_stats.py, tools\rdc_constants.py, tools\rdc_counts.py): the status document's fifth session
+section has the method and the order that worked. The unattended test reaches the paint shop (X at the festival,
+60 s), the design creator (A at 74 s) and the leaving dialog (B at 92 and 98 s); never save a design, buy
+anything or confirm a dialog with it. For a spot it does not reach I start run_native_capture.bat or
+run_emulated_capture.bat, go there, stop and type "now", and you run tools\capture_now.ps1. Tell me exactly what
+to run and when.
 
 If a busy place drops below 30 fps, measure it (the [fps] lines and "real GPU per Swap" in the log, with and
-without --fh1_native_ssaa=false) and tell me the numbers before changing anything.
+without --fh1_native_ssaa=false) and tell me the numbers before changing anything. Trees cast shadows again
+since last session (--fh1_shadows_without_vegetation=true is the old behavior): check the frame rate while I
+drive past forests.
 
 Rules:
 - Compare every change against the emulated GPU at the same second or the same spot (tools\auto_test.ps1, with

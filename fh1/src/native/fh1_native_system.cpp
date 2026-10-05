@@ -381,6 +381,13 @@ REXCVAR_DEFINE_BOOL(fh1_native_renderdoc, false, "FH1",
 REXCVAR_DEFINE_INT32(fh1_native_diag_frame_s, 0, "FH1",
                      "Native renderer: after this many seconds, logs every draw and every copy of one whole frame "
                      "(0 = no; tests only)");
+REXCVAR_DEFINE_INT32(fh1_native_diag_frames, 1, "FH1",
+                     "Native renderer: how many frames in a row fh1_native_diag_frame_s logs (tests only: for "
+                     "something the game draws once, in a frame that cannot be hit by the second)");
+REXCVAR_DEFINE_STRING(fh1_native_diag_frame_pitches, "", "FH1",
+                      "Native renderer: the traced frames only log the draws and copies whose surface has one of these "
+                      "pitches (comma-separated, for example 720,1440; empty = everything), and no shader loads "
+                      "(tests only: keeps a trace of many frames small)");
 REXCVAR_DEFINE_STRING(fh1_native_diag_vertices_ps, "", "FH1",
                       "Native renderer: in the traced frame, for the draws with these PS (comma-separated numbers) "
                       "logs the VS fetches and the bytes of their first vertices and texels (tests only)");
@@ -1926,6 +1933,9 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       case xenos::PM4_INTERRUPT: {
         if (words < 1) break;
         NoteFenceCopies();  // Measurement only
+        if (targets_) {
+          targets_->FinishReads();  // FH1: tiny read-backs reach guest memory before the game is told
+        }
         const uint32_t cpus = data.Read();
         for (uint32_t cpu = 0; cpu < 6; ++cpu) {
           if (cpus & (1u << cpu)) {
@@ -2026,6 +2036,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       }
       case xenos::PM4_REG_TO_MEM: {
         if (words < 2) break;
+        if (targets_) targets_->FinishReads();  // FH1: a value the game may be waiting for (see PM4_INTERRUPT)
         const uint32_t reg_entry = data.Read();
         const uint32_t address = data.Read();
         WriteMemory(address, Register(reg_entry));
@@ -2034,6 +2045,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       case xenos::PM4_MEM_WRITE: {
         if (words < 1) break;
         NoteFenceCopies();  // Measurement only
+        if (targets_) targets_->FinishReads();  // FH1: Direct3D's fences are written this way (see PM4_INTERRUPT)
         uint32_t address = data.Read();
         for (uint32_t i = 1; i < words; ++i) {
           WriteMemory(address, data.Read());
@@ -2066,6 +2078,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       case xenos::PM4_EVENT_WRITE_SHD: {
         if (words < 3) break;
         NoteFenceCopies();  // Measurement only
+        if (targets_) targets_->FinishReads();  // FH1: see PM4_INTERRUPT
         const uint32_t initiator = data.Read();
         const uint32_t address = data.Read();
         const uint32_t input_value = data.Read();
@@ -2239,6 +2252,17 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
           CountDrawShaders();
           MatchDraw();
           TraceDraw();
+          // FH1: a draw inside a visibility query that kills its pixels (PA_SC_VIZ_QUERY: viz_query_ena and
+          // kill_pix_post_hi_z) only asks whether something is visible; the console paints nothing. The emulated
+          // GPU drops such draws (CommandProcessor::ExecutePacketType3Draw). Drawn, the design creator's test box
+          // around each wheel covered the wheel in the magenta the game gives its debug lines.
+          if ((Register(rex::graphics::XE_GPU_REG_PA_SC_VIZ_QUERY) & 0x81) == 0x81) {
+            if (!viz_kill_logged_) {
+              viz_kill_logged_ = true;
+              REXLOG_INFO("[fh1] draws inside a visibility query that kills its pixels are not drawn");
+            }
+            break;
+          }
           // In mode 5 (depth only) the VS is enough: Xenos does not run the PS, and D3D leaves
           // the PS object at 0 in some of the race shadow draws.
           if (vs_draw_ &&
@@ -2578,9 +2602,15 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     diag_constants_active_ = !REXCVAR_GET(fh1_native_diag_constants_ps).empty();
     CaptureRenderDocOnSwap();
     if (tracing_) {
+      REXLOG_INFO("[trace] end of frame: {} lines", traces_);
+      if (trace_frames_left_ > 1) {  // fh1_native_diag_frames
+        --trace_frames_left_;
+        traces_ = 0;
+        REXLOG_INFO("[trace] whole frame after Swap {}", swaps_.load());
+        return;
+      }
       tracing_ = false;
       trace_done_ = REXCVAR_GET(fh1_native_diag_frame_s) != -1;  // on demand it can be asked again
-      REXLOG_INFO("[trace] end of frame: {} lines", traces_);
       return;
     }
     const int32_t seconds = REXCVAR_GET(fh1_native_diag_frame_s);
@@ -2590,14 +2620,33 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
                           (seconds == -1 && std::filesystem::remove("trace_now", ec_trace)))) {
       tracing_ = true;
       traces_ = 0;
+      trace_frames_left_ = uint32_t(std::max(REXCVAR_GET(fh1_native_diag_frames), 1));
+      trace_pitches_.clear();
+      for (const std::string& pitches = REXCVAR_GET(fh1_native_diag_frame_pitches); const char c : pitches + ",") {
+        if (c >= '0' && c <= '9') {
+          trace_pitch_reading_ = trace_pitch_reading_ * 10 + uint32_t(c - '0');
+        } else if (trace_pitch_reading_) {
+          trace_pitches_.push_back(trace_pitch_reading_);
+          trace_pitch_reading_ = 0;
+        }
+      }
       REXLOG_INFO("[trace] whole frame after Swap {}", swaps_.load());
     }
+  }
+
+  // fh1_native_diag_frame_pitches: is the current surface one of the pitches asked for (or no filter)?
+  bool TracePitchWanted() const {
+    if (trace_pitches_.empty()) {
+      return true;
+    }
+    const uint32_t pitch = Register(rex::graphics::XE_GPU_REG_RB_SURFACE_INFO) & 0x3FFF;
+    return std::find(trace_pitches_.begin(), trace_pitches_.end(), pitch) != trace_pitches_.end();
   }
 
   // One line per draw: shaders, render targets, state and the textures of the PS samplers
   // (address / format / dimension; ! if the fetch constant is not a texture).
   void TraceDraw() {
-    if (!tracing_ || traces_ >= 20000) {
+    if (!tracing_ || traces_ >= 20000 || !TracePitchWanted()) {
       return;
     }
     ++traces_;
@@ -2828,7 +2877,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   }
 
   void TraceCopy(const RegistersCopy& r) {
-    if (!tracing_ || traces_ >= 20000) {
+    if (!tracing_ || traces_ >= 20000 || !TracePitchWanted()) {
       return;
     }
     ++traces_;
@@ -2970,7 +3019,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     }
     load->use = ++loads_tic_;
     (type == 0 ? vs_actual_ : ps_actual_) = load->entry;
-    if (tracing_ && traces_ < 4000) {
+    if (tracing_ && traces_ < 4000 && trace_pitches_.empty()) {
       ++traces_;
       REXLOG_INFO("[trace] IM_LOAD {} n{} ({} words, fingerprint {:016X})", type == 0 ? "VS" : "PS",
                   load->entry ? int(load->entry->number) : -1, load->host.size(), load->fingerprint);
@@ -3054,7 +3103,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     const EntryShader* entry =
         shaders_.loaded() ? shaders_.Identify(type == 0, microcode_) : nullptr;
     (type == 0 ? vs_actual_ : ps_actual_) = entry;
-    if (tracing_ && traces_ < 4000) {
+    if (tracing_ && traces_ < 4000 && trace_pitches_.empty()) {
       ++traces_;
       REXLOG_INFO("[trace] IM_LOAD {} n{} ({} words, fingerprint {:016X})", type == 0 ? "VS" : "PS",
                   entry ? int(entry->number) : -1, microcode_.size(),
@@ -3142,7 +3191,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       UseImmediate(type, *via);
       ++imm_i_hits_;
       ++loads_cached_;
-      if (tracing_ && traces_ < 4000) {
+      if (tracing_ && traces_ < 4000 && trace_pitches_.empty()) {
         ++traces_;
         REXLOG_INFO("[trace] IM_LOAD {} n{} ({} words, fingerprint {:016X}; IM_LOAD_IMMEDIATE from the cache)",
                     type == 0 ? "VS" : "PS", via->entry ? int(via->entry->number) : -1, via->host.size(),
@@ -4812,6 +4861,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   const EntryShader* vs_actual_ = nullptr;
   const EntryShader* ps_actual_ = nullptr;
   std::vector<uint32_t> microcode_;
+  bool viz_kill_logged_ = false;  // FH1: draws dropped inside a pixel-killing visibility query (log once)
   uint64_t draws_identified_ = 0;
   uint64_t draws_without_vs_ = 0;
   uint64_t draws_without_ps_ = 0;
@@ -5092,6 +5142,9 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   Clock::time_point start_system_{};
   bool tracing_ = false;
   bool trace_done_ = false;
+  uint32_t trace_frames_left_ = 0;       // fh1_native_diag_frames
+  std::vector<uint32_t> trace_pitches_;  // fh1_native_diag_frame_pitches
+  uint32_t trace_pitch_reading_ = 0;
   // fh1_native_diag_constants_ps is not empty. Refreshed on every Swap.
   bool diag_constants_active_ = false;
   std::unordered_set<uint32_t> textures_dumped_;  // fh1_native_diag_vertices_ps

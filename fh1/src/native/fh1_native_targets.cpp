@@ -1627,6 +1627,9 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       if ((info_target >> 3) & 0x1) {
         Reject(3, "copy to a 3D texture or array: not yet");
       } else if (format_target != uint32_t(xenos::ColorFormat::k_8_8_8_8) &&
+                 // FH1: the design creator resolves an 8-bit-per-pixel picture (k_8) from an 8_8_8_8 target: the
+                 // console keeps the red channel. Kept here as the whole 8_8_8_8 picture; a k_8 fetch reads red.
+                 format_target != uint32_t(xenos::ColorFormat::k_8) &&
                  format_target != uint32_t(xenos::ColorFormat::k_8_8_8_8_A) &&
                  format_target != uint32_t(xenos::ColorFormat::k_8_8_8_8_AS_16_16_16_16) &&
                  // FH1: its final image is resolved from the 2_10_10_10 render target as k_2_10_10_10 (same 32 bits per
@@ -1649,7 +1652,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                                   target_render->format == VK_FORMAT_R16G16B16A16_SFLOAT &&
                                   FormatCopyFh1(format_target) == VK_FORMAT_UNDEFINED;
         const VkFormat format_copy_fh1 = resolved_hdr ? VK_FORMAT_R16G16B16A16_SFLOAT : FormatCopyFh1(format_target);
-        const uint32_t log2_bytes = BytesTexelLog2Fh1(FormatCopyFh1(format_target));
+        const bool target_8 = format_target == uint32_t(xenos::ColorFormat::k_8);
+        const uint32_t log2_bytes = target_8 ? 0 : BytesTexelLog2Fh1(FormatCopyFh1(format_target));
         const uint32_t base =
             reg.rb_copy_dest_base +
             uint32_t(OffsetTile2D(int32_t(base_x), int32_t(base_y), pitch_target, log2_bytes));
@@ -1658,12 +1662,26 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         // NFSC: Carbon renders its 64-bit HDR scene in two tiles and resolves each one to its own address, which is
         // an exact number of 32-row stripes into the texture of the first tile. If this destination lies inside a
         // resolved texture that already exists, copy into that texture at the matching row.
-        uint32_t row_extra = 0, base_container = 0;
-        Resolved* container = FindResolvedContainer(base & 0x1FFFFFFF, pitch_target, row_extra, base_container,
-                                                    resolved_hdr ? VK_FORMAT_R16G16B16A16_SFLOAT : kFormatColor);
+        // FH1: the design creator paints the car's 2048x2048 livery one side of the car after another and resolves
+        // each to its rectangle of that texture: the destination address is a tile in the middle of it, at any
+        // column. Taken as textures of their own, the pieces were read by nothing and the livery kept its clear
+        // color (a flat cyan car).
+        uint32_t row_extra = 0, base_container = 0, column_extra = 0;
+        Resolved* container =
+            target_8 ? nullptr
+                     : FindResolvedContainer(base & 0x1FFFFFFF, pitch_target, row_extra, base_container,
+                                             resolved_hdr ? VK_FORMAT_R16G16B16A16_SFLOAT : kFormatColor, 1,
+                                             resolved_hdr ? nullptr : &column_extra, dx + uint32_t(x1 - x0),
+                                             dy + uint32_t(y1 - y0));
         if (container) {
           resolved = container;
           dy += row_extra;
+          dx += column_extra;
+          if (column_extra && pieces_logged_ < 8) {
+            ++pieces_logged_;
+            REXLOG_INFO("[fh1] resolve of a piece: {}x{} goes to ({},{}) of the {}x{} texture at {:08X}", x1 - x0,
+                        y1 - y0, dx, dy, container->image.width, container->image.height, base_container);
+          }
           base_resolved = base_container;
           if (!tile_registered_) {
             tile_registered_ = true;
@@ -1716,6 +1734,12 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       return false;
     }
     Prepare(*target_render);
+    // FH1: a fill through the depth buffer that no draw followed is still owed to this target, and the resolve
+    // reads it: the design creator fills a livery pass's target, draws nothing into it when the car has no decal
+    // there, and resolves it (the fill never arrived and the car showed the color of an earlier clear, cyan).
+    if (!fills_depth_.empty()) {
+      ApplyFillDepth(*target_render, info_color & 0xFFF, pitch);
+    }
     if (resolved) {
       Prepare(resolved->image);
       // What the game asks for and what fits in the render target.
@@ -3309,9 +3333,23 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   // those channels, came out flat green. The fill is noted by the draw; the next pass that draws into the 8-bit
   // color target of that base and pitch first gets the depth buffer's bytes (the pass of TextureResolvedBytes:
   // red = stencil, then the 24-bit depth from its lowest byte, which is the EDRAM word).
-  void NoteFillDepth(uint32_t base, uint32_t format, uint32_t pitch) override {
-    if (REXCVAR_GET(fh1_native_depth_fill_color)) {
-      fills_depth_[(uint64_t(base) << 20) | pitch] = format;
+  // A fill reaches the rectangle its draw covered, not the whole target: Direct3D clears the tile-aligned part of
+  // a target through the depth buffer and the rest with ordinary rectangles (the design creator's livery passes).
+  void NoteFillDepth(uint32_t base, uint32_t format, uint32_t pitch, int32_t x0, int32_t y0, int32_t x1,
+                     int32_t y1, bool word_known, uint32_t word) override {
+    if (!REXCVAR_GET(fh1_native_depth_fill_color)) {
+      return;
+    }
+    const auto [it, first] = fills_depth_.try_emplace((uint64_t(base) << 20) | pitch,
+                                                      FillDepth{format, x0, y0, x1, y1, word_known, word});
+    if (!first) {
+      // Two fills of one target with different words: the bytes come from the depth image, which has both.
+      it->second.word_known = it->second.word_known && word_known && it->second.word == word;
+      it->second.format = format;
+      it->second.x0 = std::min(it->second.x0, x0);
+      it->second.y0 = std::min(it->second.y0, y0);
+      it->second.x1 = std::max(it->second.x1, x1);
+      it->second.y1 = std::max(it->second.y1, y1);
     }
   }
 
@@ -3320,17 +3358,31 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     if (it == fills_depth_.end()) {
       return;
     }
-    const uint32_t format_depth = it->second;
+    const FillDepth fill = it->second;
+    const uint32_t format_depth = fill.format;
     fills_depth_.erase(it);
     if (color.format != kFormatColor || !DepthBytesReady()) {
       return;
     }
-    const Image* depth = GetDepth(base, format_depth, pitch);
-    if (!depth || !depth->prepared || depth->width != color.width || depth->height != color.height) {
+    VkRect2D area;
+    area.offset = {std::clamp(fill.x0, 0, int32_t(color.width)), std::clamp(fill.y0, 0, int32_t(color.height))};
+    area.extent = {uint32_t(std::clamp(fill.x1, area.offset.x, int32_t(color.width)) - area.offset.x),
+                   uint32_t(std::clamp(fill.y1, area.offset.y, int32_t(color.height)) - area.offset.y)};
+    if (!area.extent.width || !area.extent.height) {
       return;
     }
-    const DepthBytesSource* source = DepthBytesSourceOf(depth->image);
-    if (!source || !Record()) {
+    const DepthBytesSource* source = nullptr;
+    if (!fill.word_known) {
+      const Image* depth = GetDepth(base, format_depth, pitch);
+      if (!depth || !depth->prepared || depth->width != color.width || depth->height != color.height) {
+        return;
+      }
+      source = DepthBytesSourceOf(depth->image);
+      if (!source) {
+        return;
+      }
+    }
+    if (!Record()) {
       return;
     }
     VkFramebuffer& framebuffer = fills_depth_framebuffers_[color.image];
@@ -3360,18 +3412,29 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     begin.renderPass = depth_bytes_pass_;
     begin.framebuffer = framebuffer;
-    begin.renderArea = {{0, 0}, {color.width, color.height}};
+    begin.renderArea = area;  // the pass does not load: what is outside the render area stays as it is
     dfn_.vkCmdBeginRenderPass(commands_work_, &begin, VK_SUBPASS_CONTENTS_INLINE);
     const VkViewport viewport{0.0f, 0.0f, float(color.width), float(color.height), 0.0f, 1.0f};
     dfn_.vkCmdSetViewport(commands_work_, 0, 1, &viewport);
-    dfn_.vkCmdSetScissor(commands_work_, 0, 1, &begin.renderArea);
-    dfn_.vkCmdBindPipeline(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_bytes_pipeline_);
-    dfn_.vkCmdBindDescriptorSets(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_bytes_layout_, 0, 1,
-                                 &source->set, 0, nullptr);
-    const uint32_t float24 = format_depth == 1 ? 1 : 0;  // kD24FS8
-    dfn_.vkCmdPushConstants(commands_work_, depth_bytes_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float24),
-                            &float24);
-    dfn_.vkCmdDraw(commands_work_, 3, 1, 0, 0);
+    dfn_.vkCmdSetScissor(commands_work_, 0, 1, &area);
+    if (fill.word_known) {
+      // The EDRAM word from its lowest byte: red = stencil, then the depth's three bytes.
+      VkClearAttachment clear{};
+      clear.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      for (uint32_t j = 0; j < 4; ++j) {
+        clear.clearValue.color.float32[j] = float((fill.word >> (j * 8)) & 0xFF) * (1.0f / 255.0f);
+      }
+      const VkClearRect rect{area, 0, 1};
+      dfn_.vkCmdClearAttachments(commands_work_, 1, &clear, 1, &rect);
+    } else {
+      dfn_.vkCmdBindPipeline(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_bytes_pipeline_);
+      dfn_.vkCmdBindDescriptorSets(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_bytes_layout_, 0, 1,
+                                   &source->set, 0, nullptr);
+      const uint32_t float24 = format_depth == 1 ? 1 : 0;  // kD24FS8
+      dfn_.vkCmdPushConstants(commands_work_, depth_bytes_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float24),
+                              &float24);
+      dfn_.vkCmdDraw(commands_work_, 3, 1, 0, 0);
+    }
     dfn_.vkCmdEndRenderPass(commands_work_);
     BarrierGlobal(commands_work_);
     if (draws_) {
@@ -3411,7 +3474,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     if (it->second.stamp_checked != presentations_stamp_) {
       it->second.stamp_checked = presentations_stamp_;
       if (!it->second.overwritten &&
-          StampMemory(address, it->second.image.width, it->second.image.height) != it->second.stamp_memory) {
+          StampMemory(address, it->second.image.width, it->second.image.height,
+                      BytesTexelGuest(it->second.format_guest)) != it->second.stamp_memory) {
         it->second.overwritten = true;
         REXLOG_INFO("[native] C2: the game wrote over the resolved texture at {:08X} ({}x{}): read from memory "
                     "until the next resolve",
@@ -3814,7 +3878,13 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   uint64_t depth_bytes_passes_ = 0;
   // fh1_native_depth_fill_color: depth buffers filled by a depth-only rectangle and not yet copied to the color
   // target on their EDRAM (key = base << 20 | pitch, value = depth format), and the framebuffers of those targets.
-  std::unordered_map<uint64_t, uint32_t> fills_depth_;
+  struct FillDepth {
+    uint32_t format;
+    int32_t x0, y0, x1, y1;  // in the pixels of the image
+    bool word_known;         // the EDRAM word is known from the draw (one Z, stencil replaced)
+    uint32_t word;           // depth << 8 | stencil
+  };
+  std::unordered_map<uint64_t, FillDepth> fills_depth_;
   std::unordered_map<VkImage, VkFramebuffer> fills_depth_framebuffers_;
   uint64_t fills_depth_applied_ = 0;
 
@@ -4538,6 +4608,23 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     return Record();
   }
 
+  // See fh1_native_targets.h. Only when a read-back of 32x32 texels or less is on its way: the 64x64 ones are the
+  // exposure's, every frame, and the game takes those a frame late without harm; waiting for the GPU at every
+  // interrupt would cost the frame rate.
+  void FinishReads() override {
+    if (!reads_urgent_) {
+      return;
+    }
+    reads_urgent_ = false;
+    WaitGpu();  // submits what is recorded and completes every slot: WriteReads puts them in guest memory
+    if (reads_finished_++ < 8) {
+      REXLOG_INFO("[fh1] read-backs of tiny resolved textures finished before the game's fence ({} so far)",
+                  reads_finished_);
+    }
+  }
+  bool reads_urgent_ = false;
+  uint64_t reads_finished_ = 0;
+
   void MarkGpu(uint32_t category) override {
     if (queries_ == VK_NULL_HANDLE || !recording_) {
       return;
@@ -4994,18 +5081,29 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   // 32-row stripes, if any. row = first row of the destination inside it.
   // The depth copies (k_24_8, also 4 bytes per texel) use it too, with format = the host depth format.
   // scale: 2 for the supersampled scene's depth, whose resolved texture is twice the size (row stays in guest rows).
+  // FH1: with column, the address may also be a tile at any column of the texture (column = its first column); then
+  // the copy, which ends at (right, bottom) counted from that tile, must fit inside the texture.
   Resolved* FindResolvedContainer(uint32_t base, uint32_t pitch, uint32_t& row, uint32_t& base_container,
-                                      VkFormat format = kFormatColor, uint32_t scale = 1) {
-    const uint32_t stripe = ((pitch + 31) & ~31u) * 32u * 4u;  // bytes of one 32-row stripe
+                                      VkFormat format = kFormatColor, uint32_t scale = 1, uint32_t* column = nullptr,
+                                      uint32_t right = 0, uint32_t bottom = 0) {
+    const uint32_t tiles_row = ((pitch + 31) & ~31u) / 32u;
+    const uint32_t stripe = tiles_row * 32u * 32u * 4u;  // bytes of one 32-row stripe
     for (auto& [key_base, t] : resolved_) {
       if (t.image.format != format || t.image.width != pitch * scale || base <= key_base) {
         continue;
       }
       const uint32_t delta = base - key_base;
-      if (delta % stripe != 0) {
-        continue;
-      }
       const uint32_t rows = delta / stripe * 32u;
+      if (delta % stripe != 0) {
+        const uint32_t columns = (delta % stripe) / 4096u * 32u;
+        if (!column || delta % 4096u != 0 || columns + right > t.image.width || rows + bottom > t.image.height) {
+          continue;
+        }
+        *column = columns;
+        row = rows;
+        base_container = key_base;
+        return &t;
+      }
       if (rows * scale < t.image.height) {
         row = rows;
         base_container = key_base;
@@ -5015,6 +5113,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     return nullptr;
   }
   bool tile_registered_ = false;
+  uint32_t pieces_logged_ = 0;  // FH1: resolves into a rectangle of a larger texture (log lines)
   uint32_t last_resolved_screen_ = 0;  // FH1: address of the last resolved texture of 1280x720 or more
   bool strips_depth_warned_ = false;  // NFSC: depth resolve in strips (log once)
   uint64_t presented_stats_ = 0;  // NFSC: F2 monitor
@@ -5031,8 +5130,11 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
    * fingerprint has changed, the game has written a texture there, and the address is read from memory like any
    * other texture until the next resolve.
    */
-  uint64_t StampMemory(uint32_t base, uint32_t width, uint32_t height) const {
-    const uint64_t bytes = std::min<uint64_t>(uint64_t(width) * height * 4, 0x20000000ull - std::min<uint64_t>(base, 0x20000000ull));
+  static uint32_t BytesTexelGuest(uint32_t format_guest) {
+    return format_guest == uint32_t(xenos::ColorFormat::k_8) ? 1 : 4;
+  }
+  uint64_t StampMemory(uint32_t base, uint32_t width, uint32_t height, uint32_t bytes_texel = 4) const {
+    const uint64_t bytes = std::min<uint64_t>(uint64_t(width) * height * bytes_texel, 0x20000000ull - std::min<uint64_t>(base, 0x20000000ull));
     if (bytes < 64 || !memory_) {
       return 0;
     }
@@ -5056,7 +5158,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     Resolved* const resolved = GetResolvedImage(base, width, height, format, swap_rb, format_host);
     if (resolved) {
       const bool was = resolved->overwritten;
-      resolved->stamp_memory = StampMemory(base, width, height);
+      resolved->stamp_memory = StampMemory(base, width, height, BytesTexelGuest(format));
       resolved->stamp_checked = presentations_stamp_;
       resolved->overwritten = false;
       if (was && draws_) {
@@ -6791,6 +6893,9 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     copy.imageExtent = {width, height, 1};
     dfn_.vkCmdCopyImageToBuffer(commands_work_, resolved.image.image, VK_IMAGE_LAYOUT_GENERAL,
                                 read.buffer, 1, &copy);
+    if (uint64_t(width) * height <= 1024) {
+      reads_urgent_ = true;  // FinishReads
+    }
     reads_pending_.push_back({&read, reg.rb_copy_dest_base, x0, y0, width, height,
                                     reg.rb_copy_dest_pitch & 0x3FFF,
                                     (reg.rb_copy_dest_pitch >> 16) & 0x3FFF, reg.rb_copy_dest_info,
@@ -6925,6 +7030,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
           d[3] = t3;
         }
       }
+      RestampAfterRead(p);  // FH1: or the texture is taken for one the game wrote over (it was, for the 8-bit ones)
     }
     reads.clear();
     ns_write_reads_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -6936,7 +7042,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   void RestampAfterRead(const ReadPending& p) {
     const auto it = resolved_.find(p.base & 0x1FFFFFFF);
     if (it != resolved_.end() && !it->second.overwritten) {
-      it->second.stamp_memory = StampMemory(p.base & 0x1FFFFFFF, it->second.image.width, it->second.image.height);
+      it->second.stamp_memory = StampMemory(p.base & 0x1FFFFFFF, it->second.image.width, it->second.image.height,
+                                            BytesTexelGuest(it->second.format_guest));
     }
   }
 

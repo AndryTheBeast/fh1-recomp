@@ -651,10 +651,13 @@ float alphaTestValue(float alpha, float2 pos)
 
 float4 cube(float4 value, inout CubeMapData cubeMapData)
 {
-    uint index = cubeMapData.cubeMapIndex;
+    // FH1: the two slots are used in turn. A shader that looks a cube up in a loop (the filter that makes the paint
+    // booth's lighting cube does it 4,096 times) ran past the two directions kept here after its second lookup and
+    // fetched with garbage: that cube came out empty and the car's lower half black.
+    uint index = cubeMapData.cubeMapIndex & 1u;
     cubeMapData.cubeMapDirections[index] = value.xyz;
     ++cubeMapData.cubeMapIndex;
-    
+
     return float4(0.0, 0.0, 0.0, index);
 }
 

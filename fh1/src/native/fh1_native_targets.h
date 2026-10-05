@@ -63,6 +63,12 @@ class TargetsNative {
   // Resolve and/or clear. false if it could not be done (each cause is logged once).
   virtual bool Copy(const RegistersCopy& register_values) = 0;
 
+  // FH1: the game is about to be told that the GPU has reached this point of its commands (PM4_INTERRUPT). The
+  // read-backs of tiny resolved textures recorded so far must be in guest memory by then, as on the console, where
+  // a resolve is in memory the moment it runs: the game computes a scene's ambient light on the CPU from the 32x32
+  // faces of a cube it has just rendered.
+  virtual void FinishReads() = 0;
+
   // Submits pending work and draws the Swap's texture into the presenter's output. false if that Swap has
   // no resolved texture.
   virtual bool Present(rex::ui::Presenter* presenter, const TextureSwap& swap, uint32_t width,

@@ -1016,7 +1016,11 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
             break;
 
         case AluVectorOpcode::Cube:
-            print("cube(r{}, cubeMapData)", instr.src1Register);
+            // FH1: the direction comes from the first operand as the instruction swizzles it. Direct3D's compiler
+            // writes "cube dest, src.zzxy, src.yxzz", so with that swizzle this is the register's x, y and z as
+            // before; a shader that feeds the instruction another order (the filter that makes the paint booth's
+            // lighting cube) looked its cube up in permuted directions and filled the wrong faces.
+            print("cube(float4(({}).zwx, 0.0), cubeMapData)", op(VECTOR_0));
             break;
 
         case AluVectorOpcode::Max4:
@@ -1920,6 +1924,10 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     uint32_t instrAddress = 0;
     uint32_t instrSize = shader->size;
     bool simpleControlFlow = true;
+    // FH1: loops inside loops. Each loop has its own counter on the console (aL is a stack); with the one aL
+    // variable an inner loop left the outer one at its own end, so the outer loop ran once (the 64 x 64 samples of
+    // the shader that filters the paint booth's cube map were 64: the car's lower half came out black).
+    int loopDepth = 0;
 
     while (instrAddress < instrSize)
     {
@@ -2100,6 +2108,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 #ifdef UNLEASHED_RECOMP
                     print("[unroll] ");
                 #endif
+                    if (loopDepth > 0)
+                    {
+                        println("int aLOuter{} = aL;", loopDepth);
+                        indent();
+                    }
+                    ++loopDepth;
                     println("for (aL = 0; aL < i{}.x; aL++)", uint32_t(cfInstr.loopStart.loopId));
                     indent();
                     out += "{\n";
@@ -2117,6 +2131,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                     --indentation;
                     indent();
                     out += "}\n";
+                    if (--loopDepth > 0)
+                    {
+                        indent();
+                        println("aL = aLOuter{};", loopDepth);
+                    }
                 }
                 else
                 {

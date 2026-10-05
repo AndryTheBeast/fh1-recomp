@@ -176,10 +176,13 @@ REXCVAR_DEFINE_INT32(fh1_native_fingerprint_sampling, 8, "FH1",
                      "the full fingerprint, as before")
     .range(0, 64);
 
-REXCVAR_DEFINE_BOOL(fh1_shadows_without_vegetation, true, "FH1",
-                    "Do not draw what uses alpha test into the shadow map: trees, bushes and wire fences. They are "
-                    "55 % of the pass's draws and 12 % of its triangles, so it saves little GPU (-1.2 ms) and a "
-                    "fair amount of CPU (-3.1 ms). Trees stop casting shadows");
+// FH1: off. It was Carbon's speed-up for its shadow map, but it drops every draw that writes no color and has an
+// alpha test, whatever the target: FH1's dialogs mark their text box in the stencil buffer with such a draw (the
+// "Leaving paint shop" dialog had no text), and the emulated GPU draws the trees' shadows.
+REXCVAR_DEFINE_BOOL(fh1_shadows_without_vegetation, false, "FH1",
+                    "Do not draw what writes no color and uses the alpha test: in Carbon, the trees, bushes and wire "
+                    "fences of the shadow map (55 % of the pass's draws). In FH1 it also removes stencil masks "
+                    "(dialog text) and the trees' shadows: tests only");
 
 /*
  * Radial blur of the final composite, removed by default (true).
@@ -2661,6 +2664,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // full-screen rectangle whose back state is "always, replace"; taken as a back face it sealed the whole
     // screen and the world was never drawn (white behind the windows).
     const uint32_t control_depth = r[gr::XE_GPU_REG_RB_DEPTHCONTROL] & (rectangles ? ~0x80u : ~0u);
+    // This draw is a fill of an EDRAM through the depth buffer: noted further down, once its corners are known.
+    bool fill_noted = false;
+    uint32_t fill_scale = 1;
     if (control_depth & 0x3) {  // stencil o z
       const uint32_t info = r[gr::XE_GPU_REG_RB_DEPTH_INFO];
       keys[4] = (uint64_t(1) << 62) | (uint64_t(info & 0xFFF) << 24) |
@@ -2675,7 +2681,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                              (REXCVAR_GET(fh1_msaa_4x_as_1x) ||
                               (pitch <= 640 && REXCVAR_GET(fh1_msaa_4x_clears_as_1x)) ||
                               (pitch > 640 && REXCVAR_GET(fh1_native_ssaa)));
-        context_->NoteFillDepth(info & 0xFFF, (info >> 16) & 0x1, fill_4x ? pitch * 2 : pitch);
+        fill_noted = true;
+        fill_scale = fill_4x ? 2 : 1;
       }
     }
     if (!there_is_target || !pitch) {
@@ -3005,6 +3012,73 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           REXLOG_INFO("[fh1] packed VS n{} fetches:{}", p.vs->number, f);
           if (++warnings_packed >= 12) break;
         }
+      }
+    }
+    // FH1: a fill of an EDRAM through the depth buffer (see above) is noted here, with the rectangle it covers:
+    // Direct3D clears the tile-aligned part of a target this way and the rest with ordinary rectangles, so the
+    // fill must not reach beyond its own corners. The first of each base and pitch are logged with the corners
+    // (x y z w) and the stencil reference: the bytes the color target on that EDRAM gets.
+    if (fill_noted) {
+      float low[2] = {0.0f, 0.0f}, high[2] = {16384.0f, 16384.0f};
+      float z_fill = 0.0f;
+      bool z_same = false;
+      std::string corners;
+      for (const AttributeVertices& a : entry->attributes) {
+        if (a.location != 0) {
+          continue;
+        }
+        const Source& source = sources[a.binding];
+        const uint32_t stride = entry->bindings[a.binding].stride;
+        for (uint32_t v = 0; v < 3 && source.bytes >= v * stride + a.offset + 16; ++v) {
+          float corner[4];
+          for (uint32_t k = 0; k < 4; ++k) {
+            uint32_t word;
+            std::memcpy(&word, source.data + v * stride + a.offset + k * 4, 4);
+            corner[k] = Float(xenos::GpuSwap(word, source.order));
+          }
+          for (uint32_t k = 0; k < 2; ++k) {
+            low[k] = v ? std::min(low[k], corner[k]) : corner[k];
+            high[k] = v ? std::max(high[k], corner[k]) : corner[k];
+          }
+          z_same = v ? z_same && corner[2] == z_fill : true;
+          z_fill = corner[2];
+          corners += fmt::format(" ({:.3f} {:.3f} {:.3f} {:.3f})", corner[0], corner[1], corner[2], corner[3]);
+        }
+        break;
+      }
+      const uint32_t info_fill = r[gr::XE_GPU_REG_RB_DEPTH_INFO];
+      const float scale = float(fill_scale);
+      // The word the console's EDRAM gets: the 24-bit depth (integer, or the 20e4 float: xenos::Float32To20e4) and
+      // the stencil reference. Known when the viewport does not move Z, every corner has the same Z and the stencil
+      // is replaced by its reference on every pixel (test always, pass = replace).
+      const bool stencil_replaced = (control_depth & 0x1) && ((control_depth >> 8) & 0x7) == 7 &&
+                                    ((control_depth >> 14) & 0x7) == 2;
+      const bool word_known = z_same && stencil_replaced && !(r[gr::XE_GPU_REG_PA_CL_VTE_CNTL] & 0x30);
+      uint32_t depth24 = 0;
+      if (word_known) {
+        const float z = std::clamp(z_fill, 0.0f, 1.0f);  // also turns -0 into a plain comparison below
+        if ((info_fill >> 16) & 0x1) {
+          uint32_t f;
+          std::memcpy(&f, &z, sizeof(f));
+          f = std::min(f <= 0x7FFFFFFFu ? f : 0u, 0x3FFFFFF8u);
+          const uint32_t denormal = ((f & 0x7FFFFFu) | 0x800000u) >> std::min(113u - (f >> 23), 24u);
+          uint32_t f24 = f < 0x38800000u ? denormal : f + 0xC8000000u;
+          f24 += 3u + ((f24 >> 3) & 1u);
+          depth24 = (f24 >> 3) & 0xFFFFFFu;
+        } else {
+          depth24 = z > 0.0f ? std::min(uint32_t(double(z) * 16777215.0 + 0.5), 0xFFFFFFu) : 0u;
+        }
+      }
+      context_->NoteFillDepth(info_fill & 0xFFF, (info_fill >> 16) & 0x1, pitch * fill_scale,
+                              int32_t(std::floor((low[0] + 0.5f) * scale)), int32_t(std::floor((low[1] + 0.5f) * scale)),
+                              int32_t(std::ceil((high[0] + 0.5f) * scale)), int32_t(std::ceil((high[1] + 0.5f) * scale)),
+                              word_known, (depth24 << 8) | (r[gr::XE_GPU_REG_RB_STENCILREFMASK] & 0xFF));
+      if (fills_logged_.size() < 24 && fills_logged_.insert((uint64_t(info_fill & 0xFFF) << 32) | pitch).second) {
+        REXLOG_INFO("[fh1] depth fill: base {:03X} pitch {} surface {:08X} depth control {:08X} stencil ref/mask "
+                    "{:08X} VTE {:08X} clip {:08X} color0 {:08X} corners:{}",
+                    info_fill & 0xFFF, pitch, r[gr::XE_GPU_REG_RB_SURFACE_INFO], control_depth,
+                    r[gr::XE_GPU_REG_RB_STENCILREFMASK], r[gr::XE_GPU_REG_PA_CL_VTE_CNTL],
+                    r[gr::XE_GPU_REG_PA_CL_CLIP_CNTL], r[gr::XE_GPU_REG_RB_COLOR_INFO], corners);
       }
     }
     // Diagnostic: one line per combination of VS, PS and render target (at most 32).
@@ -13666,6 +13740,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   bool without_ps_without_color_frame_ = true;
   std::chrono::steady_clock::time_point details_report_{};
   bool without_vegetation_ = false;
+  std::unordered_set<uint64_t> fills_logged_;  // FH1: "depth fill" log lines already written
   // Shadow map vegetation draws discarded early (see the early discard in Draw).
   uint64_t draws_vegetation_soon_ = 0;
   // VerdictVegetation (fh1_d3d_game_vegetation).

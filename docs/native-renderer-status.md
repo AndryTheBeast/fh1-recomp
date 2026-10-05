@@ -1,39 +1,53 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, fourth session:
-the first-person view works (world, mirrors, hands and dashboard), the brightness no longer jumps after a loading
-screen or a view switch (confirmed by the user), the festival's brightness equals the emulated picture's (58 s:
-5/20/35/92/129 against 5/19/35/92/129) and alpha to mask covers 0 to 4 samples; see the "fourth session" section.
-Earlier the same day: soft reflections, the console's gamma curve, smooth edges, the loading-screen freeze.
+Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, fifth session:
+the design creator (paint shop > Design creator) is mostly fixed: the booth is shaded, the wheels are wheels, the
+car has its paint color, the "Leaving paint shop" dialog has its text. **One fault is left in that screen and is
+the first thing to do: the car's sides and its tyres are black and the paint has no gloss** (item 0 below). The
+festival is unchanged by the session's fixes (58 s: 5/16/41/91/121 native, 5/16/41/91/122 emulated, chase view;
+30 fps, real GPU per Swap 19.5-21 ms). Nothing of this session has been seen by the user in their own game yet.
 
-**The user drove the fourth session's build and confirmed its fixes ("I can confirm all the fixes for this session
-are fixed").** What they reported next, to fix first:
-
-- **0. The design creator (paint shop > Design creator > Paint car / Color select) is wrong on the native
-  renderer** (the user's pictures: `build_logs\reference\user-20261005-design-creator-a-paint-car-menu.webp`,
-  `-b-leaving-dialog.webp`, `-c-color-select.webp`). What they show: the paint booth is flat grey and white with
-  no shading (ceiling lamps as plain white bars); the car body is one flat cyan with its lower half black, no
-  reflections; **every wheel is a solid magenta box** (and a magenta block under the front bumper); the people
-  standing behind the car look right; the "Leaving paint shop" dialog has an empty black body (no text) with a
-  dotted pattern. Not looked at yet. Where to start: both renderers in that screen (the unattended test reaches
-  the paint shop with `auto_test.ps1 -Autoplay "...;60+0.3=x"`; one more A press at about 70 s opens the design
-  creator, which changes nothing in the save until a design is saved), the log's `(cause N)` lines that appear
-  there, a trace (`draw VS n-1 ... no registration` = a shader the library lacks: `--fh1_dump_ring_shaders` +
-  `tools\fh1_synth_containers.py`, as for the mirrors), then a RenderDoc capture of each renderer and
-  `tools\rdc_tex_stats.py` / `rdc_draw_textures.py` on the wheel and body draws. Guesses, to be checked and not
-  trusted: a flat magenta box is what a draw with the wrong vertex data or a missing texture looks like here; the
-  flat cyan body is the paint without its environment map (the booth probably has its own cube map or a
-  different reflection pass); the booth without shading may be a missing light map.
+- **0. Paint booth: black sides and tyres, no gloss, no "BOSS 429" badge** (compare
+  `build_logs\reference\design-creator-after-20261005-native-left-emulated-right.png`; the user: "don't forget
+  about the car tyres"). In the paint shop's first menu, with the festival behind, the native car is right; it
+  turns black when the booth (track `UIPaintshop`) loads, and stays so after going back. What is known:
+  - Every texture the body draw reads is now identical on both renderers (`tools\rdc_tex_stats.py`, which now
+    prints every face of a cube): the livery, the booth's static cube (1F29C000, 512x512, LogLuv), the 64x64
+    specular cube the game filters from it (six resolves, 13780000 + n * 4000 in one run), the vertex texture.
+  - Every pixel constant the body shader (VS n2816 / PS n2836, `p_d62cbccfff87d80b`) uses is identical
+    (`tools\rdc_constants.py` on the emulated capture against `--fh1_native_diag_constants_ps=2836`), and so are
+    its booleans (00003417). The light comes from straight above (`psLightDirWS` = 0 1 0).
+  - **The difference: vertex constants c37, c38, c39.** Emulated: (0.388 -0.046 0.0003 -0.0087), (0.385 -0.044
+    0.00002 -0.0089), (0.388 -0.044 -0.0002 -0.0089): one row per color, the look of spherical-harmonic ambient
+    light. Native: all three are 0 (c36 is equal on both: 1.1816 -2.0467 -0.00018 0). The game sets them; it
+    most likely computes them on the CPU from the two 32x32 cubes it renders at the same moment (12 resolves,
+    13774000 + n * 1000, drawn like the 64x64 ones by VS n2132 / PS n3684 from the static cube), read back from
+    guest memory.
+  - Tried, no change: finishing the read-backs of tiny resolves before the game's fences
+    (`TargetsNative::FinishReads` at PM4_INTERRUPT, PM4_MEM_WRITE, PM4_EVENT_WRITE_SHD, PM4_REG_TO_MEM; kept, it
+    is what the console does); the read-back off (`--fh1_native_read_resolved_texels=0`).
+  - Next steps, in this order: (1) compare the 32x32 faces with the emulated ones (a capture at the frame they
+    are made: `--fh1_native_diag_frame_s=76 --fh1_native_diag_frames=220 --fh1_native_diag_frame_pitches=80`
+    shows the frame; they were only checked to have content, B G R = 0.24 0.78 0.47); (2) check what the
+    read-back leaves in guest memory against what the emulated resolve writes there (byte order of a
+    copy with copy_dest_swap and endian 2: the exposure read-backs are grey, so a red / blue exchange would never
+    have shown; with red and blue exchanged the LogLuv exponent decodes to about 2^-33, which is the 0 seen);
+    (3) find where the game writes c37-c39 (a write watch on the vertex constants in `WriteRegister`, then the
+    caller) and what it reads.
 - **0b. The thumbnail bug is back: saving a car with a new modification gives a wrong thumbnail** (the user: "the
-  thumbnail bug is here again when I save the car with a new modification"). On the emulated GPU the car photos
-  were fixed on 2026-10-01 by `readback_resolve=fast` (the game reads the resolved picture back from guest
-  memory to make the photo). The native renderer's resolves do not reach guest memory
-  (`--fh1_native_read_resolved_float` copies only the small float pictures and is off): find which resolve the
-  photo comes from (a trace while the user saves, `run_native_capture.bat` + "now") and copy that one to guest
-  memory in the console's format. Ask the user first whether the wrong thumbnail shows on the native renderer
-  only or on the emulated one too, and what it looks like.
+  thumbnail bug is here again when I save the car with a new modification"). Not started: **ask the user first**
+  whether it also happens on the emulated GPU and what it looks like. On the emulated GPU the car photos were
+  fixed on 2026-10-01 by `readback_resolve=fast` (the game reads the resolved picture back from guest memory to
+  make the photo). The native renderer's resolves only reach guest memory up to 64x64
+  (`--fh1_native_read_resolved_texels`): find which resolve the photo comes from (a trace while the user saves,
+  `run_native_capture.bat` + "now") and copy that one to guest memory in the console's format.
+- **0c. The user's two new items**: remove the Carbon / Most Wanted code that has no use in FH1's renderer (one
+  piece at a time, a festival comparison after each; this session found one by its fault,
+  `fh1_shadows_without_vegetation`), and Carbon's fps counter and frame time viewer on F3 for the native renderer
+  (in nfsc-recomp: look for its F2 / F3 monitor; `presented_stats_` and "NFSC: F2 monitor" are what is left of it
+  here).
 
-**Open list after those two (2026-10-05, end of the fourth session):**
+**Open list after those (2026-10-05, end of the fifth session):**
 
 - **A. Races, garage, car photos on the native renderer** (the rest of the user's item 5; the paint shop is done,
   see "Item 5" in the fourth session's section). The user drives there.
@@ -297,6 +311,78 @@ into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. 
 
 Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
 target they clear (the same EDRAM, four samples per pixel drawn).
+
+## What was fixed on 2026-10-05, fifth session: the design creator
+
+Pictures: `build_logs\reference\design-creator-before-20261005-native-88s.png` (before),
+`design-creator-after-20261005-native-left-emulated-right.png` (after, with the fault that is left),
+`design-creator-dialog-after-20261005-native.png`, `festival-after-fifth-session-native-left-emulated-right.png`.
+The unattended route: `auto_test.ps1 -Autoplay "<boot keys>;60+0.3=x;74+0.3=a;92+0.3=b;98+0.3=b"` = paint shop at
+62 s, design creator's booth at about 80 s, back at 92 s, "Leaving paint shop" dialog at 98 s (never confirmed).
+
+- **Booth without shading.** 171 draws of the booth were `VS n-1 ... no registration`: one vertex shader the game
+  uploads at run time (`build_logs\shaders\synth4`, from `--fh1_dump_ring_shaders`). **A library built from the
+  disc lacks it** like the mirrors' eight: copy `synth*\*.bin` into `containers`.
+- **Magenta boxes on the wheels.** The game draws a box around each wheel inside a visibility query
+  (PM4_VIZ_QUERY) with its debug line shader (`psLineColor`, magenta); PA_SC_VIZ_QUERY has viz_query_ena and
+  kill_pix_post_hi_z, which means "test only, paint nothing". The emulated GPU drops such draws
+  (`CommandProcessor::ExecutePacketType3Draw`); the native renderer drew them, over the wheels. Now dropped too
+  (`fh1_native_system.cpp`, PM4_DRAW_INDX). The result of the query is still "visible", as on the emulated GPU.
+- **Cyan car body**, two causes:
+  - The livery (2048x2048, fetched at its base) is painted one side of the car after another: each side is
+    rendered at 4x MSAA, resolved to a small texture, drawn into a 1x target and resolved **into a rectangle of
+    the livery**: the destination address is a tile in the middle of the texture, at any column. The renderer
+    knew pieces below each other (the scene's strips), not beside each other: each piece became a texture of
+    its own that nothing read. `FindResolvedContainer` now also takes a column (log line `resolve of a piece`).
+  - Direct3D clears those targets through the depth buffer on the same EDRAM (the trick of the green car: a
+    depth-only rectangle, here with Z = -0 and stencil 0 = transparent black) for the tile-aligned part, and
+    with ordinary color rectangles for the rest. The fill was only delivered "before the next draw into the
+    target": here nothing is drawn after it (a car without decals), the target is resolved at once, and the
+    fill never arrived; when it did arrive (a later pass) it wrote the depth image's bytes, FF FF FF 00 = cyan.
+    Now: the fill is delivered before a resolve too (`TargetsVulkan::Copy`), it only covers its own rectangle
+    (`NoteFillDepth` takes the corners), and when the rectangle has one Z and replaces the stencil the bytes are
+    computed from those (`word_known`: depth << 8 | stencil) instead of read from the depth image, which read 1.0
+    there. Why the depth image holds 1.0 after a rectangle with Z = -0 was not found (the evening mask's fill,
+    Z = 1, read back right): if a depth test ever misbehaves after such a clear, look there. Log lines
+    `[fh1] depth fill:` give each fill's corners, depth control and stencil reference.
+  - A resolve into an 8-bit-per-pixel texture (k_8, copy format 2: log cause 202) is accepted and kept as the
+    whole 8_8_8_8 picture; the memory fingerprint of such a texture counts one byte per texel.
+- **Empty "Leaving paint shop" dialog.** The dialog marks its text box in the stencil buffer (a draw with color
+  mask 0, stencil "always, replace", reference EA) and draws its 37 letters where the stencil equals EA. That
+  mask draw has the alpha test on, and `fh1_shadows_without_vegetation` (Carbon's speed-up for its shadow map,
+  on by default) dropped **every** draw that writes no color and has an alpha test, on any target. It is off
+  now: dialogs have their text and trees cast shadows, as on the emulated GPU. The first run with it off froze
+  on the festival's fade-in (a frame of 3,133 ms compiling the shadow pass's new pipelines: the known "the game
+  stops after a frame of about 3.2 s"); the runs after it were fine.
+- **Three faults of the shader translator**, found on the way to the black sides (they did not cure them, but
+  each was wrong):
+  - Loops inside loops shared the one `aL` variable: the inner loop left the outer one at its end, so the outer
+    loop ran once. Two shaders (PS n3684, the cube filter: 64 x 64 samples were 64). Inner loops now save and
+    restore the outer counter (`aLOuter<n>`).
+  - `cube()` kept two directions per shader and counted up without end: a shader that looks a cube up in a loop
+    read garbage directions after the second lookup. The two slots are now used in turn (`shader_common.h`:
+    every shader re-translated).
+  - The cube instruction's operand swizzle was ignored: the direction was taken as the register's x y z. Direct3D
+    writes `src.zzxy` 700 times, and another order 240 times (xxzy 78, wwyz 65, xxwz 46, yyxz 33, ...): those
+    lookups went in permuted directions. The 64x64 specular cube had its content on the wrong faces. Now the
+    direction is the first operand as swizzled, `.zwx` (904 shaders changed).
+  - After the three: the 64x64 cube matches the emulated one on all six faces to four digits.
+- **Tools of this session.** `tools\rdc_pixel_history.py` (which draws touched a pixel, with what color: finds
+  the draw that paints a fault on either renderer), `tools\rdc_counts.py` (the draws of a capture with their
+  index counts: the trace's `count N` finds the same draw in a capture), `rdc_tex_stats.py` prints every face of
+  a cube. `--fh1_native_diag_frames=N` traces N frames in a row and `--fh1_native_diag_frame_pitches=a,b` keeps
+  only the surfaces of those pitches (for something drawn once, in a frame that cannot be hit by the second:
+  220 frames from second 76 caught the livery passes in 700 lines).
+- **Seen on the way, not changed**: 13 shaders of the library are still an old translation (`Fh1BlockShared
+  v[41]`): their new HLSL does not compile (`i0` / `i16`, loop constants the container does not define; ten
+  vertex shaders and three pixel shaders, names in `build_logs\shaders\spirv_changed\dxc_errors.txt`); after an
+  8-bit read-back the texture's memory fingerprint was not taken again, so the renderer took it for a texture the
+  game wrote over (now it is); RenderDoc's replay of one native capture ended in "device lost" twice (the next
+  capture replayed fine).
+- **Method that worked, again**: one capture of each renderer and numbers, pass by pass. The order that found
+  things: the trace's `no registration` lines, pixel history at a wrong pixel, the textures of that draw on both
+  sides, then its constants on both sides. Every guess made without a number was wrong (the lighting cube was
+  blamed four times before the constants were compared).
 
 ## What was fixed on 2026-10-05, fourth session: first-person view, brightness jump, the darker picture
 
