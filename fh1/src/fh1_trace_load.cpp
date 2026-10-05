@@ -27,6 +27,13 @@
 #include <rex/hook.h>
 #include <rex/logging.h>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 REXCVAR_DEFINE_BOOL(fh1_trace_load, false, "FH1",
                     "Log the table sub_82D3DB00 walks (save-loading crash investigation)");
 
@@ -258,11 +265,188 @@ REXCVAR_DEFINE_STRING(fh1_dump_image, "", "FH1",
                       "Debug: write default.xex's loaded image (0x82000000-0x83620000) to this "
                       "file, once, for offline analysis (strings, tables, cross-references)");
 
+// Works with both renderers: what a resolve (or anything else) left in the game's memory at a moment.
+REXCVAR_DEFINE_STRING(fh1_dump_memory, "", "FH1",
+                      "Debug: physical memory ranges to write to files, \"address:bytes,...\" in hex "
+                      "(e.g. \"13774000:C000\"); see fh1_dump_memory_at_s");
+REXCVAR_DEFINE_STRING(fh1_dump_memory_at_s, "", "FH1",
+                      "Debug: seconds after launch at which fh1_dump_memory is written "
+                      "(memdump_<address>_<second>s.bin in this folder), e.g. \"84,90\"");
+
+// Finds who writes a record whose address changes from run to run: at a second, the game's heap is searched for
+// a run of bytes and the page that holds it is made read-only; the next write to that page crashes, and the
+// crash report (<log>.crash.txt) names the game function that wrote.
+REXCVAR_DEFINE_STRING(fh1_trap_writes_to, "", "FH1",
+                      "Debug: bytes in hex (e.g. \"3F2147AE3F2147AE3F2147AE00000000\"); at fh1_trap_writes_at_s the "
+                      "page of the game's heap (30000000-50000000) holding them becomes read-only, so the next "
+                      "write to it crashes with the writer's stack");
+REXCVAR_DEFINE_INT32(fh1_trap_writes_at_s, 0, "FH1", "Debug: second after launch for fh1_trap_writes_to");
+REXCVAR_DEFINE_INT32(fh1_trap_writes_hit, 0, "FH1", "Debug: which match of fh1_trap_writes_to to trap (0 = first)");
+REXCVAR_DEFINE_INT32(fh1_trap_writes_skip, 0, "FH1",
+                     "Debug: the wanted write is this many bytes after the start of the match");
+REXCVAR_DEFINE_INT32(fh1_trap_writes_bytes, 16, "FH1",
+                     "Debug: how many bytes from there count as the wanted write (others in the page are let through)");
+
+namespace {
+const auto g_launch = std::chrono::steady_clock::now();
+
+#ifdef _WIN32
+// The trapped page and, inside it, the bytes whose writer is wanted. A write elsewhere in the page is let through:
+// the page is opened, the instruction runs alone (single step) and the page is closed again.
+std::atomic<uint8_t*> g_trap_page{nullptr};
+std::atomic<uint8_t*> g_trap_first{nullptr};
+std::atomic<uint8_t*> g_trap_last{nullptr};
+std::atomic<uint32_t> g_trap_stepping{0};  // thread id
+std::atomic<uint64_t> g_trap_passed{0};
+
+LONG CALLBACK TrapHandler(EXCEPTION_POINTERS* info) {
+  const EXCEPTION_RECORD* rec = info->ExceptionRecord;
+  uint8_t* const page = g_trap_page.load();
+  if (!page) return EXCEPTION_CONTINUE_SEARCH;
+  if (rec->ExceptionCode == EXCEPTION_SINGLE_STEP && g_trap_stepping.load() == GetCurrentThreadId()) {
+    DWORD old = 0;
+    VirtualProtect(page, 0x1000, PAGE_READONLY, &old);
+    g_trap_stepping.store(0);
+    return EXCEPTION_CONTINUE_EXECUTION;
+  }
+  if (rec->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && rec->NumberParameters >= 2 &&
+      rec->ExceptionInformation[0] == 1) {
+    uint8_t* const where = reinterpret_cast<uint8_t*>(rec->ExceptionInformation[1]);
+    if (where < page || where >= page + 0x1000) return EXCEPTION_CONTINUE_SEARCH;
+    if (where + 16 > g_trap_first.load() && where < g_trap_last.load()) {
+      g_trap_page.store(nullptr);  // the wanted write: the crash report names the writer
+      return EXCEPTION_CONTINUE_SEARCH;
+    }
+    // Another thread is stepping: wait for it to close the page, then this write faults again.
+    uint32_t nobody = 0;
+    if (!g_trap_stepping.compare_exchange_strong(nobody, GetCurrentThreadId())) {
+      SwitchToThread();
+      return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    DWORD old = 0;
+    VirtualProtect(page, 0x1000, PAGE_READWRITE, &old);
+    info->ContextRecord->EFlags |= 0x100;
+    g_trap_passed.fetch_add(1);
+    return EXCEPTION_CONTINUE_EXECUTION;
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
+void StartWriteTrap(uint8_t* base) {
+#ifdef _WIN32
+  static std::atomic<bool> started{false};
+  const std::string hex = REXCVAR_GET(fh1_trap_writes_to);
+  const int second = REXCVAR_GET(fh1_trap_writes_at_s);
+  if (hex.size() < 8 || second <= 0 || started.exchange(true)) return;
+  std::vector<uint8_t> needle;  // bytes, not chars: a char above 7F never equals a byte
+  for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+    needle.push_back(uint8_t(std::stoul(hex.substr(i, 2), nullptr, 16)));
+  }
+  const int wanted = REXCVAR_GET(fh1_trap_writes_hit);
+  std::thread([base, needle, second, wanted] {
+    std::this_thread::sleep_until(g_launch + std::chrono::seconds(second));
+    int found = 0;
+    uint64_t scanned = 0;
+    for (uint64_t at = 0x30000000; at < 0x50000000;) {
+      MEMORY_BASIC_INFORMATION info{};
+      if (!VirtualQuery(base + at, &info, sizeof(info))) break;
+      const uint64_t end = std::min<uint64_t>(at + info.RegionSize, 0x50000000);
+      if (info.State == MEM_COMMIT && !(info.Protect & (PAGE_NOACCESS | PAGE_GUARD))) {
+        scanned += end - at;
+        const uint8_t* begin = base + at;
+        const uint8_t* stop = base + end;
+        for (const uint8_t* p = begin;;) {
+          p = std::search(p, stop, needle.begin(), needle.end());
+          if (p == stop) break;
+          const uint32_t address = uint32_t(p - base);
+          std::string words;
+          for (int i = 0; i < 20; ++i) words += fmt::format(" {:08X}", Be32(base, address + i * 4));
+          REXLOG_INFO("[trap] match {} at {:08X}:{}", found, address, words);
+          if (found == wanted) {
+            DWORD old = 0;
+            const int32_t skip = REXCVAR_GET(fh1_trap_writes_skip);
+            g_trap_first.store(base + address + skip);
+            g_trap_last.store(base + address + skip + REXCVAR_GET(fh1_trap_writes_bytes));
+            g_trap_page.store(base + (address & ~0xFFFu));
+            AddVectoredExceptionHandler(1, TrapHandler);
+            const bool ok = VirtualProtect(base + (address & ~0xFFFu), 0x1000, PAGE_READONLY, &old);
+            REXLOG_INFO("[trap] page {:08X} is read-only now ({}): the next write to it crashes",
+                        address & ~0xFFFu, ok ? "ok" : "FAILED");
+          }
+          ++found;
+          ++p;
+        }
+      }
+      at = end;
+    }
+    REXLOG_INFO("[trap] {} matches in {} MB", found, scanned >> 20);
+    for (int i = 0; i < 12 && g_trap_page.load(); ++i) {
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+      REXLOG_INFO("[trap] {} other writes to the page let through so far", g_trap_passed.load());
+    }
+  }).detach();
+#else
+  (void)base;
+#endif
+}
+
+void StartMemoryDumps(uint8_t* base) {
+  static std::atomic<bool> started{false};
+  const std::string ranges = REXCVAR_GET(fh1_dump_memory);
+  const std::string seconds = REXCVAR_GET(fh1_dump_memory_at_s);
+  if (ranges.empty() || seconds.empty() || started.exchange(true)) return;
+  std::thread([base, ranges, seconds] {
+    for (size_t start = 0; start < seconds.size();) {
+      size_t comma = seconds.find(',', start);
+      if (comma == std::string::npos) comma = seconds.size();
+      const int second = std::atoi(seconds.substr(start, comma - start).c_str());
+      start = comma + 1;
+      std::this_thread::sleep_until(g_launch + std::chrono::seconds(second));
+      for (size_t r = 0; r < ranges.size();) {
+        size_t next = ranges.find(',', r);
+        if (next == std::string::npos) next = ranges.size();
+        const std::string item = ranges.substr(r, next - r);
+        r = next + 1;
+        const size_t colon = item.find(':');
+        if (colon == std::string::npos) continue;
+        // "v40000000:1000000" = the game's own (virtual) addresses; without the v, physical memory as the game
+        // sees it at A0000000.
+        const bool is_virtual = item[0] == 'v';
+        uint32_t address = uint32_t(std::stoul(item.substr(is_virtual ? 1 : 0, colon), nullptr, 16));
+        if (!is_virtual) address = 0xA0000000u + (address & 0x1FFFFFFF);
+        const uint32_t bytes = uint32_t(std::stoul(item.substr(colon + 1), nullptr, 16));
+        if (uint64_t(address) + bytes > 0x100000000ull) continue;
+        const std::string path = fmt::format("memdump_{:08X}_{}s.bin", address, second);
+        if (FILE* f = std::fopen(path.c_str(), "wb")) {
+          // Page by page: a page the game has not allocated cannot be read and is written as zeros.
+          static const std::vector<uint8_t> zeros(0x1000, 0);
+          std::setvbuf(f, nullptr, _IONBF, 0);  // each write fails or succeeds by itself
+          for (uint64_t at = 0; at < bytes; at += 0x1000) {
+            const size_t n = size_t(std::min<uint64_t>(0x1000, bytes - at));
+            if (std::fwrite(base + address + at, 1, n, f) != n) {
+              std::clearerr(f);
+              std::fseek(f, long(at), SEEK_SET);
+              std::fwrite(zeros.data(), 1, n, f);
+            }
+            if ((at & 0xFFFFF) == 0xFF000) std::fflush(f);
+          }
+          std::fclose(f);
+          REXLOG_INFO("[fh1] memory {:08X} + {:X} written to {}", address, bytes, path);
+        }
+      }
+    }
+  }).detach();
+}
+}  // namespace
+
 void Fh1NanTrapArm(PPCContext& ctx);  // fh1_nan_trap.cpp
 
 REX_EXTERN(__imp__sub_82D3DB00);
 REX_HOOK_RAW(sub_82D3DB00) {
   Fh1NanTrapArm(ctx);
+  StartMemoryDumps(base);
+  StartWriteTrap(base);
   {
     static std::atomic<bool> dumped{false};
     std::string path = REXCVAR_GET(fh1_dump_image);

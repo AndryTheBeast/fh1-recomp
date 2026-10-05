@@ -375,6 +375,9 @@ REXCVAR_DEFINE_INT32(fh1_native_wait_regmem_us, 200, "FH1",
 REXCVAR_DEFINE_BOOL(fh1_native_swap_test_color, false, "FH1",
                     "Native renderer: a Swap without a game image paints a pulsing blue-green test color instead of "
                     "black (tests only: tells a running game from a stalled one)");
+REXCVAR_DEFINE_BOOL(fh1_native_reads_at_once, true, "FH1",
+                    "Native renderer: the read-back of a resolve of 32x32 texels or less reaches guest memory "
+                    "before the next command is read, as on the console (false: at the game's next fence)");
 REXCVAR_DEFINE_BOOL(fh1_native_renderdoc, false, "FH1",
                     "Native renderer, started through RenderDoc: captures one frame each time a file named "
                     "capture_now appears in the working folder (tests only)");
@@ -2556,6 +2559,13 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     TraceCopy(r);
     const auto start = Clock::now();
     targets_->Copy(r);
+    // FH1: on the console a resolve is in memory the moment it runs, and Direct3D only waits for the ring to be
+    // read (not for a fence) before the game's code looks at a texture it has just resolved: the ambient light
+    // of the paint booth is computed that way from twelve 32x32 faces. Tiny read-backs are finished here, before
+    // the ring's read pointer moves past the copy.
+    if (REXCVAR_GET(fh1_native_reads_at_once)) {
+      targets_->FinishReads();
+    }
     time_copies_ns_ += NanosecondsSince(start);
     ++copies_measurements_;
   }

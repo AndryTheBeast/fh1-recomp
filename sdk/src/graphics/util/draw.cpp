@@ -32,6 +32,10 @@ REXCVAR_DEFINE_BOOL(half_pixel_offset, true, "GPU", "Enable half pixel offset");
 REXCVAR_DEFINE_BOOL(resolve_resolution_scale_fill_half_pixel_offset, true, "GPU",
                     "Fill half pixel offset during resolution scale resolve");
 
+REXCVAR_DEFINE_INT32(gpu_log_small_resolves, 0, "GPU",
+                     "Debug: log every resolve of up to this many pixels (destination address, "
+                     "format, rectangle); 0 = off");
+
 // Very prominent in 545407F2.
 // DEFINE_bool(
 //     resolve_resolution_scale_fill_half_pixel_offset, true,
@@ -1136,6 +1140,16 @@ bool GetResolveInfo(const RegisterFile& regs, const memory::Memory& memory,
                : xenos::GetColorRenderTargetFormatName(
                      xenos::ColorRenderTargetFormat(color_edram_info.format)),
       dest_format_info.name, rb_copy_dest_base, copy_dest_extent_start, copy_dest_extent_end);
+
+  if (int32_t small = REXCVAR_GET(gpu_log_small_resolves);
+      small > 0 && int64_t(x1 - x0) * int64_t(y1 - y0) <= int64_t(small)) {
+    static uint32_t logged = 0;
+    if (logged++ < 4000) {
+      REXGPU_INFO("[small resolve] ({},{})-({},{}) {} -> {} at 0x{:08X}, dest info {:08X}", x0, y0, x1, y1,
+                  is_depth ? "depth" : "color", dest_format_info.name, rb_copy_dest_base,
+                  regs[XE_GPU_REG_RB_COPY_DEST_INFO]);
+    }
+  }
 
   if (RtLogActive()) {
     REXGPU_INFO(

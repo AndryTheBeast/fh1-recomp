@@ -524,6 +524,10 @@ REXCVAR_DEFINE_INT32(fh1_native_read_resolved_texels, 4096, "FH1",
                      "Native renderer: resolved textures of up to this many texels are also copied to guest "
                      "memory, which the game reads for its exposure (0 = none; 4096 = 64x64, the ones the exposure "
                      "uses; 57600 = 320x180)");
+REXCVAR_DEFINE_INT32(fh1_native_read_resolved_half_texels, 32768, "FH1",
+                     "Native renderer: a resolve to a 16-bit float texture (k_16_16_16_16_FLOAT) of up to this many "
+                     "texels is also written to guest memory, at once. FH1 computes a scene's ambient light on the "
+                     "CPU from a 256x128 sphere map it has just resolved (paint booth, garage). 0 = never");
 REXCVAR_DEFINE_BOOL(fh1_native_read_resolved_float, false, "FH1",
                     "Native renderer: the small float pictures (levels of the reflection cube map, luminance) are "
                     "copied to guest memory too, converted to the format the game resolved them in. false = only the "
@@ -6833,8 +6837,13 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
           format_guest_read == uint32_t(xenos::ColorFormat::k_2_10_10_10)) ||
          (resolved.image.format == VK_FORMAT_R32_SFLOAT &&
           format_guest_read == uint32_t(xenos::ColorFormat::k_32_FLOAT)));
-    if (maximum <= 0 || uint64_t(width) * height > uint64_t(maximum) ||
-        (resolved.image.format != kFormatColor && !float_read)) {
+    // FH1: a 16-bit float picture the game reads on the CPU (fh1_native_read_resolved_half_texels).
+    const int32_t maximum_half = REXCVAR_GET(fh1_native_read_resolved_half_texels);
+    const bool half_read = maximum_half > 0 && resolved.image.format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                           format_guest_read == uint32_t(xenos::ColorFormat::k_16_16_16_16_FLOAT) &&
+                           uint64_t(width) * height <= uint64_t(maximum_half);
+    if (!half_read && (maximum <= 0 || uint64_t(width) * height > uint64_t(maximum) ||
+                       (resolved.image.format != kFormatColor && !float_read))) {
       return;
     }
     const uint64_t key_target =
@@ -6893,8 +6902,12 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     copy.imageExtent = {width, height, 1};
     dfn_.vkCmdCopyImageToBuffer(commands_work_, resolved.image.image, VK_IMAGE_LAYOUT_GENERAL,
                                 read.buffer, 1, &copy);
-    if (uint64_t(width) * height <= 1024) {
+    if (uint64_t(width) * height <= 1024 || half_read) {
       reads_urgent_ = true;  // FinishReads
+    }
+    if (half_read && reads_half_++ < 8) {
+      REXLOG_INFO("[fh1] read-back of a 16-bit float resolve: {:08X}, {}x{} (the game reads it on the CPU)",
+                  reg.rb_copy_dest_base, width, height);
     }
     reads_pending_.push_back({&read, reg.rb_copy_dest_base, x0, y0, width, height,
                                     reg.rb_copy_dest_pitch & 0x3FFF,
@@ -6961,6 +6974,50 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const uint64_t tiles_by_row = ((p.pitch + 31) & ~uint32_t(31)) >> 5;
       // FH1: float pictures. k_2_10_10_10: each channel times 2^exp_bias, cut to 0..1, in 10 bits (alpha in 2), red
       // and blue exchanged with copy_dest_swap; k_32_FLOAT: the value as it is. Then the copy's byte order.
+      if (p.format_host == VK_FORMAT_R16G16B16A16_SFLOAT &&
+          ((p.info >> 7) & 0x3F) == uint32_t(xenos::ColorFormat::k_16_16_16_16_FLOAT)) {
+        // FH1: sixteen-bit floats, eight bytes per texel: two words (red | green << 16, blue | alpha << 16), red
+        // and blue exchanged with copy_dest_swap, each word in the copy's byte order. The console's half float has
+        // no infinity: one is written as the largest number, a NaN as 0. Tiled like every texture.
+        const int32_t bias = int32_t((p.info >> 16) << 26) >> 26;
+        const uint32_t pitch_tiles = uint32_t(tiles_by_row);
+        for (uint32_t j = 0; j < p.height; ++j) {
+          const uint32_t ty = uint32_t(p.y0) + j;
+          if (p.height_target && ty >= p.height_target) {
+            break;
+          }
+          const uint8_t* s = read.data + size_t(j) * p.width * 8;
+          for (uint32_t i = 0; i < p.width; ++i, s += 8) {
+            const uint32_t tx = uint32_t(p.x0) + i;
+            if (tx >= p.pitch) {
+              break;
+            }
+            const uint64_t address = base + TiledOffsetTexel8(tx, ty, pitch_tiles);
+            if (address + 8 > 0x20000000) {
+              continue;
+            }
+            uint16_t h[4];
+            std::memcpy(h, s, sizeof(h));
+            for (uint32_t c = 0; c < 4; ++c) {
+              uint32_t exponent = (h[c] >> 10) & 0x1F;
+              if (exponent == 0x1F) {
+                h[c] = (h[c] & 0x3FF) ? uint16_t(0) : uint16_t((h[c] & 0x8000) | 0x7FFF);
+              } else if (bias != 0 && c < 3 && exponent != 0) {
+                const int32_t moved = std::clamp(int32_t(exponent) + bias, 0, 31);
+                h[c] = moved == 0 ? uint16_t(h[c] & 0x8000) : uint16_t((h[c] & 0x83FF) | (uint32_t(moved) << 10));
+              }
+            }
+            if (swap_value) {
+              std::swap(h[0], h[2]);
+            }
+            const uint32_t words[2] = {xenos::GpuSwap(uint32_t(h[0]) | (uint32_t(h[1]) << 16), order),
+                                       xenos::GpuSwap(uint32_t(h[2]) | (uint32_t(h[3]) << 16), order)};
+            std::memcpy(physical + address, words, sizeof(words));
+          }
+        }
+        RestampAfterRead(p);
+        continue;
+      }
       if (p.format_host != VK_FORMAT_R8G8B8A8_UNORM) {
         const bool wide = p.format_host == VK_FORMAT_R16G16B16A16_SFLOAT;
         const float scale = std::ldexp(1.0f, int32_t((p.info >> 16) << 26) >> 26);
@@ -7036,6 +7093,17 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     ns_write_reads_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now() - before_reads).count());
   }
+
+  // Offset of a texel of eight bytes inside a tiled texture (the console's layout, as Xenia's GetTiledOffset2D with
+  // bytes per block log2 = 3).
+  static uint64_t TiledOffsetTexel8(uint32_t x, uint32_t y, uint32_t pitch_tiles) {
+    const uint32_t macro = ((x >> 5) + (y >> 5) * pitch_tiles) << 10;
+    const uint32_t micro = ((x & 7) + ((y & 0xE) << 2)) << 3;
+    const uint32_t offset = macro + ((micro & ~0xFu) << 1) + (micro & 0xF) + ((y & 1) << 4);
+    return (uint64_t(offset & ~0x1FFu) << 3) + ((y & 16) << 7) + ((offset & 0x1C0) << 2) +
+           (((((y & 8) >> 2) + (x >> 3)) & 3) << 6) + (offset & 0x3F);
+  }
+  uint64_t reads_half_ = 0;
 
   // FH1: the read-back itself changed the guest memory under a resolved texture: its fingerprint is taken again,
   // or the next draw would think the game wrote there and read the texture from memory.
