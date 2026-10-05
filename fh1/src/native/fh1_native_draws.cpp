@@ -1112,8 +1112,9 @@ REXCVAR_DEFINE_BOOL(fh1_native_ssaa, true, "FH1",
                     "height and averaged by the resolve, which gives the console's four samples per pixel (smooth "
                     "edges). false = one sample per pixel, as before (stair-stepped edges, a faster scene)");
 REXCVAR_DEFINE_BOOL(fh1_native_texture_signs, true, "FH1",
-                    "Native renderer: textures fetched biased (value * 2 - 1) are converted in the shader, and signed "
-                    "two-channel compressed textures use the host's signed format. false = read as unsigned, as before");
+                    "Native renderer: textures fetched biased (sign mode 2: value * 2 - 1) are converted in the shader, "
+                    "and signed (mode 1) two-channel compressed textures use the host's signed format. false = read as "
+                    "unsigned");
 REXCVAR_DEFINE_BOOL(fh1_native_alpha_to_mask, true, "FH1",
                     "Native renderer: draws with alpha to mask and no alpha test discard pixels below half alpha (the "
                     "crowd and foliage cut-outs). false = drawn solid");
@@ -2649,7 +2650,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       ++draws_vegetation_soon_;
       return true;
     }
-    const uint32_t control_depth = r[gr::XE_GPU_REG_RB_DEPTHCONTROL];
+    // FH1: a rectangle list has no front or back on the console, so two-sided stencil (bit 7) does not apply to
+    // it: the front state is used, as the emulated GPU does for primitives that are not polygons. In the cockpit
+    // view the game seals what it drew first (hands, interior: stencil not 0) at the nearest depth with a
+    // full-screen rectangle whose back state is "always, replace"; taken as a back face it sealed the whole
+    // screen and the world was never drawn (white behind the windows).
+    const uint32_t control_depth = r[gr::XE_GPU_REG_RB_DEPTHCONTROL] & (rectangles ? ~0x80u : ~0u);
     if (control_depth & 0x3) {  // stencil o z
       const uint32_t info = r[gr::XE_GPU_REG_RB_DEPTH_INFO];
       keys[4] = (uint64_t(1) << 62) | (uint64_t(info & 0xFFF) << 24) |
@@ -9129,8 +9135,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   }
 
   // FH1: the sign modes the shader applies to what it fetched (fh1Gamma in shader_common.h): two bits per fetched
-  // component, after the fetch constant's swizzle; 1 = biased (value * 2 - 1), 3 = gamma when the caller converts
-  // it in the shader. Signed (2) is the host format's business.
+  // component, after the fetch constant's swizzle; the shader's code 1 = biased (value * 2 - 1), 3 = gamma when the
+  // caller converts it in the shader. In the fetch constant (xenos::TextureSign) biased is 2 and 1 is signed, two's
+  // complement data, which is the host format's business; until 2026-10-05 the two were swapped here: the normal
+  // maps fetched biased (k_DXN, signs 2A: the hands and the dashboard of the cockpit view) were decoded as signed
+  // blocks, which speckled them, and the adapted luminance (k_32_FLOAT, signs 55) was read as value * 2 - 1.
   static uint32_t SignsSwizzled(const uint32_t* f, bool gamma) {
     if (!REXCVAR_GET(fh1_native_texture_signs) && !gamma) {
       return 0;
@@ -9144,8 +9153,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         continue;
       }
       const uint32_t sign = (signs >> (2 * source)) & 0x3;
-      if ((sign == 1 && REXCVAR_GET(fh1_native_texture_signs)) || (sign == 3 && gamma)) {
-        out |= sign << (2 * i);
+      if (sign == 2 && REXCVAR_GET(fh1_native_texture_signs)) {
+        out |= 1u << (2 * i);
+      } else if (sign == 3 && gamma) {
+        out |= 3u << (2 * i);
       }
     }
     return out;
@@ -9315,9 +9326,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         }
       }
     }
-    // FH1 (fh1_native_texture_signs): signed two-channel normal maps (k_DXN with signs 2A) in the host's signed format.
+    // FH1 (fh1_native_texture_signs): signed two-channel normal maps (k_DXN with signs 55: two's complement) in the
+    // host's signed format. Signs 2A are biased: unsigned blocks, converted in the shader.
     if (REXCVAR_GET(fh1_native_texture_signs) && tf.format == VK_FORMAT_BC5_UNORM_BLOCK &&
-        ((f[0] >> 2) & 0xF) == 0xA) {
+        ((f[0] >> 2) & 0xF) == 0x5) {
       tf.format = VK_FORMAT_BC5_SNORM_BLOCK;
     }
     exp_scale_out = WithSigns(exp_scale_out, SignsSwizzled(f, gamma_in_shader));

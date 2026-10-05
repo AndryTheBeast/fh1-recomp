@@ -54,6 +54,7 @@
 #include <rex/system/xvideo.h>
 #include <rex/thread.h>
 #include <rex/ui/presenter.h>
+#include <rex/ui/renderdoc_api.h>
 #include <rex/ui/vulkan/device.h>
 #include <rex/ui/vulkan/presenter.h>
 #include <rex/ui/vulkan/provider.h>
@@ -374,6 +375,9 @@ REXCVAR_DEFINE_INT32(fh1_native_wait_regmem_us, 200, "FH1",
 REXCVAR_DEFINE_BOOL(fh1_native_swap_test_color, false, "FH1",
                     "Native renderer: a Swap without a game image paints a pulsing blue-green test color instead of "
                     "black (tests only: tells a running game from a stalled one)");
+REXCVAR_DEFINE_BOOL(fh1_native_renderdoc, false, "FH1",
+                    "Native renderer, started through RenderDoc: captures one frame each time a file named "
+                    "capture_now appears in the working folder (tests only)");
 REXCVAR_DEFINE_INT32(fh1_native_diag_frame_s, 0, "FH1",
                      "Native renderer: after this many seconds, logs every draw and every copy of one whole frame "
                      "(0 = no; tests only)");
@@ -2532,11 +2536,47 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     ++copies_measurements_;
   }
 
+  // Diagnostic (fh1_native_renderdoc, the game started through RenderDoc): a capture of one whole frame of the
+  // native renderer, from one Swap to the next, each time a file named capture_now appears in the working folder
+  // (the same trigger as the emulated GPU's --renderdoc_capture_seconds=-1; tools\capture_now.ps1 writes it).
+  void CaptureRenderDocOnSwap() {
+    static bool initialized = false;
+    static std::unique_ptr<rex::ui::RenderDocAPI> api;
+    static bool capturing = false;
+    static uint32_t swaps = 0;
+    if (!initialized) {
+      initialized = true;
+      if (!REXCVAR_GET(fh1_native_renderdoc)) {
+        return;
+      }
+      api = rex::ui::RenderDocAPI::CreateIfConnected();
+      if (!api) {
+        REXLOG_WARN("[fh1] fh1_native_renderdoc is set but RenderDoc is not attached");
+      }
+    }
+    if (!api) {
+      return;
+    }
+    if (capturing) {
+      const uint32_t ok = api->api_1_0_0()->EndFrameCapture(nullptr, nullptr);
+      REXLOG_INFO("[fh1] RenderDoc: frame capture ended ({})", ok ? "saved" : "FAILED");
+      capturing = false;
+      return;
+    }
+    std::error_code ec;
+    if (++swaps % 15 == 0 && std::filesystem::remove("capture_now", ec)) {
+      api->api_1_0_0()->StartFrameCapture(nullptr, nullptr);
+      capturing = true;
+      REXLOG_INFO("[fh1] RenderDoc: capturing the frame after Swap {}", swaps_.load());
+    }
+  }
+
   // Diagnostic (fh1_native_diag_frame_s): every draw and every copy of one whole
   // frame, from the first Swap after that many seconds until the next one.
   void TraceSwap() {
     // Once per Swap, not once per draw (see DrawNative).
     diag_constants_active_ = !REXCVAR_GET(fh1_native_diag_constants_ps).empty();
+    CaptureRenderDocOnSwap();
     if (tracing_) {
       tracing_ = false;
       trace_done_ = REXCVAR_GET(fh1_native_diag_frame_s) != -1;  // on demand it can be asked again
@@ -2601,6 +2641,15 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     // FH1: the boolean constants the shaders branch on (0x4900 = vertex b0-b31, 0x4904 = pixel b0-b31, 0x4907 =
     // pixel b96-b127), to compare with xe_bool_loop_cbuffer of a RenderDoc capture (tools/rdc_constants.py).
     textures += fmt::format(" bools {:08X} {:08X} {:08X}", Register(0x4900), Register(0x4904), Register(0x4907));
+    // FH1: the state that differs between camera views (clipping, culling, the viewport's depth range, alpha
+    // reference, depth bias).
+    textures += fmt::format(" clip {:08X} sc {:08X} z {:g}+{:g} aref {:g} bias {:g}*{:g}",
+                            Register(g::XE_GPU_REG_PA_CL_CLIP_CNTL), Register(g::XE_GPU_REG_PA_SU_SC_MODE_CNTL),
+                            std::bit_cast<float>(Register(g::XE_GPU_REG_PA_CL_VPORT_ZOFFSET)),
+                            std::bit_cast<float>(Register(g::XE_GPU_REG_PA_CL_VPORT_ZSCALE)),
+                            std::bit_cast<float>(Register(g::XE_GPU_REG_RB_ALPHA_REF)),
+                            std::bit_cast<float>(Register(g::XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_OFFSET)),
+                            std::bit_cast<float>(Register(g::XE_GPU_REG_PA_SU_POLY_OFFSET_FRONT_SCALE)));
     REXLOG_INFO("[trace] draw VS n{} PS n{} type {} count {} surf {:08X} rt0 {:08X} rt1 {:08X} mask {:08X} blend "
                 "{:08X} colorctl {:08X} depth {:08X} stencil {:08X} mode {:08X} window {:08X} tl {:08X} br {:08X} "
                 "vte {:08X} yoff {:.0f}{}",
