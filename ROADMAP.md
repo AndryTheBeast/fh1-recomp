@@ -1,6 +1,6 @@
-﻿# Roadmap
+# Roadmap
 
-Forza Horizon (Xbox 360) â†’ PC by static recompilation (ReXGlue), then the Nintendo Switch in a
+Forza Horizon (Xbox 360) → PC by static recompilation (ReXGlue), then the Nintendo Switch in a
 separate repository.
 
 How to read this file: `[x]` = done and checked, `[ ]` = still to do. One line per item; the full
@@ -19,7 +19,7 @@ play, 26-28 in the busiest spots.
 | Emulated Xbox 360 GPU, Vulkan | `run_fh1.bat --gpu_backend=vulkan` | correct, 28-30 fps |
 | **Native renderer** (Vulkan, in progress) | `run_fh1.bat --fh1_renderer=native` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps (animated crowd, soft edges, right exposure); evening car color and the glow of lights fixed 2026-10-05; the slightly dark picture, 4x MSAA and the driving check still to do |
 
-## Stage 1 â€” Translate the game (done)
+## Stage 1 — Translate the game (done)
 
 - [x] Build the ReXGlue code generator; extract `default.xex` (NTSC-U, 4D5309C9, v0.0.0.10)
 - [x] First code generation (16 tail-call targets declared)
@@ -34,7 +34,7 @@ play, 26-28 in the busiest spots.
       today (see Stage 2)
 - [ ] `vupkd3d128` / `vpkd3d128` type 6 translate wrongly (FH1 never uses them: 0 sites)
 
-## Stage 2 â€” Running on Windows with the emulated Xbox 360 GPU ("xenos") (done, playable)
+## Stage 2 — Running on Windows with the emulated Xbox 360 GPU ("xenos") (done, playable)
 
 ### Crashes and blockers fixed
 
@@ -99,7 +99,7 @@ play, 26-28 in the busiest spots.
 
 - [ ] List the kernel / XAM calls the game makes that ReXGlue lacks (Kinect, Xbox Live, DLC paths)
 
-## Stage 3 â€” Native renderer (now)
+## Stage 3 — Native renderer (now)
 
 The renderer that draws the game directly with Vulkan, without emulating the Xbox 360 GPU. It is
 what the Switch needs. State, open problems, how to test: **`docs/native-renderer-status.md`**.
@@ -108,7 +108,7 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
 - [x] **N1 own graphics system**: the game runs without the emulated GPU
 - [x] **N2 shader identity**: the shaders the game uploads are matched to the library (missing ones
       are added from ring dumps)
-- [x] **N3 draws and textures: boot, videos, title, menus, loading screens, map** â€” same picture as
+- [x] **N3 draws and textures: boot, videos, title, menus, loading screens, map** — same picture as
       the emulated GPU
   - [x] Teal trademark screen
   - [x] White videos; banding in dark video areas
@@ -129,19 +129,19 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         cut at white (float resolved textures)
   - [x] Picture a third too bright (vertex-shader textures: the composite's exposure)
   - [x] 1D textures (bound as one-row 2D textures)
-  - [ ] Driving check after these fixes (motion blur while moving, frame drops) â€” the user drives
+  - [ ] Driving check after these fixes (motion blur while moving, frame drops) — the user drives
   - [x] Evening: flat green car (the game clears the shadow / headlight mask through a depth buffer on the same
-        EDRAM; the fill now reaches the color target) â€” 2026-10-05
+        EDRAM; the fill now reaches the color target) — 2026-10-05
   - [x] Blue outline on the car, blue rear window and bumper (day and night, next to some verges): the clear
         color of 10-bit and 7e3 float targets was read as four bytes, so the reflection cube map was wiped
         bright blue instead of nearly black and showed it in the gaps of its scene (2026-10-05, seen by the user)
   - [x] Night: the headlights light the road (the shaders now get all 256 boolean constants, not b0-b15 per
-        stage: the scenery tests b100) â€” 2026-10-05, seen by the user's capture at night
-  - [x] Map screen: the circle selector (k_DXT3A textures, widened to BC2 blocks) â€” 2026-10-05
+        stage: the scenery tests b100) — 2026-10-05, seen by the user's capture at night
+  - [x] Map screen: the circle selector (k_DXT3A textures, widened to BC2 blocks) — 2026-10-05
   - [x] Diagnostics on demand at a spot the user drove to: `run_native_capture.bat` / `run_emulated_capture.bat`
-        + `tools\capture_now.ps1` (frame dump and trace, or a RenderDoc capture) â€” 2026-10-05
+        + `tools\capture_now.ps1` (frame dump and trace, or a RenderDoc capture) — 2026-10-05
   - [x] Glow around lights (the red glow of the tail lights): not the bloom but the game's occlusion queries;
-        answered with 1000 samples like the emulated GPU (`--fh1_native_occlusion=0`, the default) â€” 2026-10-05
+        answered with 1000 samples like the emulated GPU (`--fh1_native_occlusion=0`, the default) — 2026-10-05
   - [ ] Occlusion queries measured for real (a glow hidden behind an object; needs the 4x samples and the sum
         over the three scene strips)
   - [ ] Picture slightly darker than the emulated one (median 30 against 40 at evening, 36 against 40 by day)
@@ -152,33 +152,33 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] Small formats: k_24_8 not from a resolve, 1D textures, other texture sign modes
 - [ ] **N5 the rest of the game and speed**
   - [x] Reflection cube map with its nine levels, level of detail of every fetch, small resolved pictures at their
-        real width (soft chrome and paint) â€” 2026-10-05
+        real width (soft chrome and paint) — 2026-10-05
   - [x] Textures with the gamma sign use the console's piecewise-linear curve (raw scene now matches the emulated
-        one within a few percent) â€” 2026-10-05
+        one within a few percent) — 2026-10-05
   - [x] Loading screen frozen for good after a new shader library: pipelines prewarmed by several threads (the
-        game stops after a frame of ~3.2 s; that time-out itself is not found) â€” 2026-10-05
+        game stops after a frame of ~3.2 s; that time-out itself is not found) — 2026-10-05
   - [x] Smooth edges: the scene's 4x MSAA passes drawn at twice the size and averaged by the resolve
-        (`--fh1_native_ssaa`); texture sign modes (biased, signed DXN) â€” 2026-10-05
+        (`--fh1_native_ssaa`); texture sign modes (biased, signed DXN) — 2026-10-05
   - [x] First-person view (white world, speckled interior, mirrors without scenery): rectangles use the front
-        stencil state, texture sign modes 1 and 2 were swapped, eight vertex shaders added to the library â€”
+        stencil state, texture sign modes 1 and 2 were swapped, eight vertex shaders added to the library —
         2026-10-05 (fourth session)
   - [x] Picture too bright for ~2.5 s after a loading screen and after a view switch: the adapted luminance was
-        read as value * 2 - 1 (the same swapped sign modes); the user confirmed â€” 2026-10-05
+        read as value * 2 - 1 (the same swapped sign modes); the user confirmed — 2026-10-05
   - [x] Picture a little darker than the emulated one: the bloom's bright pass read the scene as its luminance
         (vertex shader textures now get their own slot, `g_VsSlots`); 58 s: 5/20/35/92/129 against 5/19/35/92/129
-        â€” 2026-10-05
+        — 2026-10-05
   - [x] RenderDoc capture of the native renderer's own frame (`--fh1_native_renderdoc`, `tools\view_capture.ps1`,
         `auto_test.ps1 -Triggers`) and number tools for both renderers (`tools\rdc_tex_stats.py`,
-        `rdc_pick.py`, `rdc_draw_textures.py`) â€” 2026-10-05
+        `rdc_pick.py`, `rdc_draw_textures.py`) — 2026-10-05
   - [x] Crowd cut-out edges: alpha to mask covers 0 to 4 samples with the game's dither offsets
-        (`--fh1_native_alpha_to_mask_samples`); not judged up close by the user yet â€” 2026-10-05
+        (`--fh1_native_alpha_to_mask_samples`); not judged up close by the user yet — 2026-10-05
   - [x] Paint shop: the blurred background (depth of field): fetches addressed in texels, the doubled scene depth
-        reports its guest size â€” 2026-10-05
+        reports its guest size — 2026-10-05
   - [x] Glows through walls: on both renderers, the user takes it for the game's own behavior; measured mode kept
-        behind `--fh1_native_occlusion=1` â€” 2026-10-05
-  - [x] Smooth edges seen by the user while driving ("edges look good now") â€” 2026-10-05
-  - [ ] Night colors at the festival: native redder, less green and blue (340 s mean color 69 55 49 against
-        63 60 56; brightness equal)
+        behind `--fh1_native_occlusion=1` — 2026-10-05
+  - [x] Smooth edges seen by the user while driving ("edges look good now") — 2026-10-05
+  - [ ] Night colors at the festival: the native picture is warm grey where the emulated one is blue (340 s mean
+        color 69 55 49 against 63 60 56, brightness equal): the night color grading; next thing to look at
   - [ ] Races, garage, car photos on the native renderer (the user drives there)
   - [ ] Frame time while driving (185-230 ms frames were seen; render-target copies rejected)
   - [ ] Remove the Carbon / Most Wanted special cases left in the draw code, one at a time
@@ -207,7 +207,7 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
 - Scripted autoplay with route replay: driving tests are done by hand
 - Paused experiments on the emulated GPU: `docs/history/native-render-targets.md`
 
-## Later â€” Nintendo Switch (separate repository)
+## Later — Nintendo Switch (separate repository)
 
 Started from this repo once PC is done. The Tegra X1 has ~20-50x less GPU and much slower CPU
 cores than the Legion Go, so it needs the native renderer, the pre-translated shaders, no CPU
