@@ -22,8 +22,8 @@ normal play, 26-28 in the busiest spots. Default graphics = the SDK's emulated X
 in daylight and at evening is close to it; driving at night works since 2026-10-05 (headlights light the road,
 no blue on the car, map selector); reflections soft and textures on the
 console's gamma curve since the third session of 2026-10-05; smooth edges (four samples per pixel) since the
-same day; still open: the post-processing a little dark (green and blue low at night), glows through walls, races
-and garage not checked. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+same day; first-person view, brightness jumps and the darker picture fixed in the fourth session (brightness now
+equal to the emulated picture at the festival); still open: races, garage, car photos and paint shop not checked. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
 docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
 the frame time goes and what to cut for the Switch.
 
@@ -289,6 +289,23 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
 - Do not edit sources while a build is running: a header changed in the middle gives a mixed build (it happened on
   2026-10-04; rebuild after the last edit). `build_windows.ps1 -SkipCodegen` still runs the code generator when
   rexglue.exe was relinked.
+
+- 2026-10-05, fourth session: the first-person view, the brightness jump after loading / view switches and the
+  darker picture are fixed (rectangle lists use the front stencil state; texture sign modes are 1 = signed, 2 =
+  biased; vertex shader textures get their own slot, `g_VsSlots`). The festival's brightness percentiles now equal
+  the emulated ones. Details in docs/native-renderer-status.md.
+- RenderDoc works on the native renderer too (`--fh1_native_renderdoc=true`, started through RenderDoc, trigger file
+  `capture_now`): with a capture of each renderer at the same second, `tools/rdc_tex_stats.py` gives the numbers of
+  every texture a pass reads and writes. Compare pass by pass before guessing: it found three faults in one day
+  where leaving shaders out found none.
+- The shader library needs the vertex shaders the game uploads but the disc's shader files lack
+  (`build_logs\shaders\synth*`, made by `--fh1_dump_ring_shaders` + `tools/fh1_synth_containers.py`): copy them into
+  `containers` before packing. A draw traced as `VS n-1 ... no registration` is such a shader.
+- Editing anything in `shaders\XenosRecomp` makes the next app build relink rexglue.exe and run the code generator
+  (about 14 minutes instead of 5), and changes every shader's HLSL (re-translation: about 6 minutes; both can run
+  at the same time).
+- The game remembers the camera view between runs, and the unattended tests change it (`tools\view_capture.ps1`
+  presses RB): check the view of a shot before comparing two runs, and tell the user their camera may have changed.
 
 Local folder layout (2026-10-04): `build_logs\reference\` = the screenshots, traces and logs the documents
 refer to; `build_logs\archive-2026-10-04\` = every earlier test, run and build log (nothing there is needed

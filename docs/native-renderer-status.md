@@ -1,35 +1,20 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, third session:
-the reflections are soft like the emulated ones, textures use the console's gamma curve, the loading-screen
-freeze has its cause and a fix, and the scene is drawn with four samples per pixel (smooth edges); see the two
-"third session" sections. The user drove it the same day: "edges look good now", the night colors are fine for
-them, and the glow of the tail lights through a wall "is starting to feel like a game feature/bug" (it shows on
-the emulated GPU too; `build_logs\reference\user-20261005-glow-through-wall.webp`), so the default stays.
+Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, fourth session:
+the first-person view works (world, mirrors, hands and dashboard), the brightness no longer jumps after a loading
+screen or a view switch (confirmed by the user), the festival's brightness equals the emulated picture's (58 s:
+5/20/35/92/129 against 5/19/35/92/129) and alpha to mask covers 0 to 4 samples; see the "fourth session" section.
+Earlier the same day: soft reflections, the console's gamma curve, smooth edges, the loading-screen freeze.
 
-**Open list, in the user's order (2026-10-05, end of the third session):**
+**Open list (2026-10-05, end of the fourth session):**
 
-- **A. First-person view breaks the picture** (user: "the world gets white, the interior of the car is all messed
-  up"). Not looked at yet; the user brings pictures. Start with both renderers at the same spot in that view
-  (`run_native_capture.bat` / `run_emulated_capture.bat`, then `tools\capture_now.ps1`), the `(cause N)` lines
-  that appear when the view changes, and a one-frame trace. A white world is what a flat clear color or depth
-  bytes in a color target look like (see `--fh1_native_depth_fill_color`), and the cockpit view draws the car's
-  interior in its own pass: check its render target, its clears and whether it is a 4x pass (the scene's 4x
-  passes are supersampled since this session: try `--fh1_native_ssaa=false` first, it is the newest change).
-- **B. The picture is too bright for about 2.5 seconds right after a loading screen**, then snaps to normal
-  (user: "the brightness randomly gets higher during gameplay for a split second and then comes back to normal
-  ... it happened right after the loading screen"). Measured at the festival (`test-ovN-*` native, `test-ovX-*`
-  emulated, a shot every second; mean brightness of the window): native 66 76 75 51 50 50, emulated 51 55 55 54
-  54. It is a step, not a fade, and it does not happen in every run (1 of 4 runs had none), with no log line at
-  the moment it ends. Ruled out: the biased reading of the luminance texture (`--fh1_native_texture_signs`; the
-  overshoot is there with it on and off; it is off by default again). Not checked: whether it was there before
-  this session (try `--fh1_native_ssaa=false`, `--fh1_native_gamma_pwl=false`, `--fh1_native_cube_levels=false`
-  one at a time), and what the exposure reads in those frames: the adapted luminance (1FCA6000, 32x32
-  k_32_FLOAT) is first created as a texture read from memory and only then resolved, so the composite's vertex
-  shader (VS n3064) may read zeros at first. Tool: `python %TEMP%\flash.py` is gone with the session; the method
-  was `auto_test.ps1 -Shots "44,45,...,56"` and the mean of each shot.
-- C. Then: the rest of item 3 (the final picture a little darker than the emulated one), the crowd's cut-out
-  edges (item 5), races, garage, car photos, paint shop, items 6-8.
+- **A. Races, garage, car photos, paint shop on the native renderer** (the user's item 5): see "Item 5" in the
+  fourth session's section for what was checked and what was not.
+- **B. Ask the user** how the crowd's edges look up close (`--fh1_native_alpha_to_mask_samples=false` is the old
+  test at one half) and whether the first-person view is right while driving (it was only checked parked).
+- C. Night (300-340 s) was not measured again after the bloom fix: the third session had green and blue low
+  there, which the missing glow may have been. Take `auto_test.ps1 -Shots "300,340"` on both renderers first.
+- D. Then: frame time while driving, items 6-8 below, the depth pre-pass drawing alpha to mask draws solid.
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
 GoatHonks' nfsc-recomp renderer; his later fixes are ported by hand when they work for FH1
@@ -281,6 +266,73 @@ into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. 
 Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
 target they clear (the same EDRAM, four samples per pixel drawn).
 
+## What was fixed on 2026-10-05, fourth session: first-person view, brightness jump, the darker picture
+
+Pictures: `build_logs\reference\item1-cockpit-before-after-emulated.png` (cockpit: native before, native after,
+emulated) and `item3-brightness-before-after-emulated-58s.png`; screenshots `view-ckN-*` / `view-ckX-*` (cockpit)
+and `test-blN-*` / `test-blX-*` (58 and 103 s) in the same folder.
+
+- **First-person view: white world.** In the cockpit view the game draws the driver's hands and the interior first
+  (stencil not 0), then seals those pixels at the nearest depth with a full-screen rectangle (VS n2128, depth only,
+  depth control 087005F7: front "stencil not equal 0, keep", back "always, replace") and draws the world around
+  them. A rectangle list has no front or back on the console; the emulated GPU uses the front state for it. Here
+  the back state was applied: the whole screen was sealed and no world draw passed (the white is the scene's clear
+  color after exposure). Fix: `control_depth` loses bit 7 (two-sided stencil) for rectangle lists
+  (`fh1_native_draws.cpp`). The chase views never showed it: their seal has no back state (00700577).
+- **Mirrors without scenery.** The mirror pass (surface 06010190) draws its scenery with a vertex shader the
+  library did not have (trace: `draw VS n-1 PS n-1 ... no registration ... IM_LOAD VS n-1`). Eight such vertex
+  shaders were dumped with `--fh1_dump_ring_shaders`, made into containers with `tools\fh1_synth_containers.py`
+  (`build_logs\shaders\synth3`) and added to the library. **A library built from the disc alone lacks them**: after
+  `build_shader_library.ps1` copy `synth*\*.bin` into `containers` again. Shader numbers shifted by eight (the
+  composite is now VS n3070 / PS n717, the bright pass VS n501 / PS n1241).
+- **Speckled hands and dashboard, and the brightness jump after a loading screen or a view switch (the user's item
+  2).** The sign modes of a fetch constant are 1 = signed (two's complement data) and 2 = biased (value * 2 - 1)
+  (`xenos::TextureSign`); the code of the third session had them swapped. The normal maps of the hands and the
+  dashboard (k_DXN, signs 2A = biased) were decoded as signed blocks (BC5_SNORM): garbage normals. The adapted
+  luminance (1FCA6000, k_32_FLOAT, signs 55 = signed, which means nothing for floats) was read as value * 2 - 1,
+  about -0.97: the exposure sat at one end of its curve whenever the game restarted its adaptation. After the fix:
+  four runs in a row without the jump (mean brightness per second after loading 49 54 53 52 52, emulated 56 57 57
+  56 56; before 66 76 75 51 50), and across three view switches native follows emulated second by second. The user
+  confirmed ("it's fixed the lighting issue"). `--fh1_native_texture_signs` is on by default (it always was in the
+  code; the note "off by default" of the third session was wrong).
+- **Picture darker than the emulated one (item 3).** Step by step with a RenderDoc capture of each renderer at
+  second 60 (`tools\rdc_tex_stats.py`): scene before post-processing equal within 1 %, adapted luminance 0.0152
+  against 0.0145, color grading cube identical, but the bloom the composite adds was 0.021 against 0.047 (a
+  transfer curve of the composite's output showed dark tones equal, mid-tones 10 % down, highlights 5 %: what a
+  missing glow looks like). Cause: the bright pass (VS n501 / PS n1241) reads the adapted luminance in its vertex
+  shader at sampler register 1, and its pixel shader has a texture at register 1 too. The shared block has sixteen
+  slots numbered by the pixel shader's registers and a vertex sampler with a number the pixel shader also used was
+  left to the pixel shader: the vertex shader got the scene picture (0.125) as its luminance and chose a far lower
+  exposure. Fix: the renderer gives each vertex sampler a free slot and writes the slots in shared word 253
+  (`g_VsSlots`, four bits per register); translated vertex shaders take their slot from it (`FH1_VS_SLOT` in
+  `shader_common.h`, `emitVertexSamplerSlot` in `shader_recompiler.cpp`). Every shader was re-translated.
+  - Numbers after it, brightness percentiles 5/25/50/75/95: 58 s native 5/20/35/92/129, emulated 5/19/35/92/129
+    (before 5/14/36/82/111), mean color 63 54 46 on both; 103 s native 10/29/48/85/139, emulated 10/29/48/85/128.
+    The crowd's mean color is 93 67 32 against 91 65 32 (it was "brighter than the emulated one": the same glow).
+- **Crowd cut-out edges (item 4).** Alpha to mask (RB_COLORCONTROL bit 4) was a test at one half. Now the shader
+  does what the emulated GPU does (`fh1AlphaToMask` in `shader_common.h`, pipeline alpha function 7): sample k of
+  a pixel is kept when alpha + offset / 16 reaches 0.75, 0.25, 0.5, 1.0 (samples 0-3), the two-bit offset coming
+  from the top byte of RB_COLORCONTROL for each pixel of a 2x2 block (passed in bits 16-23 of `g_AlphaFunction`).
+  In the scene's passes drawn at twice the size each host pixel is one sample; a one-sample pass keeps the pixel
+  when two samples would be covered. `--fh1_native_alpha_to_mask_samples=false` is the old test. Festival at 58 s:
+  brightness unchanged (5/20/35/92/130), 30 fps, real GPU per Swap 15.9 ms; the crowd strip looks like the
+  emulated one at that distance (`test-a2mN-*-58s.png`). Not judged up close: the user drives.
+- **Tools of this session.** `--fh1_native_renderdoc=true` (the game started through RenderDoc): a capture of the
+  native renderer's own frame each time a file `capture_now` appears next to fh1.exe.
+  `tools\view_capture.ps1 -Name x [-Native] [-RenderDoc] [-NoCapture]` cycles the camera with RB, recognises the
+  cockpit by its dark roof and captures there (the game remembers the camera of the last run, so the number of
+  presses is not fixed). `auto_test.ps1 -Triggers "60"` writes the triggers at a second. `rdc_tex_stats.py` (mean /
+  min / max of every texture a draw reads and of its output, floats kept), `rdc_pick.py` (a depth buffer or target
+  at chosen pixels after chosen events: this showed the seal writing depth 1 and stencil 21 everywhere),
+  `rdc_draw_textures.py` (the textures of a draw as PNG with their formats: BC5_SNORM against BC5_UNORM gave the
+  sign swap away), `fh1_shot_means.py` (mean brightness of each shot of a run). The trace's draw lines end with
+  clip control, cull mode, the viewport's depth range, alpha reference and depth bias.
+- **Method that worked**: when a view is wrong only in the native renderer, capture both renderers with RenderDoc
+  at that view and compare numbers pass by pass; leaving shaders out one at a time found nothing here (four runs).
+- **Seen on the way, not changed**: the scene after FXAA (render target format 2, 10 bits on the console) is kept
+  in 8 bits here (it holds square roots of the colors, so the precision is close); alpha to mask draws that write
+  no color (the crowd in the depth pre-pass) lose their pixel shader and are drawn solid.
+
 ## What was fixed on 2026-10-05, third session, part 2: smooth edges (the scene at four samples per pixel)
 
 Compare `build_logs\reference\item3-edges-before-after-emulated-58s.png` (the car's edge enlarged: native before,
@@ -307,8 +359,8 @@ native after, emulated) and `test-ssaaN-*` (58, 100, 300, 340 s) with `test-read
   - Numbers: 30 fps for the whole parked run (day to night); the GPU's time per frame went from 19.5 to 21.1 ms.
     Busy scenes while driving are not measured yet (the user drives). The ground also shows its fine texture now,
     like the emulated picture (mean horizontal gradient of the night picture 1.22 before, 1.33 now, emulated 1.37).
-- **Sign modes of textures** (`--fh1_native_texture_signs`, **off by default** since the end of the session: no
-  measured benefit): the sign byte of the fetch constant, swizzled, rides in
+- **Sign modes of textures** (`--fh1_native_texture_signs`; **this paragraph had modes 1 and 2 swapped, corrected
+  in the fourth session: 1 = signed, 2 = biased, and the option was on by default in the code**): the sign byte of the fetch constant, swizzled, rides in
   bits 15-22 of the slot's exponent scale (the gamma mark of part 1 is now mode 3 of it) and `fh1Gamma` applies
   mode 1, biased (value * 2 - 1). Two textures at the festival use other modes than gamma: the adapted luminance
   (1FCA6000, k_32_FLOAT, signs 55, biased) and one k_DXN normal map (signs 2A, signed, now in BC5_SNORM). The

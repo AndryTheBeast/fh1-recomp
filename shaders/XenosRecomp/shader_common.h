@@ -610,11 +610,33 @@ float4 remapInput(float4 value, uint code)
 }
 
 // NFSMW: Xenos alpha test with its comparison function. Positive if the pixel passes.
-float alphaTestValue(float alpha)
+// FH1: alpha to mask (RB_COLORCONTROL bit 4: the crowd, foliage, distance fades). The console covers 0 to 4 of a
+// pixel's four samples: sample k is kept when alpha + offset / 16 reaches its threshold (0.75, 0.25, 0.5, 1.0 for
+// samples 0-3, as the emulated GPU does), with a two-bit offset per pixel of a 2x2 block (bits 16-23 of
+// g_AlphaFunction, the byte of RB_COLORCONTROL). In a pass drawn at twice the size (g_PosScale 0.5) each host pixel
+// is one of those samples; in a one-sample pass the pixel is kept when two samples or more would be.
+bool fh1AlphaToMask(float alpha, float2 pos)
+{
+    uint2 guest = uint2(pos * g_PosScale);
+    uint offset = (g_AlphaFunction >> (16u + 2u * ((guest.x & 1u) + 2u * (guest.y & 1u)))) & 3u;
+    float covered = alpha * 4.0 + float(offset) * 0.25;  // samples covered, before rounding down
+    if (g_PosScale < 1.0)
+    {
+        uint2 host = uint2(pos);
+        uint sample_index = (host.x & 1u) + 2u * (host.y & 1u);
+        float needed = sample_index == 0u ? 3.0 : sample_index == 1u ? 1.0 : sample_index == 2u ? 2.0 : 4.0;
+        return covered >= needed;
+    }
+    return covered >= 2.0;
+}
+
+float alphaTestValue(float alpha, float2 pos)
 {
     bool pass = true;
     switch ((g_SpecConstants() & SPEC_CONSTANT_ALPHA_FUNC_MASK) >> SPEC_CONSTANT_ALPHA_FUNC_SHIFT)
     {
+    // FH1: function 7 (always) with the alpha test specialized means alpha to mask.
+    case 7: pass = fh1AlphaToMask(alpha, pos); break;
     case 0: pass = false; break;
     case 1: pass = alpha < g_AlphaThreshold; break;
     case 2: pass = alpha == g_AlphaThreshold; break;

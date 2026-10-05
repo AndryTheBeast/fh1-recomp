@@ -1115,6 +1115,10 @@ REXCVAR_DEFINE_BOOL(fh1_native_texture_signs, true, "FH1",
                     "Native renderer: textures fetched biased (sign mode 2: value * 2 - 1) are converted in the shader, "
                     "and signed (mode 1) two-channel compressed textures use the host's signed format. false = read as "
                     "unsigned");
+REXCVAR_DEFINE_BOOL(fh1_native_alpha_to_mask_samples, true, "FH1",
+                    "Native renderer: alpha to mask keeps 0 to 4 of a pixel's four samples in the passes drawn at twice "
+                    "the size, with the game's dither offsets (soft cut-out edges of the crowd and foliage). false = "
+                    "the plain test at one half");
 REXCVAR_DEFINE_BOOL(fh1_native_alpha_to_mask, true, "FH1",
                     "Native renderer: draws with alpha to mask and no alpha test discard pixels below half alpha (the "
                     "crowd and foliage cut-outs). false = drawn solid");
@@ -3580,6 +3584,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const uint32_t control_color = r[gr::XE_GPU_REG_RB_COLORCONTROL];
     float threshold_alpha = 0.0f;
     uint32_t function_alpha = 7;  // always
+    uint32_t alpha_to_mask_offsets = 0;
     // The 8 Xenos functions (0 never, 1 <, 2 ==, 3 <=, 4 >, 5 !=, 6 >=, 7 always) with alphaTestValue
     // (fh1_validado_normals library). Without a PS (mode 5) there is no test.
     if (ps && ((control_color >> 3) & 0x1) && (control_color & 0x7) != 7) {
@@ -3593,8 +3598,16 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       // FH1: alpha to mask (RB_COLORCONTROL bit 4) without an alpha test: the crowd and the foliage are cut out by
       // coverage of the 4x MSAA samples. The scene is drawn with one sample here, so the pixel is kept when half of
       // the samples or more would be covered (alpha >= 0.5). Without this the billboards were solid rectangles.
+      // Since 2026-10-05 (fh1_native_alpha_to_mask_samples): function 7 with the alpha test specialized is the
+      // shader's alpha to mask (fh1AlphaToMask in shader_common.h). In the scene's passes drawn at twice the size
+      // each host pixel is one of the console's four samples and 0 to 4 of them are kept, with the game's dither
+      // offsets (the top byte of RB_COLORCONTROL, passed in bits 16-23 of g_AlphaFunction): soft cut-out edges.
       threshold_alpha = 0.5f;
       function_alpha = 6;
+      if (REXCVAR_GET(fh1_native_alpha_to_mask_samples)) {
+        function_alpha = 7;
+        alpha_to_mask_offsets = (control_color >> 24) << 16;
+      }
       specialization |= 0x2;
       specialization |= (function_alpha & 0x7u) << kSpecFunctionAlphaOffset;
     }
@@ -3628,7 +3641,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       const float pos_scale = 1.0f / pass_msaa_scale_;
       std::memcpy(&shared[kWordPosScale], &pos_scale, sizeof(pos_scale));
     }
-    shared[69] = function_alpha;  // g_AlphaFunction
+    shared[69] = function_alpha | alpha_to_mask_offsets;  // g_AlphaFunction
     std::memcpy(&shared[70], ndc, sizeof(ndc));
     std::copy(entry->remaps.begin(), entry->remaps.end(), shared + 74);
     VkDeviceSize offset_shared;

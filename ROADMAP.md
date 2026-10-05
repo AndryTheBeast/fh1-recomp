@@ -159,13 +159,22 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         game stops after a frame of ~3.2 s; that time-out itself is not found) — 2026-10-05
   - [x] Smooth edges: the scene's 4x MSAA passes drawn at twice the size and averaged by the resolve
         (`--fh1_native_ssaa`); texture sign modes (biased, signed DXN) — 2026-10-05
-  - [ ] **First-person view breaks the picture** (white world, broken car interior; user, 2026-10-05): first thing
-        next session
-  - [ ] Picture too bright for ~2.5 s after a loading screen (native only, not every run)
+  - [x] First-person view (white world, speckled interior, mirrors without scenery): rectangles use the front
+        stencil state, texture sign modes 1 and 2 were swapped, eight vertex shaders added to the library —
+        2026-10-05 (fourth session)
+  - [x] Picture too bright for ~2.5 s after a loading screen and after a view switch: the adapted luminance was
+        read as value * 2 - 1 (the same swapped sign modes); the user confirmed — 2026-10-05
+  - [x] Picture a little darker than the emulated one: the bloom's bright pass read the scene as its luminance
+        (vertex shader textures now get their own slot, `g_VsSlots`); 58 s: 5/20/35/92/129 against 5/19/35/92/129
+        — 2026-10-05
+  - [x] RenderDoc capture of the native renderer's own frame (`--fh1_native_renderdoc`, `tools\view_capture.ps1`,
+        `auto_test.ps1 -Triggers`) and number tools for both renderers (`tools\rdc_tex_stats.py`,
+        `rdc_pick.py`, `rdc_draw_textures.py`) — 2026-10-05
+  - [ ] Crowd cut-out edges: alpha to mask covers 0 to 4 samples (`--fh1_native_alpha_to_mask_samples`), see the
+        status document for its state
   - [x] Glows through walls: on both renderers, the user takes it for the game's own behavior; measured mode kept
         behind `--fh1_native_occlusion=1` — 2026-10-05
   - [x] Smooth edges seen by the user while driving ("edges look good now") — 2026-10-05
-  - [ ] Post-processing still a little dark; green and blue low at night (exposure, bloom or color grading)
   - [ ] Races, garage, car photos, paint shop on the native renderer
   - [ ] Frame time while driving (185-230 ms frames were seen; render-target copies rejected)
   - [ ] Remove the Carbon / Most Wanted special cases left in the draw code, one at a time
