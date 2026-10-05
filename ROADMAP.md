@@ -260,9 +260,9 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
 
 ## Other projects to borrow from
 
-- nfsc-recomp (GoatHonks, https://github.com/GoatHonks/nfsc-recomp, local copy `..\repos\nfsc-recomp-main`):
+- nfsc-recomp (GoatHonks; his repository is private, so no link here; local copy `..\repos\nfsc-recomp-main`):
   the native renderer FH1's started from
-- nfsc-nx (GoatHonks; his repository says it is private for now, so no link here; local copy `..\repos\nfsc-nx-main`), added by the
+- nfsc-nx (GoatHonks; his repository is private, so no link here; local copy `..\repos\nfsc-nx-main`), added by the
   user on 2026-10-05: the Switch side of his Carbon port (devkitA64 / libnx toolchain file, the Mesa / NVK
   driver patch and build notes, the Switch documents; it takes the PC port in as a git submodule). **The
   reference for our first Switch build**: read its README, ROADMAP and `docs/` before starting ours
