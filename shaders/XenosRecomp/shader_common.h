@@ -109,6 +109,12 @@ struct Fh1BlockShared { float4 v[64]; };  // FH1: 256 words (g_PosScale 252; boo
 // FH1: guest pixels per host pixel (1, or 0.5 in a 4x pass drawn at twice the size): the pixel position register
 // counts guest pixels.
 #define g_PosScale                 (NFSMW_UBO ? FH1_SHARED_FLOAT(1008) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 1008))
+// FH1: the slot of the shared block that holds the texture of vertex sampler register N (0-7), four bits each.
+// The slots are numbered by the pixel shader's sampler registers; the renderer gives a vertex sampler whose number
+// the pixel shader also uses a free one (the bloom's bright pass reads the adapted luminance in its vertex shader
+// at register 1, and its pixel shader has a texture at 1 too).
+#define g_VsSlots                  (NFSMW_UBO ? FH1_SHARED_UINT(1012) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 1012))
+#define FH1_VS_SLOT(N)             ((g_VsSlots >> ((N) * 4)) & 15u)
 // NFSMW: alpha test function (RB_COLORCONTROL.alpha_func): 0 never, 1 <, 2 ==, 3 <=,
 // 4 >, 5 !=, 6 >=, 7 always.
 #define g_AlphaFunction            (NFSMW_UBO ? FH1_SHARED_UINT(276) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 276))

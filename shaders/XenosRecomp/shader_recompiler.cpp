@@ -1343,6 +1343,26 @@ void ShaderRecompiler::recompile(const AluInstruction& instr)
     closeSiWritesPredicate(markPredicate);
 }
 
+// FH1: the descriptor, 1/size and exponent scale of a vertex sampler. The shared block's sixteen slots are numbered
+// by the pixel shader's sampler registers, so a vertex shader cannot assume its own register number: the renderer
+// writes the slot of each vertex sampler register in g_VsSlots (FH1_VS_SLOT in shader_common.h). Pixel shaders keep
+// their fixed offsets (and their HLSL does not change).
+void ShaderRecompiler::emitVertexSamplerSlot(const std::string& name, uint32_t registerIndex)
+{
+    const std::string slot = fmt::format("FH1_VS_SLOT({})", registerIndex);
+    for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
+    {
+        println("#define {0}_Texture{1}DescriptorIndex (NFSMW_UBO ? FH1_SHARED_UINT({2} + {3} * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {2} + {3} * 4))",
+            name, TEXTURE_DIMENSIONS[j], j * 64, slot);
+    }
+    println("#define {0}_SamplerDescriptorIndex (NFSMW_UBO ? FH1_SHARED_UINT({1} + {2} * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {1} + {2} * 4))",
+        name, std::size(TEXTURE_DIMENSIONS) * 64, slot);
+    println("#define {0}_InvSize (NFSMW_UBO ? float2(FH1_SHARED_FLOAT(360 + {1} * 8), FH1_SHARED_FLOAT(364 + {1} * 8)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 360 + {1} * 8))",
+        name, slot);
+    println("#define {0}_ExpScale (NFSMW_UBO ? FH1_SHARED_FLOAT(656 + {1} * 4) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 656 + {1} * 4))",
+        name, slot);
+}
+
 void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_view& include)
 {
     const auto shaderContainer = reinterpret_cast<const ShaderContainer*>(shaderData);
@@ -1428,6 +1448,13 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
         case RegisterSet::Sampler:
         {
+            if (!isPixelShader && constantInfo->registerIndex < 8)
+            {
+                // FH1: a vertex sampler takes its slot from g_VsSlots (see emitVertexSamplerSlot).
+                emitVertexSamplerSlot(std::string(constantName), uint32_t(constantInfo->registerIndex.get()));
+                samplers.emplace(constantInfo->registerIndex, constantName);
+                break;
+            }
             for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
             {
                 println("#define {}_Texture{}DescriptorIndex (NFSMW_UBO ? FH1_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
@@ -1558,6 +1585,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
     {
         if (samplers.count(slot))
             continue;
+        if (!isPixelShader && slot < 8)
+        {
+            emitVertexSamplerSlot(fmt::format("s{}", slot), slot);
+            continue;
+        }
         for (size_t j = 0; j < std::size(TEXTURE_DIMENSIONS); j++)
             println("#define s{}_Texture{}DescriptorIndex (NFSMW_UBO ? FH1_SHARED_UINT({}) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + {}))",
                 slot, TEXTURE_DIMENSIONS[j], j * 64 + slot * 4, j * 64 + slot * 4);

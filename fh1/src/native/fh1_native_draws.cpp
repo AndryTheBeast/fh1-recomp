@@ -1245,6 +1245,7 @@ constexpr size_t kMaxRegistersList = 4096;
 // 90 words up to g_InputRemap (bytes 296..359) and 32 more for 1/size of the 16 texture slots (bytes
 // 360..487), which avoid querying the texture size on every sample.
 constexpr uint32_t kWordPosScale = 252;  // FH1: g_PosScale
+constexpr uint32_t kWordSlotsVs = 253;   // FH1: g_VsSlots, the slot of each vertex sampler register (4 bits each)
 constexpr uint32_t kWordsShared = 256;  // FH1: g_PosScale (252); FH1: all 256 booleans (244-251); NFSC: + 32 loop constants (words 122-153); FH1: g_GuestBase / g_FetchAddress (154-163), exponent scales (164-179), ranked fetches (180-243)
 constexpr uint32_t kWordFetchRankAddress = 180;  // FH1: g_FetchRankAddress, one word per declared fetch 0-31
 constexpr uint32_t kWordFetchRankParam = 212;    // FH1: g_FetchRankParam
@@ -3117,19 +3118,46 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         }
       }
     }
+    // FH1: the slot of each vertex sampler register (four bits each, registers 0-7), read by the translated vertex
+    // shaders (FH1_VS_SLOT in shader_common.h). The sixteen slots of the shared block are numbered by the pixel
+    // shader's registers; a vertex sampler whose number the pixel shader also uses gets a free one. Until 2026-10-05
+    // it was left to the pixel shader: the bloom's bright pass (pixel samplers 0 and 1, vertex sampler 1 = the
+    // adapted luminance) read the scene picture as its luminance, chose a far lower exposure and extracted less
+    // than half of the glow.
+    uint32_t slots_vs = 0x76543210u;
     if (vs_textures_) {
-      const size_t of_ps = samplers_draw_n;
+      uint32_t taken = 0;
+      for (size_t i = 0; i < samplers_draw_n; ++i) {
+        taken |= 1u << samplers_draw[i].reg_entry;
+      }
       for (const SamplerShader& sampler : p.vs->samplers) {
-        bool listed = sampler.reg_entry >= 16;
-        for (size_t i = 0; i < of_ps && !listed; ++i) {
-          listed = samplers_draw[i].reg_entry == sampler.reg_entry;
+        if (sampler.reg_entry >= 16 || samplers_draw_n >= samplers_draw.size()) {
+          continue;
         }
-        if (!listed && samplers_draw_n < samplers_draw.size()) {
-          samplers_fetch[samplers_draw_n] = uint8_t(sampler.reg_entry + 16);
-          samplers_draw[samplers_draw_n++] = sampler;
+        uint32_t slot = sampler.reg_entry;
+        if ((taken >> slot) & 0x1) {
+          slot = 16;
+          for (uint32_t candidate = 16; candidate-- > 0 && sampler.reg_entry < 8;) {
+            if (!((taken >> candidate) & 0x1)) {
+              slot = candidate;
+              break;
+            }
+          }
+          if (slot == 16) {
+            Notify(23, "vertex shader texture without a free slot: it reads the pixel shader's");
+            continue;
+          }
         }
+        taken |= 1u << slot;
+        if (sampler.reg_entry < 8) {
+          slots_vs = (slots_vs & ~(0xFu << (sampler.reg_entry * 4))) | (slot << (sampler.reg_entry * 4));
+        }
+        samplers_fetch[samplers_draw_n] = uint8_t(sampler.reg_entry + 16);
+        samplers_draw[samplers_draw_n] = sampler;
+        samplers_draw[samplers_draw_n++].reg_entry = decltype(sampler.reg_entry)(slot);
       }
     }
+    shared[kWordSlotsVs] = slots_vs;
     for (size_t sampler_i = 0; sampler_i < samplers_draw_n; ++sampler_i) {
       const SamplerShader& sampler = samplers_draw[sampler_i];
       const uint32_t* fetch = r + kRegFetch + uint32_t(samplers_fetch[sampler_i]) * 6;

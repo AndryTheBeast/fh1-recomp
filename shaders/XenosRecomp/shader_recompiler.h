@@ -240,6 +240,7 @@ struct ShaderRecompiler : StringBuffer
 
     void printDstSwizzle(uint32_t dstSwizzle, bool operand);
     void printDstSwizzle01(uint32_t dstRegister, uint32_t dstSwizzle);
+    void emitVertexSamplerSlot(const std::string& name, uint32_t registerIndex);
 
     void recompile(const VertexFetchInstruction& instr, uint32_t address);
     void recompile(const TextureFetchInstruction& instr, bool bicubic);

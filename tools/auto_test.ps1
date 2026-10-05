@@ -15,6 +15,10 @@ param(
   [string]$ExtraArgs = "",
   # Scripted controller, passed as --fh1_autoplay (format in fh1/src/fh1_autoplay.h).
   [string]$Autoplay = "",
+  # Seconds at which the "capture now" triggers are written next to fh1.exe (capture_now, dump_now, trace_now):
+  # with -RenderDoc and --fh1_renderer=native --fh1_native_renderdoc=true a RenderDoc capture of the native frame,
+  # with --fh1_dump_resolved_at_s=-1 / --fh1_native_diag_frame_s=-1 a picture dump / a one-frame trace.
+  [string]$Triggers = "",
   # Launch through RenderDoc (renderdoccmd capture). Combine with
   # -ExtraArgs "--renderdoc_capture_seconds=120,150" to record single frames unattended;
   # captures land in build_logs\rdc-<Name>-<date>_frame*.rdc.
@@ -87,16 +91,26 @@ if ($RenderDoc) {
   $p = Start-Process -FilePath $Exe -ArgumentList $argv -WorkingDirectory (Split-Path $Exe) -PassThru
 }
 $start = Get-Date
-foreach ($s in ($ShotList | Sort-Object)) {
-  $wait = $s - ((Get-Date) - $start).TotalSeconds
+$TriggerFiles = @("capture_now", "dump_now", "trace_now") | ForEach-Object { Join-Path (Split-Path $Exe) $_ }
+$TriggerList = @($Triggers -split "[,\s]+" | Where-Object { $_ } | ForEach-Object { [int]$_ })
+$Timeline = @($ShotList | ForEach-Object { [pscustomobject]@{ s = $_; shot = 1 } }) +
+  @($TriggerList | ForEach-Object { [pscustomobject]@{ s = $_; shot = 0 } })
+foreach ($e in ($Timeline | Sort-Object s, shot)) {
+  $wait = $e.s - ((Get-Date) - $start).TotalSeconds
   if ($wait -gt 0) { Start-Sleep -Milliseconds ([int]($wait * 1000)) }
   if ($p.HasExited) { break }
-  Shot $p (Join-Path $Logs ("test-$Name-$Stamp-{0}s.png" -f $s))
+  if ($e.shot) {
+    Shot $p (Join-Path $Logs ("test-$Name-$Stamp-{0}s.png" -f $e.s))
+  } else {
+    foreach ($t in $TriggerFiles) { Set-Content -Path $t -Value "1" }
+    Write-Host "triggers written at $($e.s) s"
+  }
 }
 $wait = $Seconds - ((Get-Date) - $start).TotalSeconds
 if ($wait -gt 0 -and -not $p.HasExited) { Start-Sleep -Milliseconds ([int]($wait * 1000)) }
 if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
 Start-Sleep -Seconds 2
+foreach ($t in $TriggerFiles) { if (Test-Path $t) { Remove-Item $t } }
 
 Write-Host "=== $Name  log: $Log"
 if (Test-Path "$Log.crash.txt") { Write-Host "CRASHED:"; Get-Content "$Log.crash.txt" | Select-Object -First 12 }
