@@ -232,7 +232,11 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         without texture, and a slab of forest hangs in the sky above the road, upside down and stretched, as if
         scenery were drawn with the wrong position or a wrong texture. The road, the car, the crowd, the signs and
         the far hills are right. Ask the user whether it stays or flickers. May be the same fault as the missing
-        ground
+        ground. Second screenshot, same race at 82 % (`user-race-scenery-wrong-2-20261006.webp`): a patch of the
+        hillside behind the crowd shows snowy mountains, sky and trees upside down. A clue (a guess, not checked):
+        an upside-down scene is what the game's mirrored reflection picture looks like, so these surfaces may be
+        drawn with the reflection texture (or an old resolved picture at the same address) in place of their own;
+        the forest in the sky of the first screenshot is upside down too
   - [ ] Make the native renderer the default once it matches the emulated picture
 
 ## Tools (done)
