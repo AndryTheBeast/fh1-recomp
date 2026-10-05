@@ -9265,6 +9265,15 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         // shimmered as the camera moved. Resolved textures report their size like any other.
         width_host_out = resolved->width;
         height_host_out = resolved->height;
+        // FH1: the scene's resolved depth is kept at twice the size (fh1_native_ssaa). The shaders' texel offsets
+        // and the fetches addressed in texels (tx_coord_denorm: the depth-of-field passes) count the console's
+        // texels, so such a picture reports the size of its fetch constant: with the host size the depth-of-field
+        // read its depth at half the coordinates and blurred the car in the paint shop.
+        if (const uint32_t width_guest = (f[2] & 0x1FFF) + 1, height_guest = ((f[2] >> 13) & 0x1FFF) + 1;
+            resolved->width == width_guest * 2 && resolved->height == height_guest * 2) {
+          width_host_out = width_guest;
+          height_host_out = height_guest;
+        }
         // FH1: fetched narrower than the image, which took the resolve's pitch (see HintWidthResolved).
         if (const uint32_t width_fetch = (f[2] & 0x1FFF) + 1;
             !one_d && width_fetch < resolved->width && ((width_fetch + 31) & ~31u) == resolved->width) {

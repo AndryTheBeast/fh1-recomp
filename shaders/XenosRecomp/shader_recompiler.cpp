@@ -528,7 +528,20 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
 #else
     print("({0}_Texture{1}DescriptorIndex, {0}_SamplerDescriptorIndex, ", constNamePtr, dimension);
 #endif
+#ifdef NFSMW_RECOMP
+    // FH1: coordinates in texels (tx_coord_denorm), not 0..1: the depth-of-field blur passes address their
+    // pictures with the pixel position. Without this every tap landed on the picture's edge and the blurred
+    // background of the paint shop and the menus was one flat color. 1/size is the slot's (host image).
+    const bool texels = instr.texCoordDenorm && instr.dimension == TextureDimension::Texture2D &&
+        instr.opcode == FetchOpcode::TextureFetch;
+    if (texels)
+        out += "(";
     printSrcRegister(componentCount);
+    if (texels)
+        print(") * {}_InvSize", constNamePtr);
+#else
+    printSrcRegister(componentCount);
+#endif
 
     switch (instr.dimension)
     {
