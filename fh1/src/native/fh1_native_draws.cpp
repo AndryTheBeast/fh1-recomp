@@ -1251,6 +1251,8 @@ constexpr size_t kHeaderFilePipelines = 2 * sizeof(uint32_t) + 2 * sizeof(uint64
 // once (so the existing cache is not lost) and deleted when the new one is written.
 constexpr const char* kFileCacheOld = "fh1_native_pipelines.bin";
 constexpr const char* kFileListOld = "fh1_native_pipelines_list.bin";
+// FH1: the pipeline list shipped with the port, next to fh1.exe (see LoadListPipelines).
+constexpr const char* kFileListShipped = "fh1_pipelines.nfpl";
 // The pipeline prewarm list. It holds no game data: state keys, formats and fingerprints. A header of four
 // uint32 ("NFPL", version, record size and record count) followed by the records (RegisterPipeline).
 constexpr uint32_t kMagicListPipelines = 0x4C50464Eu;  // "NFPL" in little-endian
@@ -2196,6 +2198,10 @@ struct RegisterPipeline {
 };
 static_assert(std::has_unique_object_representations_v<RegisterPipeline>,
               "RegisterPipeline is saved to disk byte by byte: no implicit padding");
+// tools/fh1_pipelines.py and the shipped list (fh1/data/fh1_pipelines.nfpl) know these two sizes: if one
+// changes, update the tool and record the list again.
+static_assert(sizeof(KeyPipeline) == 80 && sizeof(RegisterPipeline) == 424,
+              "the pipeline record changed size: see tools/fh1_pipelines.py");
 
 struct Texture {
   ImageNative image;
@@ -13016,9 +13022,46 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
       written_list_ = std::move(data);  // the writer thread rewrites it unchanged if only the cache changes
     }
+    // FH1: the list shipped with the port (fh1_pipelines.nfpl next to fh1.exe, made by tools/fh1_pipelines.py
+    // from recorded play; the same "NFPL" bytes). Its records this PC does not know yet are added after the
+    // local ones, so a fresh install prewarms what other sessions already met. No game data, no driver cache.
+    const size_t n_local = list_file_.size();
+    size_t n_shipped = 0;
+    {
+      std::vector<uint8_t> shipped;
+      ReadFileWhole(rex::filesystem::GetExecutableFolder() / kFileListShipped, shipped);
+      uint32_t header_shipped[4] = {};
+      if (shipped.size() >= kHeaderList) {
+        std::memcpy(header_shipped, shipped.data(), sizeof(header_shipped));
+      }
+      if (shipped.empty()) {
+        // no shipped list: only what this PC has met
+      } else if (header_shipped[0] != kMagicListPipelines || header_shipped[1] != kVersionListPipelines ||
+                 header_shipped[2] != sizeof(RegisterPipeline) ||
+                 shipped.size() != kHeaderList + size_t(header_shipped[3]) * sizeof(RegisterPipeline)) {
+        REXLOG_WARN("[native] C6 prewarm: {} is of another version or damaged: ignored", kFileListShipped);
+      } else {
+        n_shipped = header_shipped[3];
+        for (uint32_t i = 0; i < header_shipped[3] && list_file_.size() < kMaxRegistersList; ++i) {
+          RegisterPipeline r;
+          std::memcpy(&r, shipped.data() + kHeaderList + size_t(i) * sizeof(RegisterPipeline), sizeof(r));
+          if (r.n_attributes > RegisterPipeline::kMaxAttributes || r.n_bindings > RegisterPipeline::kMaxBindings) {
+            continue;
+          }
+          if (index_list_.emplace(XXH3_64bits(&r.key, sizeof(r.key)), list_file_.size()).second) {
+            list_file_.push_back(r);
+          }
+        }
+        if (list_file_.size() != n_local) {
+          list_without_save_ = 1;  // they join this PC's list on the first save
+        }
+      }
+    }
     state_list_.assign(list_file_.size(), kListPending);
-    REXLOG_INFO("[native] C6 prewarm (build 186): {} pipelines in the list of {}{}{}", list_file_.size(),
+    REXLOG_INFO("[native] C6 prewarm (build 186): {} pipelines in the list of {}{}{}", n_local,
                 path.string(), reason ? ": " : "", reason ? reason : "");
+    REXLOG_INFO("[native] C6 prewarm: shipped list {} has {} pipelines, {} of them new to this PC: {} to prewarm",
+                kFileListShipped, n_shipped, list_file_.size() - n_local, list_file_.size());
   }
 
   // Ring only (SaveCachePipelines): the file's list without the records the thread found missing their

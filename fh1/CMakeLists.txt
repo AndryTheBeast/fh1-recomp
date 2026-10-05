@@ -59,6 +59,12 @@ if(WIN32)
     target_link_libraries(fh1 PRIVATE dbghelp)
 endif()
 
+# The native renderer's shipped pipeline list (state keys and shader fingerprints, no game data; made by
+# tools/fh1_pipelines.py) goes next to fh1.exe, where LoadListPipelines reads it.
+add_custom_command(TARGET fh1 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/data/fh1_pipelines.nfpl $<TARGET_FILE_DIR:fh1>/fh1_pipelines.nfpl)
+
 # With the SDK built as a subdirectory (REXSDK_DIR, as tools/build_windows.ps1 does),
 # rex_app.cpp and main.cpp include imgui.h, but rexruntime links imgui privately, so its
 # include path does not reach the executable. Same for renderdoc_app.h, which
