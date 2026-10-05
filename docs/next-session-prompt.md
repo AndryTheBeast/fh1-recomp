@@ -1,4 +1,4 @@
-# Prompt for the next session (written 2026-10-05, after the second session of that day)
+# Prompt for the next session (written 2026-10-05, at the end of the second session of that day)
 
 Paste the block below as the first message of a new Claude session opened in `C:\Users\andre\Desktop\FH1-recomp`.
 
@@ -6,24 +6,29 @@ Paste the block below as the first message of a new Claude session opened in `C:
 Read fh1-recomp/CLAUDE.md, then fh1-recomp/docs/native-renderer-status.md, and work on the native renderer
 (run_fh1.bat --fh1_renderer=native).
 
-Done last time and seen by me: the blue outline on the car, the headlights lighting the road, the map screen's
-circle selector. Now the open list of the status document, in this order:
-1. I drove the fixed build (day, night, a race): everything looks normal. The rectangular patch under the car
-   with a different texture shows on both renderers, so it is not a native renderer fault: leave it unless we
-   find footage of the real Xbox without it (then it belongs to the list of the emulated GPU).
-2. Chrome and paint are sharper and whiter than the emulated ones (parked at the festival at night:
-   build_logs\test-parkN-*-340s.png against test-parkX-*-340s.png). The reflection cube map has one level here
-   and nine on the console; the game renders the smaller ones itself (1C9F9000, 1CA59000, 1CA71000 ...).
-3. The picture slightly darker than the emulated one (may be the same cause as 2).
-4. Stair-stepped edges (the scene is drawn with one sample where the console has 4x MSAA).
-5. Measuring the lights' visibility for real (occlusion queries), then the small items of the list.
+Where we are: the blue outline, the headlights on the road and the map selector are fixed, and I drove the
+fixed build (day, night, a race): everything looks normal. The rectangular patch under the car shows on both
+renderers, so leave it.
+
+Fix these four, in this order, one at a time:
+1. Chrome and paint are sharper and whiter than on the emulated GPU, where they are soft (parked at the
+   festival at night: build_logs\test-parkN-*-340s.png against test-parkX-*-340s.png). The reflection cube map
+   has one level here and nine on the console; the game renders the smaller ones itself (1C9F9000, 1CA59000,
+   1CA71000 ...).
+2. The picture is slightly darker than the emulated one (festival at dusk, median brightness 27 against 39).
+   Check first whether fixing 1 already changed it.
+3. Stair-stepped edges: the scene is drawn with one sample where the console has 4x MSAA.
+4. Glows of lamps and tail lights show through walls and other cars (it also happens on the emulated GPU,
+   which does not measure): make the native renderer measure the occlusion queries for real.
+After each one: show me the comparison, commit and push, then go on to the next.
+
 Also watch for the loading screen freezing for good (it happened once, on the first run after a new shader
 library): if it happens again, find what the renderer's thread is waiting for.
 
-For a spot the unattended test does not reach (the road, night, the map) use the tools of last time: I start
+1 and 2 can be tested without me (the car parked at the festival reaches night in about 5 minutes). For a spot
+the unattended test does not reach (the road, a wall for 4) use the tools of last time: I start
 run_native_capture.bat or run_emulated_capture.bat (or run_native_skip.bat), drive there, stop and type "now",
-and you run tools\capture_now.ps1 (or tools\skip_cycle.ps1). Night falls about 5 minutes after launch. Tell me
-exactly what to run and when.
+and you run tools\capture_now.ps1 (or tools\skip_cycle.ps1). Tell me exactly what to run and when.
 
 Rules:
 - Compare every change against the emulated GPU at the same second or the same spot (tools\auto_test.ps1, with
