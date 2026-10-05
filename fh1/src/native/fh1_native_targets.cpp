@@ -425,6 +425,7 @@ REXCVAR_DEFINE_BOOL(fh1_native_clear_useful_area, false, "FH1",
 // at once.
 REXCVAR_DECLARE(int32_t, fh1_native_per_draw_statistics_s);
 REXCVAR_DECLARE(bool, fh1_barriers);
+REXCVAR_DECLARE(bool, fh1_native_ssaa);
 // fh1_native_shadow_minimum only pays off with the single-sample PCF (defined in fh1_native_draws.cpp).
 REXCVAR_DECLARE(bool, fh1_native_cheap_pcf);
 REXCVAR_DEFINE_BOOL(fh1_native_pipeline_statistics, false, "FH1",
@@ -1561,18 +1562,23 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     const uint32_t command = (control >> 20) & 0x3;
     const bool copy_2 = command == uint32_t(xenos::CopyCommand::kRaw) ||
                         command == uint32_t(xenos::CopyCommand::kConvert);
-    const uint32_t pitch = reg.rb_surface_info & 0x3FFF;
+    const uint32_t pitch_guest = reg.rb_surface_info & 0x3FFF;
     const uint32_t msaa = (reg.rb_surface_info >> 16) & 0x3;
     if (msaa != uint32_t(xenos::MsaaSamples::k1X) && warned_.insert(1).second) {
       REXLOG_INFO("[native] C2: target with MSAA: used with 1 sample");
     }
+    // FH1 (fh1_native_ssaa): the scene's 4x passes are drawn into the image of twice the pitch at twice the size
+    // (DrawsVulkan::BeginPass). The resolve shrinks it: a linear blit of 2 to 1 is the average of the four samples.
+    const bool ssaa = Ssaa(msaa, pitch_guest);
+    const int32_t m = ssaa ? 2 : 1;
+    const uint32_t pitch = pitch_guest * uint32_t(m);
     if (source >= xenos::kMaxColorRenderTargets) {
       // From depth: the copy goes to a resolved texture with the host depth
       // format, which the draws sample as k_24_8. With a depth source no color
       // is cleared (IsClearingColor, graphics/util/draw.h:534-538).
       const bool clears_2 = ((control >> 9) & 0x1) && clear_depth_;
       if (copy_2) {
-        CopyDepth(reg, pitch, clears_2);
+        CopyDepth(reg, pitch_guest, clears_2, ssaa);
       }
       if (clears_2) {
         ClearDepth(reg, pitch);
@@ -1585,7 +1591,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       return Reject(100 + format_color, "render target format not supported yet");
     }
     int32_t x0, y0, x1, y1;
-    if (!Rectangle(reg, pitch, x0, y0, x1, y1)) {
+    if (!Rectangle(reg, pitch_guest, x0, y0, x1, y1)) {
       return false;
     }
 
@@ -1597,8 +1603,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     // The game has just said which area of this render target matters to it. It is the data RestoreContent
     // uses to stop copying the bottom rows that nobody draws or reads (the scene render target is created
     // 1280x1280 to draw 1280x720).
-    NoteAreaUseful(*target_render, y1);
-    NoteUseClear(*target_render, uint32_t(std::max(x1, 0)), uint32_t(std::max(y1, 0)));
+    NoteAreaUseful(*target_render, y1 * m);
+    NoteUseClear(*target_render, uint32_t(std::max(x1, 0)) * uint32_t(m), uint32_t(std::max(y1, 0)) * uint32_t(m));
     uint32_t base_resolved = 0;
     Resolved* resolved = nullptr;
     uint32_t dx = 0, dy = 0;
@@ -1714,8 +1720,9 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       Prepare(resolved->image);
       // What the game asks for and what fits in the render target.
       const uint32_t requested_width =
-          std::min(uint32_t(x1 - x0), target_render->width - uint32_t(x0));
-      const uint32_t requested_height = std::min(uint32_t(y1 - y0), target_render->height - uint32_t(y0));
+          std::min(uint32_t(x1 - x0), target_render->width / uint32_t(m) - uint32_t(x0));
+      const uint32_t requested_height =
+          std::min(uint32_t(y1 - y0), target_render->height / uint32_t(m) - uint32_t(y0));
       const uint32_t fits_width = resolved->image.width > dx ? resolved->image.width - dx : 0;
       const uint32_t fits_height = resolved->image.height > dy ? resolved->image.height - dy : 0;
       const uint32_t width = std::min(requested_width, fits_width);
@@ -1731,7 +1738,31 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                            target_render->format == kFormatColor &&
                            resolved->image.format == kFormatColor &&
                            (requested_width * 4 >= fits_width * 5 || requested_height * 4 >= fits_height * 5);
-      if (shrink && uint32_t(x0) < target_render->width && uint32_t(y0) < target_render->height) {
+      if (ssaa) {
+        if (width && height && dx < resolved->image.width && dy < resolved->image.height) {
+          ResolveFrontPrevious(base_resolved, dx == 0 && dy == 0 && width == resolved->image.width &&
+                                                  height == resolved->image.height);
+          VkImageBlit average{};
+          average.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+          average.srcOffsets[0] = {x0 * 2, y0 * 2, 0};
+          average.srcOffsets[1] = {(x0 + int32_t(width)) * 2, (y0 + int32_t(height)) * 2, 1};
+          average.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+          average.dstOffsets[0] = {int32_t(dx), int32_t(dy), 0};
+          average.dstOffsets[1] = {int32_t(dx + width), int32_t(dy + height), 1};
+          BarrierGlobal(commands_work_);
+          blit_(commands_work_, target_render->image, VK_IMAGE_LAYOUT_GENERAL, resolved->image.image,
+                VK_IMAGE_LAYOUT_GENERAL, 1, &average, VK_FILTER_LINEAR);
+          ++copies_;
+          if (ssaa_resolves_++ == 0) {
+            REXLOG_INFO("[fh1] supersampled scene: {}x{} of the {}x{} target averaged into {}x{} at ({},{}) of the "
+                        "resolved texture",
+                        width * 2, height * 2, target_render->width, target_render->height, width, height, dx, dy);
+          }
+          NoteCopy(width, height);
+          ResolvedWritten(base_resolved, uint64_t(width) * height * 4);
+          ReadResolved(reg, *resolved, x0, y0, dx, dy, width, height);
+        }
+      } else if (shrink && uint32_t(x0) < target_render->width && uint32_t(y0) < target_render->height) {
         // fh1_native_lazy_front. If this texture had a deferred copy, it is dropped if this resolve
         // covers it entirely, and recorded first otherwise.
         ResolveFrontPrevious(base_resolved, dx == 0 && dy == 0 && fits_width == resolved->image.width &&
@@ -1958,7 +1989,16 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   // clears: this same game command clears the render target right after resolving it. Only then is it worth
   // swapping the images: if the game kept drawing on top, the content would have to be brought back and the
   // copy would be paid anyway (measured: one restore per frame on the shadow map).
-  void CopyDepth(const RegistersCopy& reg, uint32_t pitch, bool clears_2) {
+  // FH1 (fh1_native_ssaa): whether a surface is a supersampled one (the same test as DrawsVulkan::BeginPass).
+  // The color is averaged by a blit. The depth cannot be (AMD has no blit for depth formats): its resolved texture
+  // stays at twice the size, like the scaled shadow map's, since everything samples it with coordinates 0..1 and
+  // no filtering, which picks one of each pixel's four samples.
+  bool Ssaa(uint32_t msaa, uint32_t pitch_guest) const {
+    return msaa == uint32_t(xenos::MsaaSamples::k4X) && pitch_guest > 640 && REXCVAR_GET(fh1_native_ssaa);
+  }
+  uint64_t ssaa_resolves_ = 0;
+
+  void CopyDepth(const RegistersCopy& reg, uint32_t pitch, bool clears_2, bool ssaa = false) {
     const uint32_t info_target = reg.rb_copy_dest_info;
     if ((info_target >> 3) & 0x1) {
       Reject(3, "copy to a 3D texture or array: not yet");
@@ -1970,7 +2010,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     }
     const uint32_t info = reg.rb_depth_info;
     ++copies_depth_;  // the game asks to resolve the depth to a texture
-    Image* depth = GetDepth(info & 0xFFF, (info >> 16) & 0x1, pitch);
+    Image* depth = GetDepth(info & 0xFFF, (info >> 16) & 0x1, ssaa ? pitch * 2 : pitch);
     if (!depth) {
       return;
     }
@@ -1993,7 +2033,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     if (!depth->width_guest || depth->width_guest == depth->width) {  // not the scaled shadow map
       uint32_t row_extra = 0, base_container = 0;
       container = FindResolvedContainer(base & 0x1FFFFFFF, pitch_target, row_extra, base_container,
-                                              format_depth_);
+                                              format_depth_, ssaa ? 2 : 1);
       if (container) {
         if (!strips_depth_warned_) {
           strips_depth_warned_ = true;
@@ -2010,6 +2050,10 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     // with NEAREST: the image does not change. What is saved is the upscaling blit (1.78 ms on the console)
     // and the larger half of the copy (10.24 MB -> 4.2 MB, twice per frame).
     uint32_t width_resolved = pitch_target, height_resolved = height_target;
+    if (ssaa) {
+      width_resolved *= 2;
+      height_resolved *= 2;
+    }
     if (depth->width_guest && depth->width_guest != depth->width) {
       width_resolved = uint32_t(uint64_t(pitch_target) * depth->width / depth->width_guest);
       height_resolved = uint32_t(uint64_t(height_target) * depth->height / depth->height_guest);
@@ -2035,6 +2079,39 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     }
     Prepare(*depth);
     Prepare(resolved->image);
+    if (ssaa) {
+      // All four samples of each pixel, with their stencil: the resolved depth is twice the size (see Ssaa).
+      NoteAreaUseful(*depth, y1 * 2);
+      NoteUseClear(*depth, uint32_t(std::max(x1, 0)) * 2, uint32_t(std::max(y1, 0)) * 2);
+      if (uint32_t(x0) * 2 >= depth->width || uint32_t(y0) * 2 >= depth->height ||
+          dx * 2 >= resolved->image.width || dy * 2 >= resolved->image.height) {
+        return;
+      }
+      const uint32_t width_s = std::min({uint32_t(x1 - x0) * 2, depth->width - uint32_t(x0) * 2,
+                                         resolved->image.width - dx * 2});
+      const uint32_t height_s = std::min({uint32_t(y1 - y0) * 2, depth->height - uint32_t(y0) * 2,
+                                          resolved->image.height - dy * 2});
+      if (!width_s || !height_s) {
+        return;
+      }
+      if (depth->content_invalid && REXCVAR_GET(fh1_native_resolve_valid_content)) {
+        RestoreContent(*depth, true);
+      }
+      VkImageCopy whole{};
+      whole.srcSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 1};
+      whole.srcOffset = {x0 * 2, y0 * 2, 0};
+      whole.dstSubresource = whole.srcSubresource;
+      whole.dstOffset = {int32_t(dx * 2), int32_t(dy * 2), 0};
+      whole.extent = {width_s, height_s, 1};
+      ShadowMinimumCopySince(*depth);
+      BarrierGlobal(commands_work_);
+      CopyImages(commands_work_, depth->image, VK_IMAGE_LAYOUT_GENERAL, resolved->image.image,
+                 VK_IMAGE_LAYOUT_GENERAL, 1, &whole);
+      ++copies_;
+      NoteCopy(width_s, height_s);
+      ResolvedWritten(base & 0x1FFFFFFF, uint64_t(width_s) * height_s);
+      return;
+    }
     NoteAreaUseful(*depth, y1);  // the area the game really resolves
     NoteUseClear(*depth, uint32_t(std::max(x1, 0)), uint32_t(std::max(y1, 0)));
     // With the scaled shadow map, the rectangle the guest sends is in 1600-pixel units even though the image
@@ -4916,11 +4993,12 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   // NFSC: the resolved colour texture (4 bytes per texel, 32x32 tiles) that contains this address at a whole number of
   // 32-row stripes, if any. row = first row of the destination inside it.
   // The depth copies (k_24_8, also 4 bytes per texel) use it too, with format = the host depth format.
+  // scale: 2 for the supersampled scene's depth, whose resolved texture is twice the size (row stays in guest rows).
   Resolved* FindResolvedContainer(uint32_t base, uint32_t pitch, uint32_t& row, uint32_t& base_container,
-                                      VkFormat format = kFormatColor) {
+                                      VkFormat format = kFormatColor, uint32_t scale = 1) {
     const uint32_t stripe = ((pitch + 31) & ~31u) * 32u * 4u;  // bytes of one 32-row stripe
     for (auto& [key_base, t] : resolved_) {
-      if (t.image.format != format || t.image.width != pitch || base <= key_base) {
+      if (t.image.format != format || t.image.width != pitch * scale || base <= key_base) {
         continue;
       }
       const uint32_t delta = base - key_base;
@@ -4928,7 +5006,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         continue;
       }
       const uint32_t rows = delta / stripe * 32u;
-      if (rows < t.image.height) {
+      if (rows * scale < t.image.height) {
         row = rows;
         base_container = key_base;
         return &t;

@@ -1107,6 +1107,13 @@ REXCVAR_DEFINE_BOOL(fh1_msaa_4x_as_1x, false, "FH1",
                     "Native renderer: 4x MSAA passes draw into the 1x render target of twice the pitch, as they share the "
                     "EDRAM on the Xbox 360 (FH1 draws its scene depth that way). Off: the first try turned the festival pink/black "
                     "(2026-10-03); false = separate one-sample image");
+REXCVAR_DEFINE_BOOL(fh1_native_ssaa, true, "FH1",
+                    "Native renderer: the scene's 4x MSAA passes (more than 640 pitch) are drawn at twice the width and "
+                    "height and averaged by the resolve, which gives the console's four samples per pixel (smooth "
+                    "edges). false = one sample per pixel, as before (stair-stepped edges, a faster scene)");
+REXCVAR_DEFINE_BOOL(fh1_native_texture_signs, true, "FH1",
+                    "Native renderer: textures fetched biased (value * 2 - 1) are converted in the shader, and signed "
+                    "two-channel compressed textures use the host's signed format. false = read as unsigned, as before");
 REXCVAR_DEFINE_BOOL(fh1_native_alpha_to_mask, true, "FH1",
                     "Native renderer: draws with alpha to mask and no alpha test discard pixels below half alpha (the "
                     "crowd and foliage cut-outs). false = drawn solid");
@@ -1236,7 +1243,8 @@ constexpr size_t kMaxRegistersList = 4096;
 // (68) and function (69), NDC (64-73) and g_InputRemap for the 16 locations (74-89).
 // 90 words up to g_InputRemap (bytes 296..359) and 32 more for 1/size of the 16 texture slots (bytes
 // 360..487), which avoid querying the texture size on every sample.
-constexpr uint32_t kWordsShared = 252;  // FH1: all 256 booleans (244-251); NFSC: + 32 loop constants (words 122-153); FH1: g_GuestBase / g_FetchAddress (154-163), exponent scales (164-179), ranked fetches (180-243)
+constexpr uint32_t kWordPosScale = 252;  // FH1: g_PosScale
+constexpr uint32_t kWordsShared = 256;  // FH1: g_PosScale (252); FH1: all 256 booleans (244-251); NFSC: + 32 loop constants (words 122-153); FH1: g_GuestBase / g_FetchAddress (154-163), exponent scales (164-179), ranked fetches (180-243)
 constexpr uint32_t kWordFetchRankAddress = 180;  // FH1: g_FetchRankAddress, one word per declared fetch 0-31
 constexpr uint32_t kWordFetchRankParam = 212;    // FH1: g_FetchRankParam
 constexpr uint32_t kWordExpScale = 164;  // FH1: <sampler>_ExpScale, one float per fetch constant 0-15
@@ -1354,7 +1362,7 @@ constexpr uint32_t kSkyFramesTest = 90;
 constexpr uint32_t kSkyFramesWithOne = 90;
 constexpr VkDeviceSize kUboBytesVs = 256 * 16;
 constexpr VkDeviceSize kUboBytesPs = 256 * 16;  // NFSC: whole pixel constant bank
-constexpr VkDeviceSize kUboBytesShared = 63 * 16;  // FH1: matches Fh1BlockShared (v[63])
+constexpr VkDeviceSize kUboBytesShared = 64 * 16;  // FH1: matches Fh1BlockShared (v[64])
 constexpr uint32_t kRemapIdentity = 0xFFF;
 constexpr uint32_t kMaxVerticesByDraw = uint32_t(1) << 20;
 constexpr uint32_t kMemoryPhysical = 0x20000000;
@@ -2654,7 +2662,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         const uint32_t msaa_fill = (r[gr::XE_GPU_REG_RB_SURFACE_INFO] >> 16) & 0x3;
         const bool fill_4x = msaa_fill == uint32_t(xenos::MsaaSamples::k4X) &&
                              (REXCVAR_GET(fh1_msaa_4x_as_1x) ||
-                              (pitch <= 640 && REXCVAR_GET(fh1_msaa_4x_clears_as_1x)));
+                              (pitch <= 640 && REXCVAR_GET(fh1_msaa_4x_clears_as_1x)) ||
+                              (pitch > 640 && REXCVAR_GET(fh1_native_ssaa)));
         context_->NoteFillDepth(info & 0xFFF, (info >> 16) & 0x1, fill_4x ? pitch * 2 : pitch);
       }
     }
@@ -3581,6 +3590,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       std::memcpy(&shared[66], middle, sizeof(middle));
     }
     std::memcpy(&shared[68], &threshold_alpha, sizeof(threshold_alpha));
+    {
+      const float pos_scale = 1.0f / pass_msaa_scale_;
+      std::memcpy(&shared[kWordPosScale], &pos_scale, sizeof(pos_scale));
+    }
     shared[69] = function_alpha;  // g_AlphaFunction
     std::memcpy(&shared[70], ndc, sizeof(ndc));
     std::copy(entry->remaps.begin(), entry->remaps.end(), shared + 74);
@@ -9115,6 +9128,40 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     return &entry_;
   }
 
+  // FH1: the sign modes the shader applies to what it fetched (fh1Gamma in shader_common.h): two bits per fetched
+  // component, after the fetch constant's swizzle; 1 = biased (value * 2 - 1), 3 = gamma when the caller converts
+  // it in the shader. Signed (2) is the host format's business.
+  static uint32_t SignsSwizzled(const uint32_t* f, bool gamma) {
+    if (!REXCVAR_GET(fh1_native_texture_signs) && !gamma) {
+      return 0;
+    }
+    const uint32_t signs = (f[0] >> 2) & 0xFF;
+    const uint32_t swizzle = (f[3] >> 1) & 0xFFF;
+    uint32_t out = 0;
+    for (uint32_t i = 0; i < 4; ++i) {
+      const uint32_t source = (swizzle >> (3 * i)) & 0x7;
+      if (source >= 4) {
+        continue;
+      }
+      const uint32_t sign = (signs >> (2 * source)) & 0x3;
+      if ((sign == 1 && REXCVAR_GET(fh1_native_texture_signs)) || (sign == 3 && gamma)) {
+        out |= sign << (2 * i);
+      }
+    }
+    return out;
+  }
+  // The mark rides in bits 15-22 of the (positive, power of two) exponent scale.
+  static float WithSigns(float scale, uint32_t signs) {
+    if (!signs || !(scale > 0.0f)) {
+      return scale;
+    }
+    uint32_t bits;
+    std::memcpy(&bits, &scale, sizeof(bits));
+    bits |= signs << 15;
+    std::memcpy(&scale, &bits, sizeof(scale));
+    return scale;
+  }
+
   // Texture of a fetch constant: heap slot and, if it has to be uploaded, it is left in textures_a_upload_
   // with its data already prepared. Base level of 2D textures and cubemaps.
   void PrepareTexture(const uint32_t* f, uint32_t& slot, uint32_t& heap,
@@ -9148,6 +9195,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const uint32_t layers = cube ? 6 : 1;
     if (const uint32_t signs = (f[0] >> 2) & 0xFF; signs && !(gamma_textures_ && gamma_targets_ && signs == 0x3F)) {
       Notify(31, "signed or gamma textures: read as unsigned");
+      if (kinds_gamma_.insert((uint64_t(1) << 63) | (uint64_t(f[1] & 0x3F) << 32) | (uint64_t((f[3] >> 1) & 0xFFF) << 12) |
+                              signs).second) {
+        REXLOG_INFO("[fh1] texture with signs {:02X}: format {} swizzle {:03X} dimension {} at {:08X} {}x{} (read as "
+                    "unsigned)", signs, f[1] & 0x3F, (f[3] >> 1) & 0xFFF, dimension, (f[1] >> 12) << 12,
+                    (f[2] & 0x1FFF) + 1, ((f[2] >> 13) & 0x1FFF) + 1);
+      }
     }
     const uint32_t swizzle = (f[3] >> 1) & 0xFFF;
     const uint32_t base = (f[1] >> 12) << 12;
@@ -9208,6 +9261,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         // constant's swizzle (ZYXW for 8888) undoes that swap. Here the copy is image to image and does not
         // swap channels, so the swap goes into the host channels (without this, Mia came out blue).
         // FH1: fetched with the gamma sign, a resolved 8-bit picture is decoded like any gamma texture.
+        exp_scale_out = WithSigns(exp_scale_out, SignsSwizzled(f, false));
         const bool srgb = gamma_targets_ && ((f[0] >> 2) & 0x3F) == 0x3F &&
                           resolved->format == VK_FORMAT_R8G8B8A8_UNORM && resolved->view_srgb != VK_NULL_HANDLE;
         slot = SlotView(resolved->image, srgb ? VK_FORMAT_R8G8B8A8_SRGB : resolved->format, swizzle,
@@ -9260,10 +9314,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                       ((f[2] >> 13) & 0x1FFF) + 1);
         }
       }
-      if (gamma_in_shader) {
-        exp_scale_out *= 1.5f;
-      }
     }
+    // FH1 (fh1_native_texture_signs): signed two-channel normal maps (k_DXN with signs 2A) in the host's signed format.
+    if (REXCVAR_GET(fh1_native_texture_signs) && tf.format == VK_FORMAT_BC5_UNORM_BLOCK &&
+        ((f[0] >> 2) & 0xF) == 0xA) {
+      tf.format = VK_FORMAT_BC5_SNORM_BLOCK;
+    }
+    exp_scale_out = WithSigns(exp_scale_out, SignsSwizzled(f, gamma_in_shader));
     if (gamma_textures_ && !gamma_in_shader && ((f[0] >> 2) & 0x3F) == 0x3F) {
       switch (tf.format) {
         case VK_FORMAT_R8G8B8A8_UNORM: tf.format = VK_FORMAT_R8G8B8A8_SRGB; break;
@@ -10869,8 +10926,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // rectangle on a 4x surface of half the pitch covers the same EDRAM as the 1x (or 2x) target the game really
     // uses, four samples per pixel drawn. Kept in an image of their own they cleared nothing: the stencil the shadow
     // passes test was never reset and the scene had no shadows. The scene itself (4x at 1280 pitch) stays as it was.
+    // FH1 (fh1_native_ssaa): and the 4x passes of more than 640 pitch, which are the scene. Each of the console's four
+    // samples per pixel is a pixel of the image of twice the size, and the resolve averages them (TargetsVulkan::Copy).
     const bool msaa_4x = msaa == uint32_t(xenos::MsaaSamples::k4X) &&
-                         (REXCVAR_GET(fh1_msaa_4x_as_1x) || (pitch <= 640 && REXCVAR_GET(fh1_msaa_4x_clears_as_1x)));
+                         (REXCVAR_GET(fh1_msaa_4x_as_1x) || (pitch <= 640 && REXCVAR_GET(fh1_msaa_4x_clears_as_1x)) ||
+                          (pitch > 640 && REXCVAR_GET(fh1_native_ssaa)));
     pass_msaa_scale_ = msaa_4x ? 2.0f : 1.0f;
     const uint32_t pitch_guest = pitch;
     if (msaa_4x) pitch *= 2;
@@ -10917,7 +10977,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
     }
     // Shadow map: a depth-only target with a pitch of 1600 or more (same as skip_shadows).
-    const bool is_shadows = pitch >= 1600 && formats[4] && !formats[0] && !formats[1] &&
+    const bool is_shadows = pitch_guest >= 1600 && formats[4] && !formats[0] && !formats[1] &&
                             !formats[2] && !formats[3];
     // fh1_native_shadow_minimum. If C2 says this is the car pass of the shadow map, each draw is validated
     // for it (and the pass must be depth-only).
@@ -10925,7 +10985,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // GPU time per pass type (C2 report), by render target width. Shadows are recognized by being
     // depth-only, not by measuring 1600 or more. With the scene at 1920 (fh1_1080p_test) the width no
     // longer tells them apart: the scene fell into the shadow bucket and vanished from its own category.
-    category_pass_ = CategoryOfTarget(pitch, keys);
+    category_pass_ = CategoryOfTarget(pitch_guest, keys);
     context_->MarkGpu(category_pass_);
     const bool shadows_without_load =
         is_shadows && REXCVAR_GET(fh1_native_shadow_pass_without_load);
@@ -10983,7 +11043,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     texels_passes_ += uint64_t(width) * height_pass;  // how much tile is loaded by loadOp = LOAD
     {
       // Same criterion as the per-category GPU time: the render target's pitch decides.
-      const uint32_t category = CategoryOfTarget(pitch, keys);
+      const uint32_t category = CategoryOfTarget(pitch_guest, keys);
       texels_by_category_[category] += uint64_t(width) * height_pass;
       ++passes_by_category_[category];
     }

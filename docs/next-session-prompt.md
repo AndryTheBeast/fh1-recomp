@@ -1,4 +1,4 @@
-# Prompt for the next session (written 2026-10-05, at the end of the second session of that day)
+# Prompt for the next session (written 2026-10-05, at the end of the third session of that day)
 
 Paste the block below as the first message of a new Claude session opened in `C:\Users\andre\Desktop\FH1-recomp`.
 
@@ -6,33 +6,38 @@ Paste the block below as the first message of a new Claude session opened in `C:
 Read fh1-recomp/CLAUDE.md, then fh1-recomp/docs/native-renderer-status.md, and work on the native renderer
 (run_fh1.bat --fh1_renderer=native).
 
-Where we are: the blue outline, the headlights on the road and the map selector are fixed, and I drove the
-fixed build (day, night, a race): everything looks normal. The rectangular patch under the car shows on both
-renderers, so leave it.
+Where we are: reflections on chrome and paint are soft, textures use the console's gamma curve, the scene is
+drawn with four samples per pixel (smooth edges) and the loading-screen freeze after a new shader library is
+fixed. All of that was tested parked at the festival only. First ask me what I saw when I drove it (edges,
+reflections, speed in busy places, anything that flashes), and fix what I report.
 
-Fix these four, in this order, one at a time:
-1. Chrome and paint are sharper and whiter than on the emulated GPU, where they are soft (parked at the
-   festival at night: build_logs\test-parkN-*-340s.png against test-parkX-*-340s.png). The reflection cube map
-   has one level here and nine on the console; the game renders the smaller ones itself (1C9F9000, 1CA59000,
-   1CA71000 ...).
-2. The picture is slightly darker than the emulated one (festival at dusk, median brightness 27 against 39).
-   Check first whether fixing 1 already changed it.
-3. Stair-stepped edges: the scene is drawn with one sample where the console has 4x MSAA.
-4. Glows of lamps and tail lights show through walls and other cars (it also happens on the emulated GPU,
-   which does not measure): make the native renderer measure the occlusion queries for real.
+Then, in this order, one at a time:
+1. Glows of lamps and tail lights through walls and other cars. The measured mode exists
+   (--fh1_native_occlusion=1) but the tail lights lose most of their red halo with it. I will drive it behind a
+   wall and behind a car and tell you what I see; find out what the game does with the counts (the boxes of the
+   tail lights seem to count almost nothing) and make hidden lights lose their glow without shrinking the
+   visible ones.
+2. The picture is still a little darker than the emulated one, and at night green and blue are lower over the
+   whole picture (sky 29 29 35 against 30 40 50). The scene before post-processing matches, so compare the
+   post-processing step by step (exposure, bloom, the color grading lookup texture 136FB000) with a RenderDoc
+   capture of the emulated GPU taken at night at the festival.
+3. Crowd brighter than the emulated one and with hard cut-out edges (alpha to mask: now that the scene has four
+   samples per pixel, cover 0 to 4 of them instead of testing at one half).
+4. Races, garage, car photos and paint shop on the native renderer.
 After each one: show me the comparison, commit and push, then go on to the next.
 
-Also watch for the loading screen freezing for good (it happened once, on the first run after a new shader
-library): if it happens again, find what the renderer's thread is waiting for.
+If a busy place drops below 30 fps with the smooth edges, measure it (the [fps] lines and "real GPU per Swap" in
+the log, with and without --fh1_native_ssaa=false) and tell me the numbers before changing anything.
 
-1 and 2 can be tested without me (the car parked at the festival reaches night in about 5 minutes). For a spot
-the unattended test does not reach (the road, a wall for 4) use the tools of last time: I start
-run_native_capture.bat or run_emulated_capture.bat (or run_native_skip.bat), drive there, stop and type "now",
-and you run tools\capture_now.ps1 (or tools\skip_cycle.ps1). Tell me exactly what to run and when.
+For a spot the unattended test does not reach use the tools of last time: I start run_native_capture.bat or
+run_emulated_capture.bat (or run_native_skip.bat), drive there, stop and type "now", and you run
+tools\capture_now.ps1 (or tools\skip_cycle.ps1). Tell me exactly what to run and when.
 
 Rules:
 - Compare every change against the emulated GPU at the same second or the same spot (tools\auto_test.ps1, with
-  and without --fh1_renderer=native) and show me the numbers or a crop.
+  and without --fh1_renderer=native; tools\fh1_pic_stats.py gives the numbers and a crop) and show me.
+- At the festival the lights and the car's reflections change within seconds around 92-95 s: compare at 58 s,
+  at 100 s or later, or at night (300-340 s), and take several shots.
 - I test driving by hand. Ask me for a short drive when you need one, and tell me when the build is ready: I must
   not start the game while a build is running, and you cannot build while my game is open (ask me to close it).
 - If you start a test with a temporary option, or open a test window yourself, say so before I look at the

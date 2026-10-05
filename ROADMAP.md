@@ -157,6 +157,11 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         one within a few percent) — 2026-10-05
   - [x] Loading screen frozen for good after a new shader library: pipelines prewarmed by several threads (the
         game stops after a frame of ~3.2 s; that time-out itself is not found) — 2026-10-05
+  - [x] Smooth edges: the scene's 4x MSAA passes drawn at twice the size and averaged by the resolve
+        (`--fh1_native_ssaa`); texture sign modes (biased, signed DXN) — 2026-10-05
+  - [ ] Occlusion queries measured for real (`--fh1_native_occlusion=1` counts four samples per pixel now; the tail
+        lights lose most of their halo with it, so it is not the default: needs the user's drive and a decision)
+  - [ ] Speed of the supersampled scene in busy places while driving (parked: 30 fps, GPU 21 ms per frame)
   - [ ] Post-processing still a little dark; green and blue low at night (exposure, bloom or color grading)
   - [ ] Races, garage, car photos, paint shop on the native renderer
   - [ ] Frame time while driving (185-230 ms frames were seen; render-target copies rejected)

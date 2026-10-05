@@ -89,7 +89,7 @@ struct PushConstants
 struct Fh1BlockVs { float4 v[256]; };
 // FH1: pixel shaders use all 256 constants (NFS: 224).
 struct Fh1BlockPs { float4 v[256]; };
-struct Fh1BlockShared { float4 v[63]; };  // FH1: 252 words (booleans 244-251; nfsc-recomp: loop constants at 122-153; FH1 154-163, exponent scales 164-179, ranked fetches 180-243)
+struct Fh1BlockShared { float4 v[64]; };  // FH1: 256 words (g_PosScale 252; booleans 244-251; nfsc-recomp: loop constants at 122-153; FH1 154-163, exponent scales 164-179, ranked fetches 180-243)
 [[vk::binding(0, 4)]] ConstantBuffer<Fh1BlockVs> g_UboVertex;
 [[vk::binding(1, 4)]] ConstantBuffer<Fh1BlockPs> g_UboPixel;
 [[vk::binding(2, 4)]] ConstantBuffer<Fh1BlockShared> g_UboShared;
@@ -106,6 +106,9 @@ struct Fh1BlockShared { float4 v[63]; };  // FH1: 252 words (booleans 244-251; n
 #define g_SwappedTexcoords         (NFSMW_UBO ? FH1_SHARED_UINT(260) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 260))
 #define g_HalfPixelOffset          (NFSMW_UBO ? float2(FH1_SHARED_FLOAT(264), FH1_SHARED_FLOAT(268)) : vk::RawBufferLoad<float2>(g_PushConstants.SharedConstants + 264))
 #define g_AlphaThreshold           (NFSMW_UBO ? FH1_SHARED_FLOAT(272) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 272))
+// FH1: guest pixels per host pixel (1, or 0.5 in a 4x pass drawn at twice the size): the pixel position register
+// counts guest pixels.
+#define g_PosScale                 (NFSMW_UBO ? FH1_SHARED_FLOAT(1008) : vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 1008))
 // NFSMW: alpha test function (RB_COLORCONTROL.alpha_func): 0 never, 1 <, 2 ==, 3 <=,
 // 4 >, 5 !=, 6 >=, 7 always.
 #define g_AlphaFunction            (NFSMW_UBO ? FH1_SHARED_UINT(276) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 276))
@@ -282,7 +285,10 @@ void fh1ExpFloat(float s, out float scale, out float cut)
 // brighter than sRGB in the dark and middle tones (0.5 gives 0.25, sRGB 0.214): with the host's sRGB formats the
 // whole scene came out darker than on the emulated GPU. The renderer marks such a slot by multiplying its
 // (power of two) exponent scale by 1.5; red, green and blue are converted after filtering, as the emulated GPU does.
-#define FH1_GAMMA_MARK 0x00400000u
+// Since the same day the mark is the whole sign byte of the fetch constant, already swizzled (two bits per fetched
+// component: 1 = biased, value * 2 - 1; 3 = gamma), in bits 15-22 of the scale: the brightness picture the exposure
+// reads is fetched biased, and read plain the exposure came out lower than on the emulated GPU.
+#define FH1_SIGNS_MASK 0x007F8000u
 float3 fh1PwlGammaToLinear(float3 g)
 {
     g = saturate(g);
@@ -300,14 +306,19 @@ float3 fh1PwlGammaToLinear(float3 g)
 }
 float4 fh1Gamma(float4 v, float s)
 {
-    if (s > 0.0 && (asuint(s) & FH1_GAMMA_MARK) != 0)
-        v.xyz = fh1PwlGammaToLinear(v.xyz);
+    uint signs = s > 0.0 ? (asuint(s) & FH1_SIGNS_MASK) >> 15 : 0u;
+    if (signs != 0u)
+    {
+        uint4 mode = uint4(signs, signs >> 2, signs >> 4, signs >> 6) & 3u;
+        float4 gamma = float4(fh1PwlGammaToLinear(v.xyz), fh1PwlGammaToLinear(v.www).x);
+        v = select(mode == 1u, v * 2.0 - 1.0, select(mode == 3u, gamma, v));
+    }
     return v;
 }
 float4 fh1Exp(float4 v, float s)
 {
     if (s >= 0.0)
-        return v * asfloat(asuint(s) & ~FH1_GAMMA_MARK);
+        return v * asfloat(asuint(s) & ~FH1_SIGNS_MASK);
     float scale, cut;
     fh1ExpFloat(s, scale, cut);
     // "v > 0" is false for NaN as well

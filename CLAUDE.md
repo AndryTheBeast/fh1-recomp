@@ -21,8 +21,9 @@ normal play, 26-28 in the busiest spots. Default graphics = the SDK's emulated X
 (`--fh1_renderer=native`): boot, videos, menus and loading screens match the emulated picture; the festival
 in daylight and at evening is close to it; driving at night works since 2026-10-05 (headlights light the road,
 no blue on the car, map selector); reflections soft and textures on the
-console's gamma curve since the third session of 2026-10-05; still open: the post-processing a little dark (green
-and blue low at night), stair-stepped edges, glows through walls, races and garage not checked. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+console's gamma curve since the third session of 2026-10-05; smooth edges (four samples per pixel) since the
+same day; still open: the post-processing a little dark (green and blue low at night), glows through walls, races
+and garage not checked. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
 docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
 the frame time goes and what to cut for the Switch.
 
@@ -272,6 +273,10 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
   (the host's sRGB formats were darker), and the loading-screen freeze is explained: the game stops sending
   commands for good after one frame of about 3.2 s or more (it was the pipelines of a new shader library being
   compiled; they are now compiled by several threads during the logo videos).
+- Same session, part 2: the scene's 4x MSAA passes are drawn at twice the size and averaged by the resolve
+  (`--fh1_native_ssaa`, smooth edges, still 30 fps parked); the shared constants block is 256 words; AMD has no blit
+  for depth formats (the scene's resolved depth stays at twice the size). Measured occlusion queries are prepared
+  behind `--fh1_native_occlusion=1` (the tail lights lose most of their halo with it: not the default).
 - A resolve only gives the pitch of its texture (a multiple of 32). A texture narrower than that (the cube levels
   of 16x16 and less) must get its width from the fetch constant, or it is read with empty columns.
 - Before chasing a difference between two screenshots of the festival, check that it is not the moment: lights and

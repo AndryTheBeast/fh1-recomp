@@ -1,10 +1,12 @@
 # Native renderer: where it stands and what to fix next
 
 Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, third session:
-the reflections are soft like the emulated ones, textures use the console's gamma curve and the loading-screen
-freeze has its cause and a fix (see "What was fixed on 2026-10-05, third session"). Open list, in order: the
-rest of item 3 (post-processing still a little dark, green and blue low at night), item 4 (stair-stepped edges),
-the occlusion queries measured for real, then items 5-8.
+the reflections are soft like the emulated ones, textures use the console's gamma curve, the loading-screen
+freeze has its cause and a fix, and the scene is drawn with four samples per pixel (smooth edges); see the two
+"third session" sections. **The user has not seen any of it yet: ask for a drive first** (edges, reflections,
+speed in busy places). Open list, in order: the occlusion queries measured for real (prepared behind
+`--fh1_native_occlusion=1`, needs the user's eyes), the rest of item 3 (post-processing still a little dark,
+green and blue low at night), then items 5-8.
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
 GoatHonks' nfsc-recomp renderer; his later fixes are ported by hand when they work for FH1
@@ -161,7 +163,8 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
    (bloom). Candidates: the console cuts the resolved scene at 4.0 (10 bits after exp_bias -2) and the float
    texture does not, so the measured luminance can be higher and the exposure lower; the bloom chain (not dumped
    yet, see item 2); the gamma curve (sRGB is only close to the console's piecewise-linear one).
-4. **Stair-stepped edges** (car silhouette, shadow edges on the ground): the bright outlines are gone (exponent
+4. **Stair-stepped edges: DONE 2026-10-05, third session** (`--fh1_native_ssaa`). The old note:
+   (car silhouette, shadow edges on the ground): the bright outlines are gone (exponent
    bias), what is left is the scene drawn with one sample where the console uses 4x MSAA. `--fh1_msaa_4x_as_1x`
    style tricks do not help here: the scene needs real multisampled targets (or supersampling) and a resolve.
 5. **Crowd brighter than the emulated one** and with hard cut-out edges: alpha to mask is a plain "alpha >= 0.5"
@@ -254,6 +257,50 @@ into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. 
 
 Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
 target they clear (the same EDRAM, four samples per pixel drawn).
+
+## What was fixed on 2026-10-05, third session, part 2: smooth edges (the scene at four samples per pixel)
+
+Compare `build_logs\reference\item3-edges-before-after-emulated-58s.png` (the car's edge enlarged: native before,
+native after, emulated) and `test-ssaaN-*` (58, 100, 300, 340 s) with `test-readN-*` (before) and `test-cubeX-*`.
+
+- **Stair-stepped edges (the user's item 3).** The scene's 4x MSAA passes (pitch above 640: three strips of
+  1280x256) are now drawn at twice the width and height into the image of twice the pitch (2560 wide), which is
+  the console's four samples per pixel laid out as pixels, and the resolve averages them (`--fh1_native_ssaa`, on
+  by default). It reuses what the 4x clears of 640 pitch already had (`pass_msaa_scale_`):
+  - `DrawsVulkan::BeginPass`: the 4x passes above 640 pitch take the doubled image too. The tests that tell a
+    shadow map or a pass category by the pitch use the guest's pitch (a depth-only scene pass at 2560 would have
+    been taken for a shadow map).
+  - `TargetsVulkan::Copy`: the color resolve is a linear blit of 2 to 1 (the average of the four samples) into the
+    same 1280x720 resolved texture as before, strip by strip. Clears, the useful area and the copy rectangle are
+    in the doubled image's pixels.
+  - `CopyDepth`: this GPU has no blit for depth formats, so the resolved depth of the scene stays at twice the size
+    (2560x1440 at 1DAC5000, the strips at twice their rows; `FindResolvedContainer` takes a scale). Everything
+    samples it with coordinates 0..1 and no filtering, which picks one of the four samples, as the scaled shadow
+    map already relied on. The 1x depth pre-pass resolves 1280x720 to the same address earlier in the frame: the
+    two images alternate there (parked, no wait).
+  - Shaders: the pixel position register counts guest pixels (`floor(iPos.xy * g_PosScale)`, shared word 252; 68
+    pixel shaders use it, for example to find their place in the shadow mask). The shared block is 256 words now
+    (`Fh1BlockShared v[64]`, `kUboBytesShared`): library and fh1.exe must match again.
+  - Numbers: 30 fps for the whole parked run (day to night); the GPU's time per frame went from 19.5 to 21.1 ms.
+    Busy scenes while driving are not measured yet (the user drives). The ground also shows its fine texture now,
+    like the emulated picture (mean horizontal gradient of the night picture 1.22 before, 1.33 now, emulated 1.37).
+- **Sign modes of textures** (`--fh1_native_texture_signs`): the sign byte of the fetch constant, swizzled, rides in
+  bits 15-22 of the slot's exponent scale (the gamma mark of part 1 is now mode 3 of it) and `fh1Gamma` applies
+  mode 1, biased (value * 2 - 1). Two textures at the festival use other modes than gamma: the adapted luminance
+  (1FCA6000, k_32_FLOAT, signs 55, biased) and one k_DXN normal map (signs 2A, signed, now in BC5_SNORM). The
+  picture's brightness did not change with it.
+- **Occlusion queries measured for real (item 4): prepared, not the default.** `--fh1_native_occlusion=1` now
+  counts the console's four samples per pixel (the scene is supersampled; `ScaleOcclusion` returns 1 for it) and
+  sums the last count of each strip per query. At the festival it gives 65 samples on average per query (largest
+  760) and the tail lights keep their lit lenses but lose most of the red halo around them
+  (`build_logs\reference\item4-glow-faked-measured-emulated.png`; rear of the car, mean color 54 43 41 faked,
+  46 42 40 measured). A first run with every count four times too high gave the same picture, so the tail
+  lights' boxes probably count close to nothing (they sit in the lamp, behind the lens?). Not settled: whether
+  the console shows that small halo too, or the boxes are meant to be tested against less than the whole scene.
+  The default stays 0 (1000 samples, as the emulated GPU: full glows, also through walls). To judge it, the user
+  drives `run_fh1.bat --fh1_renderer=native --fh1_native_occlusion=1` behind a wall and behind a car. Facts for
+  the next try: RB_SURFACE_INFO has pitch 0 when the query's end arrives (only the MSAA field is usable), and
+  every end seen in the first frame came with the window offset of the third strip.
 
 ## What was fixed on 2026-10-05, third session: soft reflections, the console's gamma curve, the loading freeze
 

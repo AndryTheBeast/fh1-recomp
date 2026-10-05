@@ -388,6 +388,7 @@ REXCVAR_DEFINE_STRING(fh1_native_diag_vertices_ps, "", "FH1",
 // scene strips. Measured here they give about 64 samples on average where the emulated GPU's answer is 1000, and
 // the glows all but vanish (tail lights without their red halo). Measuring them properly needs the scene's 4x
 // samples and the sum over the strips: until then, the reference's answer.
+REXCVAR_DECLARE(bool, fh1_native_ssaa);
 REXCVAR_DEFINE_INT32(fh1_native_occlusion, 0, "FH1",
                      "Native renderer: the game's occlusion queries (the glow of lights, the sun flare). 0 = faked "
                      "count of 1000 samples, as the emulated GPU answers (a glow is never hidden); 1 = measured on "
@@ -1026,6 +1027,24 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         occlusion_base_ = 0;
         scale = ScaleOcclusion();
         written = measurement ? uint32_t(std::min<uint64_t>(measurements * scale, 0xFFFFFF)) : kSamplesOcclusion;
+        // FH1: the scene is drawn in three strips of 256 rows (window offset 0 / -256 / -512) and each strip issues
+        // the query again, counting only its own rows. The answer is the sum of the last count of each strip.
+        if (measurement) {
+          const uint32_t info_strip = Register(rex::graphics::XE_GPU_REG_RB_SURFACE_INFO);
+          if (((info_strip >> 16) & 0x3) == 2) {  // the pitch field is 0 at this point of the frame
+            const uint32_t offset = Register(rex::graphics::XE_GPU_REG_PA_SC_WINDOW_OFFSET);
+            const int32_t offset_y = int32_t((offset >> 16) << 17) >> 17;
+            const uint32_t strip = uint32_t(std::clamp(-offset_y / 256, 0, 3));
+            auto& strips = occlusion_strips_[address];
+            if (warnings_occlusion_strip_ < 24) {
+              ++warnings_occlusion_strip_;
+              REXLOG_INFO("[fh1] occlusion strip: structure {:08X} window offset {:08X} strip {} count {} (strips {} {} {} {})",
+                          address, offset, strip, written, strips[0], strips[1], strips[2], strips[3]);
+            }
+            strips[strip] = written;
+            written = std::min<uint32_t>(strips[0] + strips[1] + strips[2] + strips[3], 0xFFFFFF);
+          }
+        }
         std::memset(counts, 0, sizeof(*counts));
         counts->ZPass_A = written;
         counts->Total_A = written;
@@ -1112,6 +1131,11 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       return uint32_t(fixed);
     }
     const uint32_t info = Register(rex::graphics::XE_GPU_REG_RB_SURFACE_INFO);
+    // FH1 (fh1_native_ssaa): a 4x scene pass is drawn at twice the size, so the host already counts four samples
+    // per guest pixel.
+    if (((info >> 16) & 0x3) == 2 && REXCVAR_GET(fh1_native_ssaa)) {  // (the pitch field is 0 when the query ends)
+      return 1;
+    }
     const uint32_t samples_target = UINT32_C(1) << std::min<uint32_t>((info >> 16) & 0x3, 2);
     const uint32_t samples_scene =
         (info & 0x3FFF) >= 640 ? fh1::render_targets::SamplesOriginalModeCurrent(memory_->virtual_membase()) : 1;
@@ -4971,6 +4995,8 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   // Finished queries per render target kind (0: under 640 or without MSAA on the Xbox 360; 1: scene,
   // scaled) in the interval, and the largest count written for each since the start.
   std::array<uint64_t, 2> occlusion_by_target_{};
+  uint32_t warnings_occlusion_strip_ = 0;
+  std::unordered_map<uint32_t, std::array<uint32_t, 4>> occlusion_strips_;  // FH1: last count of each scene strip
   std::array<uint32_t, 2> occlusion_max_by_target_{};
   uint32_t warnings_occlusion_scene_ = 0;
   // Diagnostic fh1_native_diag_constants_ps.

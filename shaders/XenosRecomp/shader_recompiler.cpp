@@ -1811,7 +1811,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             print("\tfloat4 r{} = ", i);
             if (isPixelShader && i == ((shader->fieldC >> 8) & 0xFF))
             {
+#ifdef NFSMW_RECOMP
+                out += "float4(floor(iPos.xy * g_PosScale) * float2(iFace ? 1.0 : -1.0, 1.0), 0.0, 0.0);\n";
+#else
                 out += "float4((iPos.xy - 0.5) * float2(iFace ? 1.0 : -1.0, 1.0), 0.0, 0.0);\n";
+#endif
             }
         #ifdef UNLEASHED_RECOMP
             else if (!isPixelShader && hasIndexCount && i == 0)
