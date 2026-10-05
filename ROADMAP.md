@@ -195,9 +195,11 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         (`fh1_native_raw_fetches`), and the translator keeps a fetch's index for the fetches that follow it
         (502 shaders re-translated) — 2026-10-05, sixth session
   - [ ] Car damage on the native renderer: not looked at (it uses the same undeclared streams: check a crash)
-  - [ ] **Photos of a car after saving a paint job: wrong on the native renderer only** (another car's
-        picture, partly turned on its side, with speckles; right on the emulated GPU; user's screenshots of
-        2026-10-05 in `build_logs\reference\user-thumbnail-*`): first thing next session
+  - [x] Photos of a car after saving a paint job (they showed another car's picture): a picture the game
+        resolves once is written to guest memory like on the emulated GPU (`fh1_native_read_one_off`); checked by
+        the user with three paint jobs on two cars - 2026-10-06, seventh session
+  - [ ] The first 25 s at the festival have a few late frames since that fix (28.4-29.6 fps, then 30): pictures
+        that come back every few seconds are waited for until the renderer has seen them return twice
   - [ ] Night colors at the festival: the native picture is warm grey where the emulated one is blue (340 s mean
         color 69 55 49 against 63 60 56, brightness equal): the night color grading; next thing to look at
   - [ ] Races, garage, car photos on the native renderer (the user drives there)
@@ -270,5 +272,7 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
 
 ## Maybe later
 
-- [ ] Source-only pre-release (tag + install guide + known issues; users build from their own disc)
+- [ ] Source-only pre-release (tag + install guide + known issues; users build from their own disc). **User,
+      2026-10-06: this is the focus now**, after the offline shader library for the PC; the other native renderer
+      fixes (night colors, races / garage / damage, Carbon clean-up, F3 viewer) wait
 - [ ] 60 fps unlock (needs a much faster renderer, and checking the game's timing at 60)

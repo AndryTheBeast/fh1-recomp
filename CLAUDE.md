@@ -23,7 +23,7 @@ in daylight and at evening is close to it; driving at night works since 2026-10-
 no blue on the car, map selector); reflections soft and textures on the
 console's gamma curve since the third session of 2026-10-05; smooth edges (four samples per pixel) since the
 same day; first-person view, brightness jumps and the darker picture fixed in the fourth session (brightness now
-equal to the emulated picture at the festival); design creator fixed in the fifth and sixth sessions (booth, wheels, paint, dialog, ambient light, tyres); still open: the thumbnail of a saved car, night colors, races, garage and car photos, car damage. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+equal to the emulated picture at the festival); design creator fixed in the fifth and sixth sessions (booth, wheels, paint, dialog, ambient light, tyres); the photos of a saved car since 2026-10-06; still open: night colors, races, garage, car damage. User, 2026-10-06: those wait; next is the offline shader library for the PC, then the first pre-release. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
 docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
 the frame time goes and what to cut for the Switch.
 
@@ -353,3 +353,11 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
 Local folder layout (2026-10-04): `build_logs\reference\` = the screenshots, traces and logs the documents
 refer to; `build_logs\archive-2026-10-04\` = every earlier test, run and build log (nothing there is needed
 to work; its RenderDoc captures and the old shader sets were removed on 2026-10-04 with the user's yes). New test output lands in `build_logs\`.
+
+- 2026-10-06, seventh session: the photos of a saved car are right on the native renderer (a picture resolved
+  once is written to guest memory, `fh1_native_read_one_off`; the large ones at once, the small ones a frame
+  later, `fh1_native_read_one_off_wait_texels`: a measured limit, see the status document).
+- Before fixing a native-only fault in something the game reads back, look for the same fault in the emulated
+  GPU's history (its log lines and SDK comments): the photos had been fixed there five days earlier.
+- The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
+  check which log holds the event (`[save] ... flushed`) before reading the newest one.

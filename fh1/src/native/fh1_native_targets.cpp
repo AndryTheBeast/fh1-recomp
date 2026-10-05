@@ -34,6 +34,7 @@
 
 #include "fh1_graphics_settings.h"
 
+#include <fstream>
 #include <rex/cvar.h>
 #include <rex/frame_stats.h>
 #include <rex/graphics/xenos.h>
@@ -528,6 +529,24 @@ REXCVAR_DEFINE_INT32(fh1_native_read_resolved_half_texels, 32768, "FH1",
                      "Native renderer: a resolve to a 16-bit float texture (k_16_16_16_16_FLOAT) of up to this many "
                      "texels is also written to guest memory, at once. FH1 computes a scene's ambient light on the "
                      "CPU from a 256x128 sphere map it has just resolved (paint booth, garage). 0 = never");
+REXCVAR_DEFINE_INT32(fh1_native_read_one_off, 4, "FH1",
+                     "Native renderer: a resolve to a destination that was not resolved in the last 60 frames is "
+                     "written to guest memory at once, whatever its size, for this many resolves in a row (the "
+                     "emulated GPU's readback_resolve_sync_one_off). FH1 reads the photo of a car back on the CPU "
+                     "when a paint job is saved or a car is bought; without it the photo was whatever an older "
+                     "picture had left at that address. 0 = only the small ones, as before");
+REXCVAR_DEFINE_INT32(fh1_native_read_one_off_wait_texels, 210000, "FH1",
+                     "Native renderer: a one-off resolve (fh1_native_read_one_off) into a texture of at least this "
+                     "many texels (its pitch times its height) is in guest memory before the next command is read; "
+                     "into a smaller texture it arrives when the GPU has finished the submission (a frame later). "
+                     "The photos of a car (a 768x288 picture, 221184 texels) are read by the game at once. A "
+                     "measured limit, the cause is not known: with 100000 the paint booth lost its ambient light "
+                     "and the photos their car (the pictures between the two limits are 928x219 and 1824x114 ones "
+                     "of the design creator's livery pass); 210000, 250000, 900000 and 1000000 kept the booth right");
+REXCVAR_DEFINE_BOOL(fh1_native_diag_photo, false, "FH1",
+                    "Debug: when the game resolves a piece of a car's photo (a one-off resolve into a 768x288 "
+                    "texture), ask for a frame trace (with --fh1_native_diag_frame_s=-1) and a dump of every "
+                    "resolved picture (with --fh1_dump_resolved_at_s=-1) at the next Swap");
 REXCVAR_DEFINE_BOOL(fh1_native_read_resolved_float, false, "FH1",
                     "Native renderer: the small float pictures (levels of the reflection cube map, luminance) are "
                     "copied to guest memory too, converted to the format the game resolved them in. false = only the "
@@ -4621,6 +4640,16 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     }
     reads_urgent_ = false;
     WaitGpu();  // submits what is recorded and completes every slot: WriteReads puts them in guest memory
+    for (const uint64_t key : reads_once_) {  // fh1_native_read_one_off: the GPU has nothing pending any more
+      for (uint64_t slot = 0; slot < 2; ++slot) {
+        const auto it = reads_.find(key ^ (slot << 63));
+        if (it != reads_.end()) {
+          DestroyRead(it->second);
+          reads_.erase(it);
+        }
+      }
+    }
+    reads_once_.clear();
     if (reads_finished_++ < 8) {
       REXLOG_INFO("[fh1] read-backs of tiny resolved textures finished before the game's fence ({} so far)",
                   reads_finished_);
@@ -6488,6 +6517,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   std::string dump_folder_ = "dump_resolved";
   uint32_t dump_count_ = 0;
   bool dump_rt_pending_ = false;
+  bool dump_photo_request_ = false;
   uint32_t dump_rt_done_ = 0;
   bool dump_frame_pending_ = false;
   uint32_t dump_frame_done_ = 0;
@@ -6504,9 +6534,10 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       // checked twice a second, the file is removed.
       static uint32_t count = 0;
       std::error_code ec;
-      if (++count % 30 != 0 || !std::filesystem::remove("dump_now", ec)) {
+      if (!dump_photo_request_ && (++count % 30 != 0 || !std::filesystem::remove("dump_now", ec))) {
         return;
       }
+      dump_photo_request_ = false;  // fh1_native_diag_photo
       // FH1: on demand it can be asked again; each dump after the first gets its own folder (dump_resolved_2, ...).
       if (++dump_count_ > 1) {
         dump_folder_ = "dump_resolved_" + std::to_string(dump_count_);
@@ -6842,18 +6873,67 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     const bool half_read = maximum_half > 0 && resolved.image.format == VK_FORMAT_R16G16B16A16_SFLOAT &&
                            format_guest_read == uint32_t(xenos::ColorFormat::k_16_16_16_16_FLOAT) &&
                            uint64_t(width) * height <= uint64_t(maximum_half);
-    if (!half_read && (maximum <= 0 || uint64_t(width) * height > uint64_t(maximum) ||
-                       (resolved.image.format != kFormatColor && !float_read))) {
-      return;
-    }
     const uint64_t key_target =
         (uint64_t(reg.rb_copy_dest_base) << 28) ^ (uint64_t(width) << 14) ^ uint64_t(height);
+    // FH1 (fh1_native_read_one_off): a picture the game makes once (the photo of a car) is read by the game's own
+    // code right after its resolve. The first resolves to a destination that has been quiet for 60 frames go to
+    // guest memory at once, in the format the game asked for.
+    bool one_off = false;
+    const int32_t one_off_resolves = REXCVAR_GET(fh1_native_read_one_off);
+    if (one_off_resolves > 0) {
+      OneOff& seen = one_off_[key_target];
+      const uint64_t frame = presented_ + 1;
+      if (seen.frame == 0 || seen.frame + 60 < frame) {
+        // A destination that keeps coming back every few seconds (the festival's 384x128 screens, crowd pictures)
+        // is an effect, not a photo: waiting for the GPU each time cost a late frame every few seconds
+        // (28.6-29.6 fps at the festival). After two returns within 20 s it follows the old rules for good.
+        if (seen.frame != 0 && seen.frame + 600 >= frame && seen.returns < 2) {
+          ++seen.returns;
+        }
+        seen.streak = 0;
+      }
+      seen.frame = frame;
+      if (seen.returns < 2 && seen.streak < uint32_t(one_off_resolves)) {
+        ++seen.streak;
+        const VkFormat host = resolved.image.format;
+        const bool known =
+            (host == kFormatColor && (format_guest_read == uint32_t(xenos::ColorFormat::k_8_8_8_8) ||
+                                      format_guest_read == uint32_t(xenos::ColorFormat::k_2_10_10_10))) ||
+            (host == VK_FORMAT_R16G16B16A16_SFLOAT &&
+             (format_guest_read == uint32_t(xenos::ColorFormat::k_2_10_10_10) ||
+              format_guest_read == uint32_t(xenos::ColorFormat::k_8_8_8_8) ||
+              format_guest_read == uint32_t(xenos::ColorFormat::k_16_16_16_16_FLOAT))) ||
+            (host == VK_FORMAT_R32_SFLOAT && format_guest_read == uint32_t(xenos::ColorFormat::k_32_FLOAT));
+        one_off = known && uint64_t(width) * height <= (uint64_t(1) << 22);
+        if (one_off_logged_++ < 3000) {
+          REXLOG_INFO("[fh1] one-off resolve {}: {:08X}, {}x{} at ({},{}), guest format {}, host format {}, "
+                      "frame {}, {} in a row, dest info {:08X} pitch {:08X} control {:08X}",
+                      one_off ? "goes to guest memory" : "NOT written (format pair not handled)",
+                      reg.rb_copy_dest_base, width, height, x0, y0, format_guest_read, uint32_t(host), presented_,
+                      seen.streak, reg.rb_copy_dest_info, reg.rb_copy_dest_pitch, reg.rb_copy_control);
+        }
+      }
+    }
+    const bool old_rules = half_read || !(maximum <= 0 || uint64_t(width) * height > uint64_t(maximum) ||
+                                          (resolved.image.format != kFormatColor && !float_read));
+    if (!one_off && !old_rules) {
+      return;
+    }
+    const uint64_t texels_texture =
+        uint64_t(reg.rb_copy_dest_pitch & 0x3FFF) * ((reg.rb_copy_dest_pitch >> 16) & 0x3FFF);
+    const bool one_off_waits =
+        one_off && texels_texture >= uint64_t(std::max(REXCVAR_GET(fh1_native_read_one_off_wait_texels), 0));
+    if (one_off && REXCVAR_GET(fh1_native_diag_photo) && (reg.rb_copy_dest_pitch & 0x3FFF) == 768 &&
+        ((reg.rb_copy_dest_pitch >> 16) & 0x3FFF) == 288) {
+      std::ofstream("trace_now").put('1');
+      dump_photo_request_ = true;
+    }
     TargetRead& target = reads_by_target_[key_target];
     target.base = reg.rb_copy_dest_base;
     target.width = width;
     target.height = height;
     const uint64_t every = uint64_t(std::max(REXCVAR_GET(fh1_native_reads_every), 1));
-    if (target.copies++ % every != 0) {
+    if (target.copies++ % every != 0 && !one_off) {
       ++target.skipped;  // exposure changes slowly: the guest keeps the previous one
       return;
     }
@@ -6902,8 +6982,11 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     copy.imageExtent = {width, height, 1};
     dfn_.vkCmdCopyImageToBuffer(commands_work_, resolved.image.image, VK_IMAGE_LAYOUT_GENERAL,
                                 read.buffer, 1, &copy);
-    if (uint64_t(width) * height <= 1024 || half_read) {
+    if (uint64_t(width) * height <= 1024 || half_read || one_off_waits) {
       reads_urgent_ = true;  // FinishReads
+    }
+    if (one_off && bytes > 16384) {
+      reads_once_.push_back(key);  // a large buffer used a few times: FinishReads frees it
     }
     if (half_read && reads_half_++ < 8) {
       REXLOG_INFO("[fh1] read-back of a 16-bit float resolve: {:08X}, {}x{} (the game reads it on the CPU)",
@@ -7020,6 +7103,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       }
       if (p.format_host != VK_FORMAT_R8G8B8A8_UNORM) {
         const bool wide = p.format_host == VK_FORMAT_R16G16B16A16_SFLOAT;
+        const bool to_8 = ((p.info >> 7) & 0x3F) == uint32_t(xenos::ColorFormat::k_8_8_8_8);
         const float scale = std::ldexp(1.0f, int32_t((p.info >> 16) << 26) >> 26);
         for (uint32_t j = 0; j < p.height; ++j) {
           const uint32_t ty = uint32_t(p.y0) + j;
@@ -7052,6 +7136,18 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                 std::swap(field[0], field[2]);
               }
               word = field[0] | (field[1] << 10) | (field[2] << 20) | (field[3] << 30);
+              if (to_8) {
+                // FH1: a float picture resolved as k_8_8_8_8: one byte per channel, in the 8-bit path's order.
+                uint8_t c8[4];
+                for (uint32_t c = 0; c < 4; ++c) {
+                  float v = DumpHalfToFloat(h[c]) * (c < 3 ? scale : 1.0f);
+                  v = v > 0.0f ? std::min(v, 1.0f) : 0.0f;
+                  c8[c] = uint8_t(v * 255.0f + 0.5f);
+                }
+                const uint8_t t[4] = {c8[b0], c8[b1], c8[b2], c8[b3]};
+                std::memcpy(physical + address, t, 4);
+                continue;
+              }
             } else {
               std::memcpy(&word, s, sizeof(word));
             }
@@ -7062,6 +7158,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         RestampAfterRead(p);
         continue;
       }
+      // FH1: an 8-bit picture resolved as k_2_10_10_10 (the final image): ten bits per channel, two of alpha.
+      const bool to_10 = ((p.info >> 7) & 0x3F) == uint32_t(xenos::ColorFormat::k_2_10_10_10);
       for (uint32_t j = 0; j < p.height; ++j) {
         const uint32_t ty = uint32_t(p.y0) + j;
         if (p.height_target && ty >= p.height_target) {
@@ -7077,6 +7175,17 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
           }
           const uint64_t address = row + (uint64_t(tx >> 5) << 12) + local[tx & 31];
           if (address + 4 > 0x20000000) {
+            continue;
+          }
+          if (to_10) {
+            uint32_t field[3] = {(uint32_t(s[0]) * 1023 + 127) / 255, (uint32_t(s[1]) * 1023 + 127) / 255,
+                                 (uint32_t(s[2]) * 1023 + 127) / 255};
+            if (swap_value) {
+              std::swap(field[0], field[2]);
+            }
+            const uint32_t word = xenos::GpuSwap(
+                field[0] | (field[1] << 10) | (field[2] << 20) | (uint32_t(s[3] >> 6) << 30), order);
+            std::memcpy(physical + address, &word, sizeof(word));
             continue;
           }
           const uint8_t t0 = s[b0], t1 = s[b1], t2 = s[b2], t3 = s[b3];
@@ -7108,12 +7217,30 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   // FH1: the read-back itself changed the guest memory under a resolved texture: its fingerprint is taken again,
   // or the next draw would think the game wrote there and read the texture from memory.
   void RestampAfterRead(const ReadPending& p) {
-    const auto it = resolved_.find(p.base & 0x1FFFFFFF);
+    const uint32_t address = p.base & 0x1FFFFFFF;
+    const auto it = resolved_.find(address);
     if (it != resolved_.end() && !it->second.overwritten) {
-      it->second.stamp_memory = StampMemory(p.base & 0x1FFFFFFF, it->second.image.width, it->second.image.height,
+      it->second.stamp_memory = StampMemory(address, it->second.image.width, it->second.image.height,
                                             BytesTexelGuest(it->second.format_guest));
+      return;
+    }
+    // A piece of a larger resolved texture (the scene's strips, the livery's sides): the fingerprint is the
+    // container's.
+    for (auto& [base, t] : resolved_) {
+      if (!t.overwritten && base < address &&
+          uint64_t(address) - base < uint64_t(t.image.width) * t.image.height * BytesTexelGuest(t.format_guest)) {
+        t.stamp_memory = StampMemory(base, t.image.width, t.image.height, BytesTexelGuest(t.format_guest));
+      }
     }
   }
+  struct OneOff {
+    uint64_t frame = 0;   // presented frame of the last resolve to this destination
+    uint32_t streak = 0;  // resolves read at once since it was last quiet
+    uint32_t returns = 0;  // times it came back within 20 s of its last resolve (2 = an effect: old rules)
+  };
+  std::unordered_map<uint64_t, OneOff> one_off_;  // fh1_native_read_one_off
+  std::vector<uint64_t> reads_once_;
+  uint64_t one_off_logged_ = 0;
 
   void DestroyRead(ReadAccess& read) {
     if (read.memory_block != VK_NULL_HANDLE) {

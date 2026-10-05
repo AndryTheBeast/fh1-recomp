@@ -1,6 +1,10 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, sixth session:
+Read this after CLAUDE.md. It is the starting point for the next session. **State as of 2026-10-06, seventh
+session: the photos of a saved car are right** (item 0b, see "What was fixed on 2026-10-06" below). **The user's
+plan changed that night: the other fixes of this list wait; next is the offline shader library for the PC
+(ROADMAP.md, Stage 3: tell the plan before building it), then the first pre-release.** State before that,
+2026-10-05, sixth session:
 **the design creator is fixed** (sides, gloss, badge, tyres and rims of the car in the paint booth; compare
 `build_logs\reference\design-creator-fixed-20261005-*-native-left-emulated-right.png`). The festival is unchanged
 (58 s: 5/16/41/91/122 on both renderers; 100 s: 5/12/40/99/170 native, 5/12/40/98/176 emulated; 30 fps, real GPU
@@ -9,7 +13,8 @@ too upwards, even going inside the rim": fixed after that); nobody has driven th
 
 - **0. Paint booth: DONE in the sixth session** (see "What was fixed on 2026-10-05, sixth session" below). Left
   of it: **car damage has not been looked at** (same undeclared streams; ask the user to hit something).
-- **0b. FIRST THING NEXT SESSION: the photos of a car after saving a paint job are wrong, native only.** The
+- **0b. DONE 2026-10-06 (seventh session; the notes below are from before the fix): the photos of a car after
+  saving a paint job were wrong, native only.** The
   user saved a paint job on both renderers on 2026-10-05 (sixth session's build) and sent both screens of the
   car list: `build_logs\reference\user-thumbnail-20261005-emulated-correct.webp` (both photos show the orange
   Mustang) and `user-thumbnail-20261005-native-wrong.webp`. On the native renderer:
@@ -317,6 +322,49 @@ into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. 
 
 Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
 target they clear (the same EDRAM, four samples per pixel drawn).
+
+## What was fixed on 2026-10-06, seventh session: the photos of a saved car
+
+Pictures: `build_logs\reference\user-thumbnail-20261006-native-fixed.webp` (the user's car list after the fix)
+against `user-thumbnail-20261005-native-wrong.webp`; `photos-fixed-20261006-booth-native.png` (the booth with
+the final build).
+
+- **Cause.** When a paint job is saved (or a car bought) the game draws the photo scene twice, 11 frames apart:
+  an 8-bit 1280x720 picture in three strips (1A1EA000 / 1A32A000 / 1A46A000, then 19FE6000 / 1A126000 /
+  1A266000), each shrunk into one piece of a **768x288 picture** (k_8_8_8_8): the big photo 608x288 at its
+  base, the small thumbnail 160x288 at column 608, **stored turned on its side**. Right after the second piece
+  the game's own code reads that picture from guest memory and stores it in the save. The native renderer only
+  wrote resolves of up to 64x64 texels to guest memory, so the game stored what an older picture had left there
+  (the Corrado, on its side because that is how thumbnails are stored). The emulated GPU got the same fix on
+  2026-10-01 (`readback_resolve_sync_one_off`).
+- **Fix** (`fh1_native_targets.cpp`, `ReadResolved`): `fh1_native_read_one_off` (4). A resolve to a destination
+  that was not resolved in the last 60 frames goes to guest memory whatever its size, for four resolves in a
+  row, in the format the game asked for (new conversions: an 8-bit picture into k_2_10_10_10, a float picture
+  into k_8_8_8_8). A destination that comes back within 20 s twice is an effect (the festival's 384x128
+  screens) and follows the old rules for good. `RestampAfterRead` also takes the fingerprint of the texture a
+  piece lies in. Log lines `[fh1] one-off resolve goes to guest memory: <address>, <size>, formats, frame`
+  (the first 3000): they list every picture a screen makes once.
+- **When it arrives matters** (`fh1_native_read_one_off_wait_texels`, 210000): into a texture of at least that
+  many texels the picture is in memory before the next command is read (the GPU is waited for); into a smaller
+  one it arrives when the submission finishes, a frame later. Measured, **the cause is not known**: with every
+  one-off written at once the paint booth lost its ambient light again (the game then makes its 256x128 light
+  map once instead of twice, and it is black) and the photos had their background but no car; with all of them
+  a frame late the booth was right and the thumbnail kept the old picture. Limits tried in the booth: 100000
+  wrong; 210000, 250000, 900000, 1000000 right. The pictures between 100000 and 210000 texels are 928x219
+  (1CF0C000, also resolved as k_8 to 1CFD7000) and 1824x114 (the last strip of a 1824x434 picture) of the
+  design creator's livery pass; the photo is 221184. If a screen loses its light or a photo its car, look
+  here first.
+- **Cost.** Each wait is a late frame (50 ms instead of 33). Festival: 28.4-29.6 fps in the first 25 s after
+  it appears, then 30 (before the fix 30 from the start); a menu scene has a few late frames when it loads.
+  Not tuned.
+- **Debug aid**: `--fh1_native_diag_photo=true` with `--fh1_native_diag_frame_s=-1 --fh1_native_diag_frames=14
+  --fh1_dump_resolved_at_s=-1` traces the frames and dumps every resolved picture when a piece of the photo is
+  resolved (written for the missing car, which went away with the limit: never read).
+- **Method that worked**: the emulated GPU's log (`Readback: synchronous one-off resolve`) named the same fault
+  fixed there; the booth, which the unattended test reaches, served to find the limit without a save (count of
+  `read-back of a 16-bit float resolve` lines: 2 = right, 1 = dark), and the user saved three times.
+- **Not compared against the emulated GPU this session**: the festival at the same second (the save now starts
+  at night with the Corrado, so the daylight references of 2026-10-05 no longer match; the picture looks sane).
 
 ## What was fixed on 2026-10-05, sixth session: the paint booth's light, tyres and rims
 
