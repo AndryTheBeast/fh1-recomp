@@ -2574,6 +2574,9 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       }
     }
     const uint32_t initiator = Register(g::XE_GPU_REG_VGT_DRAW_INITIATOR);
+    // FH1: the boolean constants the shaders branch on (0x4900 = vertex b0-b31, 0x4904 = pixel b0-b31, 0x4907 =
+    // pixel b96-b127), to compare with xe_bool_loop_cbuffer of a RenderDoc capture (tools/rdc_constants.py).
+    textures += fmt::format(" bools {:08X} {:08X} {:08X}", Register(0x4900), Register(0x4904), Register(0x4907));
     REXLOG_INFO("[trace] draw VS n{} PS n{} type {} count {} surf {:08X} rt0 {:08X} rt1 {:08X} mask {:08X} blend "
                 "{:08X} colorctl {:08X} depth {:08X} stencil {:08X} mode {:08X} window {:08X} tl {:08X} br {:08X} "
                 "vte {:08X} yoff {:.0f}{}",

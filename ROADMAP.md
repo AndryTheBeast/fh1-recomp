@@ -132,10 +132,14 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] Driving check after these fixes (motion blur while moving, frame drops) — the user drives
   - [x] Evening: flat green car (the game clears the shadow / headlight mask through a depth buffer on the same
         EDRAM; the fill now reaches the color target) — 2026-10-05
-  - [ ] Blue outline on the car's silhouette at night, blue rear window and bumper (user, 2026-10-05: still
-        there after both fixes of that day: the clamp at 0 and the cut at the console's ceiling)
-  - [ ] Night: the headlights are on but do not light the road in front of the car (user, 2026-10-05)
-  - [ ] Map screen: the circle selector does not appear (user, 2026-10-05; for the next session)
+  - [x] Blue outline on the car, blue rear window and bumper (day and night, next to some verges): the clear
+        color of 10-bit and 7e3 float targets was read as four bytes, so the reflection cube map was wiped
+        bright blue instead of nearly black and showed it in the gaps of its scene (2026-10-05, seen by the user)
+  - [x] Night: the headlights light the road (the shaders now get all 256 boolean constants, not b0-b15 per
+        stage: the scenery tests b100) — 2026-10-05, seen by the user's capture at night
+  - [x] Map screen: the circle selector (k_DXT3A textures, widened to BC2 blocks) — 2026-10-05
+  - [x] Diagnostics on demand at a spot the user drove to: `run_native_capture.bat` / `run_emulated_capture.bat`
+        + `tools\capture_now.ps1` (frame dump and trace, or a RenderDoc capture) — 2026-10-05
   - [x] Glow around lights (the red glow of the tail lights): not the bloom but the game's occlusion queries;
         answered with 1000 samples like the emulated GPU (`--fh1_native_occlusion=0`, the default) — 2026-10-05
   - [ ] Occlusion queries measured for real (a glow hidden behind an object; needs the 4x samples and the sum
@@ -145,7 +149,7 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] Crowd brighter than the emulated one, hard cut-out edges
   - [ ] 2x MSAA reflection cube map and its resolves
   - [ ] Computed vertex index outside quad lists (rejected today)
-  - [ ] Small formats: k_24_8 not from a resolve, k_DXT3A, 1D textures, other texture sign modes
+  - [ ] Small formats: k_24_8 not from a resolve, 1D textures, other texture sign modes
 - [ ] **N5 the rest of the game and speed**
   - [ ] Races, garage, car photos, paint shop on the native renderer
   - [ ] Frame time while driving (185-230 ms frames were seen; render-target copies rejected)

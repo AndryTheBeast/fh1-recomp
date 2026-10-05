@@ -5298,6 +5298,23 @@ class DrawsVulkanImpl final : public DrawsVulkan {
      * serves no purpose: none of them changes within a frame.
      */
     diag_skip_ps_text_ = REXCVAR_GET(fh1_native_diag_skip_ps);
+    if (diag_skip_ps_text_ == "file") {
+      // FH1: "file" = the list is the first line of skip_ps.txt in the working folder, read again every 15 frames
+      // (tools/skip_cycle.ps1 changes it while the user stays parked at a spot: which shader paints this?).
+      static std::string list_file;
+      static uint32_t frames = 0;
+      if (frames++ % 15 == 0) {
+        list_file.clear();
+        if (std::FILE* f = std::fopen("skip_ps.txt", "r")) {
+          char line[256] = {};
+          if (std::fgets(line, sizeof(line), f)) {
+            list_file = line;
+          }
+          std::fclose(f);
+        }
+      }
+      diag_skip_ps_text_ = list_file;
+    }
     diag_vertices_repeated_ = REXCVAR_GET(fh1_native_diag_repeated_vertices);
     dedupe_active_ = REXCVAR_GET(fh1_native_dedupe_vertices);
     exp_bias_ = REXCVAR_GET(fh1_native_exp_bias);

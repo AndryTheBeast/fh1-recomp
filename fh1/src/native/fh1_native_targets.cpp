@@ -1857,6 +1857,21 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         VkClearColorValue color{};
         if (REXCVAR_GET(fh1_native_diag_clear)) {
           color = ColorDiagnostic(info_color & 0xFFF, format_color, pitch);
+        } else if (format_color == 2 || format_color == 3 || format_color == 10 || format_color == 12) {
+          // FH1: the clear value is packed like the target: three 10-bit fields and 2 bits of alpha. For the float
+          // formats (3 and 12) each field is the console's 7e3 float (7 bits of mantissa, 3 of exponent, largest
+          // value 31.875). Read as four bytes, the reflection cube map's 00701003 (nearly black) became a bright
+          // blue (0.01 0.06 0.44) that showed wherever the cube's scene has a gap, and the cars mirrored it.
+          const bool is_float = format_color == 3 || format_color == 12;
+          for (uint32_t j = 0; j < 3; ++j) {
+            const uint32_t field = uint32_t(value_raw >> (j * 10)) & 0x3FF;
+            const uint32_t exponent = field >> 7;
+            const float mantissa = float(field & 0x7F) * (1.0f / 128.0f);
+            color.float32[j] = !is_float   ? float(field) * (1.0f / 1023.0f)
+                               : exponent ? std::ldexp(1.0f + mantissa, int(exponent) - 3)
+                                          : mantissa * 0.25f;
+          }
+          color.float32[3] = float((value_raw >> 30) & 0x3) * (1.0f / 3.0f);
         } else {
           for (uint32_t j = 0; j < 4; ++j) {
             color.float32[j] = float((value_raw >> (j * 8)) & 0xFF) * (1.0f / 255.0f);

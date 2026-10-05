@@ -19,7 +19,9 @@ repainting cars (photos correct), saving. Legion Go (Ryzen Z1 Extreme): 30 fps (
 normal play, 26-28 in the busiest spots. Default graphics = the SDK's emulated Xbox 360 GPU: D3D12
 (default) and Vulkan (`--gpu_backend=vulkan`), both correct. In progress: the native Vulkan renderer
 (`--fh1_renderer=native`): boot, videos, menus and loading screens match the emulated picture; the festival
-in daylight is close to it (sharp, shadows, crowd); evening look and driving are still to do. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+in daylight and at evening is close to it; driving at night works since 2026-10-05 (headlights light the road,
+no blue on the car, map selector); still open: reflections sharper than the emulated ones, a slightly darker
+picture, stair-stepped edges, races and garage not checked. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
 docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
 the frame time goes and what to cut for the Switch.
 
@@ -244,10 +246,24 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
   emulated GPU does this by itself; the native renderer has separate images and needs each case handled. When
   a native picture is wrong only in some channels or keeps old contents, compare that render target after each
   pass with a RenderDoc capture of the emulated GPU (tools/rdc_*.py) before reading shaders.
-- Next session (2026-10-05): the prompt is in docs/next-session-prompt.md. The user's night drive after both
-  fixes: the blue outline on the car is still there; new: the headlights do not light the road; the map
-  screen's circle selector does not appear. Nothing of the three is looked at yet (the user's choice: next
-  session). The night road is not reached by the unattended test: the user has to drive there.
+- 2026-10-05, second session: the three things of the user's night drive are fixed and seen by the user.
+  Headlights on the road: the shaders now get all 256 boolean constants (the scenery tests pixel b100; only
+  b0-b15 per stage were passed). Map selector: k_DXT3A textures. Blue outline / blue window and bumper: the
+  clear value of 10-bit and 7e3 float targets was read as four bytes, so the reflection cube map was wiped
+  bright blue. Details and numbers in docs/native-renderer-status.md; the prompt for the next session is in
+  docs/next-session-prompt.md.
+- A fault that shows only at some places and is a flat color: think of a clear color before any shader. A
+  clear value is packed in the target's own format (7e3 floats for k_2_10_10_10_FLOAT).
+- Spots the unattended test does not reach (the road, night, the map screen): the user starts
+  `run_native_capture.bat`, `run_emulated_capture.bat` or `run_native_skip.bat` (copies of tools\run_*.bat
+  next to run_fh1.bat), drives there, stops and types "now"; then `tools\capture_now.ps1` (frame dump + trace,
+  or a RenderDoc capture of the emulated GPU) or `tools\skip_cycle.ps1` (leaves out one shader at a time and
+  photographs the window). Night falls about 5 minutes after launch; the car parked at the festival reaches
+  night unattended, but the festival does not show every fault (it did not show the blue).
+- The user may pick up the pad and drive a test window that Claude started: say that a window is a test before
+  it opens. Claude cannot build while the user's game is open: ask them to close it.
+- The first run after a new shader library froze on the loading screen once (2026-10-05; three runs after it
+  were fine; cause not confirmed).
 - A test window started with a temporary option looks like the normal game to the user: say so before they
   look (on 2026-10-05 a glow seen in such a window was taken for an effect of the build).
 - Do not edit sources while a build is running: a header changed in the middle gives a mixed build (it happened on

@@ -1,7 +1,9 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05 (the green car
-at evening is fixed; see "What was fixed on 2026-10-05").
+Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, second session:
+the three things the user saw on the night drive are fixed and seen by the user (blue outline, headlights on the
+road, map selector; see "What was fixed on 2026-10-05, second session"). Open list, in order: items 1, 3, 4, 5
+below, then 6-8.
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
 GoatHonks' nfsc-recomp renderer; his later fixes are ported by hand when they work for FH1
@@ -26,6 +28,8 @@ Compare `build_logs\reference\test-festX-*` (emulated, correct) with `test-a2m-*
 **Items A (crowd animations) and B (over-sharp picture) were done on 2026-10-04 late night**: see "What was fixed"
 below. What is left of B is items 4 and 5 of this list (one sample instead of 4x MSAA).
 
+**Items 0, 0a and 0b were done in the second session of 2026-10-05** (kept below with their old notes, marked
+DONE). What follows in this paragraph is the order as it stood before that session.
 **Item 2 (the green car at evening) and the glow of item 3 were done on 2026-10-05.** The prompt for the next
 session is `docs/next-session-prompt.md`. The order for what is left (the user's, after the night drive of 2026-10-05): the blue outline at night (item
 0), the headlights that do not light the road (item 0a), the map screen's missing circle selector (item 0b),
@@ -51,9 +55,11 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
    are 2x MSAA on the console and drawn at one sample here), a texture format still replaced by an empty one
    (cause 422 = k_24_8 not coming from a resolve).
 
-0a. **Night: the headlights are on but do not light the road** (user, 2026-10-05,
+0a. **Night: the headlights light the road: DONE 2026-10-05** (see "What was fixed on 2026-10-05, second
+   session"). The notes from before the fix:
+   (user, 2026-10-05,
    `build_logs\reference\user-night-20261005-c-headlights-no-ground-light.webp`: the lamps and their glow are
-   there, the road in front of the car is as dark as everywhere else). Not looked at. What is known from the
+   there, the road in front of the car is as dark as everywhere else). What was known from the
    green-car work: the lighting of headlights and brake lights is deferred. PS n56 writes exp2(-light) of one
    light into green, blue and alpha of the shadow mask (1CE2D000) from the scene depth, a 1D falloff texture
    (132D9000, k_16) and a beam texture (136AC000); every shader that is lit reads those channels when its
@@ -67,12 +73,15 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
    (1C4E1000) of both: at the festival the emulated ground and car body were already brighter before
    post-processing, which may be the same missing light as item 3's darker picture.
 
-0b. **Map screen: the circle selector does not appear** (user, 2026-10-05, "we'll leave that issue for the next
-   session"). Nothing looked at yet. Start: both renderers on the map screen (ask the user how to get there or
+0b. **Map screen: the circle selector: DONE 2026-10-05** (a k_DXT3A texture; see the second session's section).
+   The plan from before the fix: both renderers on the map screen (ask the user how to get there or
    for a screenshot), a one-frame trace there (`--fh1_native_diag_frame_s`), the log's `(cause N)` lines, and a
    RenderDoc capture of the emulated GPU to find the selector's draw (`tools/rdc_draw_state.py`).
 
-0. **Blue outline at night: STILL THERE after both fixes (user's night drive, 2026-10-05).** Screenshots:
+0. **Blue outline: DONE 2026-10-05, second session** (it was the clear color of the reflection cube map, none of
+   the suspects below; see that session's section). The two earlier fixes (cut at 0, cut at the console's
+   ceiling) stay: they are correct for float pictures, they were just not the cause. The notes from before:
+   **STILL THERE after both fixes (user's night drive, 2026-10-05).** Screenshots:
    `build_logs\reference\user-night-20261005-b-rear-blue-outline.webp` and `-d-outline-crop.png` (after both
    fixes), `-a-blue-rims.webp` (after the first only). What they show: a blue line one pixel wide exactly on
    the car's silhouette against the road (roof edge, window frame, sides), the rear window's slats and the
@@ -182,6 +191,22 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
 
 ## Diagnostics that paid off
 
+- **A spot only the user can reach** (night road, map screen), since 2026-10-05: the user starts
+  `FH1-recomp\run_native_capture.bat` (native: `--fh1_dump_resolved_at_s=-1 --fh1_native_diag_frame_s=-1`) or
+  `run_emulated_capture.bat` (emulated GPU through RenderDoc with `--renderdoc_capture_seconds=-1`), drives,
+  stops and says "now"; then `powershell -ExecutionPolicy Bypass -File tools\capture_now.ps1 -Name <name>`
+  takes a screenshot (`build_logs\spot-<name>-*.png`) and writes the trigger files. Native: dumps in
+  `FH1-recomp\dump_resolved` (the second request in `dump_resolved_2`, ...) and a `[trace]` frame in the run
+  log each time. Emulated: `build_logs\rdc-spot-<date>_capture*.rdc`. Night falls about 5 minutes after launch.
+  `tools/rdc_texture.py` reads one texture of a capture (every cube face: smallest and largest value, PNG;
+  `RDC_WHITE=0.0625` for the dark 10-bit pictures).
+- **Which shader paints this?** at such a spot: `FH1-recomp\run_native_skip.bat`
+  (`--fh1_native_diag_skip_ps=file`), the user parks, then `tools\skip_cycle.ps1 -Name x -List "n,n,n+n"`
+  leaves out each entry's draws for 2.5 s and photographs the window (`build_logs\skip-x-<entry>.png`). If no
+  entry removes the fault, it is not a draw (a clear, a copy). The list of a pass's shaders comes from a
+  one-frame trace (the cube pass: lines with `surf 04010140`). The trace's draw lines now end with the boolean
+  registers (`bools <vertex b0-31> <pixel b0-31> <pixel b96-127>`).
+
 - Emulated GPU as the reference, from one RenderDoc capture (`auto_test.ps1 -RenderDoc -ExtraArgs
   "--renderdoc_capture_seconds=97"`, each script's header says how to run it): `tools/rdc_dump.py` (actions,
   render targets; `RDC_SAVE=eid:resource` saves one picture at one event, `RDC_ALPHA=1` keeps its alpha),
@@ -222,6 +247,69 @@ into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. 
 
 Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
 target they clear (the same EDRAM, four samples per pixel drawn).
+
+## What was fixed on 2026-10-05, second session: headlights on the road, map selector, blue outline
+
+Compare `build_logs\reference\spot-roadX-*.png` (emulated), `spot-roadN-*.png` (native before) and
+`spot-roadN2-*.png` (native after): the same street in Carson at night, the car stopped by the user.
+`night-car-emulated-before-after-20261005.png` is the car cut out of the three. Maps: `spot-mapX-*`, `spot-mapN-*`,
+`spot-mapN2-*`.
+
+- **Headlights did not light the road.** The deferred light mask (1CE2D000) was right: two PS n56 passes at night
+  (one per headlamp), each after a stencil clear (VS n1205, depth control 8701) and a light volume (VS n930, 36
+  indices, stencil only). The scenery did not use it: its shaders (153 of them, PS n377 is the commonest road
+  one) add `-log2(mask) * HeadLightParams2.x` only when the boolean **bEnableDeferredLightContribution** is set,
+  and that is pixel-shader boolean **b100**. The shared constants only carried b0-b15 of each stage (inherited
+  from the NFS renderer: `1 << (16 + n)` in a 32-bit word), so the test read garbage. The car paint's
+  psDeferredHeadlightEnable is b14, which is why the car did react to lights.
+- **Fix.** All eight boolean registers (0x4900-0x4907) go into the shared block (words 244-251,
+  `kWordsShared` 252, `Fh1BlockShared v[63]`); the translator names a boolean by its number (pixel b<n> = 128 +
+  n) and tests it with `FH1_BOOL` (`shaders/XenosRecomp/shader_common.h`; `shaders/shader_common.h` is an older
+  copy nothing uses). Every shader changed: the library was rebuilt (`fh1_shaders_before_bools.nfsp` is the one
+  before).
+- **Numbers** (car and the road around it, window pixels 800-1760 x 790-1460, mean RGB): emulated 72 50 40,
+  native before 36 15 18, native after 70 39 31. Whole picture, brightness percentiles 5/25/50/75/95: emulated
+  6/14/26/73/127, before 6/13/17/22/34, after 6/11/26/73/129. Festival at dusk unchanged (95 s: 4/11/31/89/167
+  against 4/11/29/91/169 before, emulated 5/13/39/102/177), 30 fps.
+- **Map selector.** Log cause 458 appeared the moment the map opened: k_DXT3A (format 58), the alpha half of a
+  DXT3 block alone, replaced by an empty texture. No host format has it: `PrepareTexture` now widens each
+  8-byte block to a BC2 block (same alpha half, empty color half) after the read and the byte swap, and the
+  view reads alpha into every channel (`kSwizzleAAAA`). Such textures skip the fingerprint thread.
+- **Blue outline, blue rear window, blue stripe under the tail lights, blue bumper** (day and night, only at
+  some places). Compare `build_logs\reference\spot-darkN-*.png` and `user-day-20261005-f-*.webp` (before) with
+  `spot-afterclear-*.png` (after): pixels on the car with blue 40 above red and green, 19,091 before, 0 after.
+  - **Cause.** The game clears each face of the reflection cube map (k_2_10_10_10_FLOAT, base 0, 256 pitch,
+    2x) with the resolve's clear value **00701003**. That value is packed like the target: three 10-bit 7e3
+    floats (3, 4 and 7: 0.006, 0.008, 0.014, nearly black) and 2 bits of alpha. `Copy` read every clear value
+    as four bytes: 0.012 0.063 0.44, a bright blue. The cube's scene is a low-detail one with gaps (the verge
+    beside some roads is not drawn in it), the clear color shows there, and glass, chrome and the paint mirror
+    it. The emulated cube has (0, 0, 1 step of 10 bits) in the same strip.
+  - **Fix** (`fh1_native_targets.cpp`, the clear inside `Copy`): formats 2 and 10 are read as three 10-bit
+    fractions, formats 3 and 12 as 7e3 floats (exponent 0: mantissa / 512; else (1 + mantissa / 128) *
+    2^(exponent - 3)), alpha as 2 bits. The scene's own clear (C8521485) changes too; the sky covers it.
+  - **How it was found.** The user's dark spot: the cube faces in the dump had a flat saturated blue strip. No
+    shader explained it, so `--fh1_native_diag_skip_ps=file` + `tools\skip_cycle.ps1` left out each shader of
+    the cube pass in turn while the user stayed parked (`run_native_skip.bat`): no shader removed the blue, and
+    leaving out the road's (PS n3129) made the whole car blue (`skip-v1-3129.png`). So it was what is under
+    the draws: the clear. Ruled out on the way, with numbers: the cube's color order (resolve with
+    copy_dest_swap and fetch with ZYXW cancel out, as in the emulated capture), the car shaders' booleans
+    (pixel b0-b31 = 00004211 on both renderers for the paint; the trace prints them now), the deferred light
+    mask on the car (255 in all four channels), the paint's background map (bound, but psUseBackgroundMap is
+    off on both). The festival never shows it: its cube scene has no gap.
+- **Seen on the way, not fixed:** parked at the festival at night (`test-parkN-*` / `test-parkX-*-340s.png` in
+  build_logs), the native chrome and paint are sharper and whiter than the emulated ones, which are soft: the
+  cube map has one level here and nine on the console (item 3's suspect). Brightness there: emulated
+  5/29/53/79/147, native 4/21/40/65/131.
+- **The first run after a new shader library** froze on the loading screen once (picture stuck, sound running,
+  the ring thread silent for 45 s until the test ended); the three runs after it were fine. Probably the
+  pipeline cache being rebuilt for 3,849 changed shaders; not confirmed. If it comes back on a later run, it is
+  a real hang: look at what the ring thread (the one that logs `[fh1] loop constant`) is waiting for.
+- **How it was found.** The user drove to the same street on both renderers and typed "now":
+  `run_native_capture.bat` (dump + trace on demand) and `run_emulated_capture.bat` (RenderDoc capture on
+  demand), each triggered by `tools\capture_now.ps1`. The native mask dump already had the beam, so the pass
+  that makes the light was fine and the fault had to be in a reader of the mask; the commonest shader that
+  binds the mask in the trace was read, and its `#define bEnableDeferredLightContribution (1 << 116)` gave it
+  away.
 
 ## What was fixed on 2026-10-05: the green car at evening
 
