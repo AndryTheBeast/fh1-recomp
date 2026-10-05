@@ -1,6 +1,7 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-04 (late night).
+Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05 (the green car
+at evening is fixed; see "What was fixed on 2026-10-05").
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
 GoatHonks' nfsc-recomp renderer; his later fixes are ported by hand when they work for FH1
@@ -25,12 +26,14 @@ Compare `build_logs\reference\test-festX-*` (emulated, correct) with `test-a2m-*
 **Items A (crowd animations) and B (over-sharp picture) were done on 2026-10-04 late night**: see "What was fixed"
 below. What is left of B is items 4 and 5 of this list (one sample instead of 4x MSAA).
 
-**The user's order for the next session (2026-10-05, after looking at the result: "you fixed a lot of things"):
-the green car at evening first (item 2), then the other things on this list.** The user also drove at night and
+**Item 2 (the green car at evening) was done on 2026-10-05.** The order for what is left: item 0 (ask the user
+whether the specks are still there), then items 3, 4, 5. The user's order had been (2026-10-05, after looking at
+the result: "you fixed a lot of things"): the green car at evening first (item 2), then the other things on
+this list. The user also drove at night and
 sent two crops: coloured specks (blue, orange) exactly on the car's silhouette, "the sharpening still looks kinda
 wrong". See item 0.
 
-How to start on item 2 (in this order, each step is small):
+How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Diagnostics that paid off"):
 
 1. Make `--fh1_dump_resolved_at_s` write the float images too (scene 1C4E1000, bloom chain, cube faces 1C879000..):
    today only the 8-bit ones are written, and the evening problem is in pictures that became float. Tone-map for
@@ -58,7 +61,8 @@ How to start on item 2 (in this order, each step is small):
    drive first. To look at: motion blur while moving (the velocity pass now gets real depth and stencil; the car's
    own stencil value, 21, picks its matrix), frame drops (185-230 ms frames were seen before), anything that
    flashes.
-2. **Evening look** (from ~90 s after launch, `test-latenight-*-95s.png` against `test-festX-*-95s.png`): after
+2. **Evening look: DONE 2026-10-05** (the rear panel; the red glow is item 3). What was known before the fix:
+   (from ~90 s after launch, `test-latenight-*-95s.png` against `test-festX-*-95s.png`): after
    the late-night fixes the sky, the light beams and the crowd match the emulated picture. Left: **the car's rear
    panel is flat bright green** (the emulated one is dark with reflections), and the tail lights have no red glow.
    What is known: the same shaders draw the car day and evening (same PS list with the cube map 1C879000); the 1D
@@ -110,6 +114,16 @@ How to start on item 2 (in this order, each step is small):
 
 ## Diagnostics that paid off
 
+- Emulated GPU as the reference, from one RenderDoc capture (`auto_test.ps1 -RenderDoc -ExtraArgs
+  "--renderdoc_capture_seconds=97"`, each script's header says how to run it): `tools/rdc_dump.py` (actions,
+  render targets; `RDC_SAVE=eid:resource` saves one picture at one event, `RDC_ALPHA=1` keeps its alpha),
+  `tools/rdc_constants.py` (the shader constants and textures of a draw, found by index count or event id; the
+  n-th float4 of xe_float_cbuffer is the n-th register the shader uses, in rising order),
+  `tools/rdc_draw_state.py` (a draw's vertex positions, viewport, depth test, blend). Native side:
+  `--fh1_native_diag_constants_ps=<n>` now logs every constant that is not zero.
+- The float images (cube map faces and their smaller levels, bloom chain, luminance) are dumped too since
+  2026-10-05: `..._float_tm.png` = x / (1 + x) then gamma 2.2, with a log line per image (`[fh1] dump_resolved
+  float`: largest and mean value per channel, how many negative values and NaN).
 - `--fh1_dump_resolved_at_s=N`: at second N, every resolved image, render target and depth-as-bytes image
   (`dump_resolved\NN_<address>_<size>.png` next to fh1.exe), and **for the following frame every color image right
   after its copy** (`frame_NN_dest<address>_<size>.png`, with `alpha_` twins): the post-processing chain step by
@@ -140,6 +154,45 @@ into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. 
 
 Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
 target they clear (the same EDRAM, four samples per pixel drawn).
+
+## What was fixed on 2026-10-05: the green car at evening
+
+Compare `build_logs\reference\test-fill-20261005-95s.png` (native after) with `test-fillX-20261005-95s.png`
+(emulated, same second) and `test-latenight-*-95s.png` (native before).
+
+- **Cause.** The car paint (PS n1265 and the other car shaders) reads the headlight / brake-light lighting from
+  the green, blue and alpha channels of the shadow mask (1CE2D000, sampler ShadowMaskSamp) when the boolean
+  psDeferredHeadlightEnable is set, which happens at evening. Those channels are built each frame like this
+  (render target at EDRAM base 2D0, 1280 pitch): (1) the game points the **depth buffer at base 2D0** and draws
+  a depth-only rectangle (VS n1205, mode 5, depth control 8777, Z = 1, stencil FF) on a 4x surface of 640 pitch:
+  on the console that leaves FFFFFFFF in the EDRAM = a white color target; (2) PS n800 (a quad whose four
+  vertices are zero at evening: it draws nothing); (3) PS n56, a full-screen pass that multiplies
+  exp2(-light) into green, blue and alpha (blend 00080008, color mask E); (4) resolve, FXAA of the mask
+  (PS n3327), resolve. Here a depth buffer and a color target are separate images, so step 1 never reached the
+  mask: it kept the daytime picture (blue = alpha = 0 on everything but the sky, written by PS n800 in daylight)
+  and green was multiplied down to 0 frame after frame. The paint took log2 of those zeros: a flat, very
+  bright green panel.
+- **Fix** (`--fh1_native_depth_fill_color`, on by default). A depth-only rectangle that writes Z without
+  testing it is noted (`ContextTargets::NoteFillDepth`); the next pass that draws into the 8-bit color target of
+  the same base and pitch first gets the depth buffer's bytes (`TargetsVulkan::ApplyFillDepth`, the pass that
+  already writes a resolved depth as bytes). A resolve that clears the color target cancels a pending fill.
+  The depth-as-bytes shader gave FF 00 00 for a depth of exactly 1 (16777216 in float arithmetic): now FF FF FF.
+- **Numbers** (mask at second 97, centre of the screen inside the brake-light cone, R G B A): emulated
+  255 124 138 191; native before 255 0 0 0; native after 255 124 138 191. Ground outside the cone: emulated 255
+  in every channel; before 250 255 0 0; after 255 255 255 255 (`python tools\fh1_mask_stats.py` after a run
+  with `--fh1_dump_resolved_at_s=97`). Rear panel mean color in the screenshot at 95 s: emulated 98 44 45, native
+  before 70 132 62, native after 57 35 30 (darker than the emulated one: the red glow of the tail lights is the
+  bloom, item 3). Daylight unchanged (58 s, brightness percentiles 5/25/50/75/95: native 4/12/35/81/116,
+  emulated 5/15/40/92/126), 30 fps.
+- The same fill is also noted for the color targets at base 2D0 pitch 400 and base 0 pitch 1280 (log lines
+  `[fh1] color target base ... is filled through the depth buffer`); boot, videos, menu, loading screen and
+  festival were checked after it. If a screen ever shows depth bytes (a mostly red / white picture), this is
+  the option to turn off first.
+- How it was found (the method, for the next picture problem): the float dumps showed the cube map was fine;
+  the pixel and vertex constants of the car shaders were compared with the emulated ones from a RenderDoc
+  capture (identical); the difference was in a texture, so the mask was saved from the capture after each of
+  its passes and compared channel by channel with the native dump; then each pass's state (vertices, depth
+  test, blend) was read from the capture.
 
 ## What was fixed on 2026-10-04, and why (so the same causes are recognised again)
 

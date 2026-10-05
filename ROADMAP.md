@@ -17,7 +17,7 @@ play, 26-28 in the busiest spots.
 | --- | --- | --- |
 | Emulated Xbox 360 GPU, D3D12 (default) | `run_fh1.bat` | correct, 30 fps; F3 frame monitor |
 | Emulated Xbox 360 GPU, Vulkan | `run_fh1.bat --gpu_backend=vulkan` | correct, 28-30 fps |
-| **Native renderer** (Vulkan, in progress) | `run_fh1.bat --fh1_renderer=native` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps (animated crowd, soft edges, right exposure); evening car color, bloom and driving still to do |
+| **Native renderer** (Vulkan, in progress) | `run_fh1.bat --fh1_renderer=native` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps (animated crowd, soft edges, right exposure); evening car color fixed 2026-10-05; bloom (red glow of the tail lights), the slightly dark picture and driving still to do |
 
 ## Stage 1 — Translate the game (done)
 
@@ -130,7 +130,10 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [x] Picture a third too bright (vertex-shader textures: the composite's exposure)
   - [x] 1D textures (bound as one-row 2D textures)
   - [ ] Driving check after these fixes (motion blur while moving, frame drops) — the user drives
-  - [ ] Evening: green / chrome car, strong glare and light beams
+  - [x] Evening: flat green car (the game clears the shadow / headlight mask through a depth buffer on the same
+        EDRAM; the fill now reaches the color target) — 2026-10-05
+  - [ ] Coloured specks on the car's outline when driving at night (clamp pushed 2026-10-05; the user has to
+        confirm)
   - [ ] Daylight brightness and contrast; glow around lights (bloom)
   - [ ] Light outlines on edges, stair-stepped shadow edges (scene drawn with 1 sample instead of 4)
   - [ ] Crowd brighter than the emulated one, hard cut-out edges

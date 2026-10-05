@@ -55,8 +55,10 @@ float4 PsMain(float4 position : SV_Position) : SV_Target0
     int3 texel = int3(int2(position.xy), 0);
     float depth = g_Depth.Load(texel);
     uint stencil = g_Stencil.Load(texel) & 0xFFu;
+    // min: a depth of exactly 1 gives 16777216 in 32-bit float arithmetic, one past the 24 bits (bytes FF 00 00
+    // instead of FF FF FF: a mask the game fills with Z = 1 came out with green and blue at 0).
     uint bits = g_Push.float24 != 0u ? Float24(depth)
-                                     : uint(saturate(depth) * 16777215.0 + 0.5);
+                                     : min(uint(saturate(depth) * 16777215.0 + 0.5), 0xFFFFFFu);
     return float4(float(stencil), float(bits & 0xFFu), float((bits >> 8) & 0xFFu), float(bits >> 16)) / 255.0;
 }
 '''

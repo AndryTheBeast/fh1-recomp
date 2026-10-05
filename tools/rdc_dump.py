@@ -61,7 +61,8 @@ def run():
         ts.mip = 0
         ts.slice.sliceIndex = 0
         ts.sample.sampleIndex = 0
-        ts.alpha = rd.AlphaMapping.Discard
+        # RDC_ALPHA=1 keeps the alpha channel in the PNG (masks that carry data there)
+        ts.alpha = rd.AlphaMapping.Preserve if os.environ.get("RDC_ALPHA") else rd.AlphaMapping.Discard
         path = os.path.join(out_dir, name)
         ok = controller.SaveTexture(ts, path)
         log.write("save eid %d res %d -> %s (%s)\n" % (eid, int(rid), path, str(ok)))

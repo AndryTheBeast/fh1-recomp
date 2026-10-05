@@ -230,12 +230,19 @@ as is; done the same day. Boot, videos, menus and loading screens were fixed on 
 user. The same night the 3D scene got its first fixes (smear, shadows, crowd and trees; the user also saw the
 giant polygon flashes gone). Late that night, unattended: **crowd animations and the over-sharp picture were
 fixed** (animated people, FXAA outlines, HDR resolved textures, exposure; the user has not seen them yet: ask).
-Next: the rest of that document's open list (driving check by the user, the green car at evening, bloom, the
-slightly dark picture, 4x MSAA). The shader library and fh1.exe must be built from the same sources (the shared
+**2026-10-05: the green car at evening is fixed** (the game clears the shadow / headlight mask through a depth
+buffer on the same EDRAM; `--fh1_native_depth_fill_color`). Next: the rest of that document's open list (ask the
+user about the specks at night and for a short drive, then bloom = the red glow of the tail lights, the slightly
+dark picture, 4x MSAA). The shader library and fh1.exe must be built from the same sources (the shared
 constants block changed size that night). ROADMAP.md is the checklist of
 everything done and still open (keep it that way: one line per item, `[x]` / `[ ]`, details in
 docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0-N5).
 
+- EDRAM aliasing (2026-10-05): on the console a color target and a depth buffer with the same base are the same
+  memory, and the game uses it (a depth-only rectangle with Z = 1 and stencil FF = a white color target). The
+  emulated GPU does this by itself; the native renderer has separate images and needs each case handled. When
+  a native picture is wrong only in some channels or keeps old contents, compare that render target after each
+  pass with a RenderDoc capture of the emulated GPU (tools/rdc_*.py) before reading shaders.
 - Do not edit sources while a build is running: a header changed in the middle gives a mixed build (it happened on
   2026-10-04; rebuild after the last edit). `build_windows.ps1 -SkipCodegen` still runs the code generator when
   rexglue.exe was relinked.

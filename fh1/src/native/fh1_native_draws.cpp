@@ -2611,6 +2611,15 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                   (uint64_t((info >> 16) & 0x1) << 16) |
                   (uint64_t((r[gr::XE_GPU_REG_RB_SURFACE_INFO] >> 16) & 0x3) << 14) | pitch;  // FH1: + MSAA
       there_is_target = true;
+      // FH1: a depth-only rectangle that writes Z without testing it is a fill of that EDRAM. The game clears a
+      // color target with it (ContextTargets::NoteFillDepth); the pitch is the one BeginPass draws at.
+      if (mode_edram == 5 && type == 8 && (control_depth & 0x76) == 0x76) {
+        const uint32_t msaa_fill = (r[gr::XE_GPU_REG_RB_SURFACE_INFO] >> 16) & 0x3;
+        const bool fill_4x = msaa_fill == uint32_t(xenos::MsaaSamples::k4X) &&
+                             (REXCVAR_GET(fh1_msaa_4x_as_1x) ||
+                              (pitch <= 640 && REXCVAR_GET(fh1_msaa_4x_clears_as_1x)));
+        context_->NoteFillDepth(info & 0xFFF, (info >> 16) & 0x1, fill_4x ? pitch * 2 : pitch);
+      }
     }
     if (!there_is_target || !pitch) {
       // Diagnostic: a draw inside an occlusion query that writes nothing counts no samples.

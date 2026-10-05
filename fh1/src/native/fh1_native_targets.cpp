@@ -58,6 +58,7 @@ extern "C" void RexSwitchPerfHitch(uint64_t start, uint64_t fin);
 #include <cmath>
 #include <filesystem>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -509,6 +510,11 @@ REXCVAR_DEFINE_BOOL(fh1_native_depth_bytes, true, "FH1",
                     "Native renderer: a resolved depth fetched as a color texture gives the console's bytes (24-bit "
                     "depth and stencil), as FH1's motion blur and depth of field expect. false = the depth value "
                     "in every channel, as before (smeared scene)");
+REXCVAR_DEFINE_BOOL(fh1_native_depth_fill_color, true, "FH1",
+                    "Native renderer: a depth-only rectangle that fills a depth buffer also reaches the 8-bit color "
+                    "target on the same EDRAM (its bytes are written there before the next draw into it). FH1 clears "
+                    "the shadow / headlight mask to white that way at evening. false = as before (the mask keeps "
+                    "the daytime picture and the car turns green)");
 REXCVAR_DEFINE_INT32(fh1_dump_resolved_at_s, 0, "FH1",
                      "Debug: after this many seconds, once, save every resolved colour image of the next frame as PNG "
                      "files in dump_resolved/ next to the executable (0 = never)")
@@ -715,6 +721,82 @@ inline VkFormat FormatHostFh1(uint32_t f) {
     case F::k_32_FLOAT: return VK_FORMAT_R32_SFLOAT;
     case F::k_32_32_FLOAT: return VK_FORMAT_R32G32_SFLOAT;
     default: return VK_FORMAT_UNDEFINED;
+  }
+}
+// FH1 debug (fh1_dump_resolved_at_s): the float images are dumped too. Bytes per pixel of a format the dump can
+// read (0 = not dumped), and its conversion to 8 bits: x / (1 + x), then gamma 2.2 ("_tm" in the file name).
+// Negative values and NaN show as 0; the log line gives their count and the largest value per channel.
+inline uint32_t DumpBytesTexel(VkFormat f) {
+  switch (f) {
+    case kFormatColor:
+    case VK_FORMAT_R16G16_SFLOAT:
+    case VK_FORMAT_R32_SFLOAT: return 4;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case VK_FORMAT_R32G32_SFLOAT: return 8;
+    default: return 0;
+  }
+}
+inline float DumpHalfToFloat(uint16_t h) {
+  const uint32_t exponent = (h >> 10) & 0x1F, mantissa = h & 0x3FF;
+  float v;
+  if (exponent == 0) {
+    v = std::ldexp(float(mantissa), -24);
+  } else if (exponent == 31) {
+    v = mantissa ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity();
+  } else {
+    v = std::ldexp(float(mantissa | 0x400), int(exponent) - 25);
+  }
+  return (h & 0x8000) ? -v : v;
+}
+struct DumpFloatStats {
+  float maximum[4] = {0, 0, 0, 0};
+  double sum[4] = {0, 0, 0, 0};
+  uint64_t negative = 0, nan = 0, pixels = 0;
+};
+// rgba and alpha get width * height * 4 bytes each (alpha = the fourth channel as grey).
+inline void DumpFloatToRgba(VkFormat f, const uint8_t* data, uint32_t width, uint32_t height,
+                            std::vector<uint8_t>& rgba, std::vector<uint8_t>& alpha, DumpFloatStats& stats) {
+  const uint32_t channels = f == VK_FORMAT_R16G16B16A16_SFLOAT ? 4 : f == VK_FORMAT_R32_SFLOAT ? 1 : 2;
+  const bool half = f == VK_FORMAT_R16G16B16A16_SFLOAT || f == VK_FORMAT_R16G16_SFLOAT;
+  const size_t pixels = size_t(width) * height;
+  rgba.assign(pixels * 4, 0);
+  alpha.assign(pixels * 4, 255);
+  stats.pixels = pixels;
+  for (size_t i = 0; i < pixels; ++i) {
+    float v[4] = {0, 0, 0, 1};
+    for (uint32_t c = 0; c < channels; ++c) {
+      if (half) {
+        uint16_t h;
+        std::memcpy(&h, data + (i * channels + c) * 2, 2);
+        v[c] = DumpHalfToFloat(h);
+      } else {
+        std::memcpy(&v[c], data + (i * channels + c) * 4, 4);
+      }
+      if (std::isnan(v[c])) {
+        ++stats.nan;
+        v[c] = 0;
+      } else if (v[c] < 0) {
+        ++stats.negative;
+        v[c] = 0;
+      } else if (std::isinf(v[c])) {
+        v[c] = 65504.0f;
+      }
+      stats.maximum[c] = std::max(stats.maximum[c], v[c]);
+      stats.sum[c] += v[c];
+    }
+    if (channels == 1) {
+      v[1] = v[2] = v[0];
+    }
+    for (uint32_t c = 0; c < 4; ++c) {
+      const float mapped = std::pow(v[c] / (1.0f + v[c]), 1.0f / 2.2f);
+      const uint8_t byte = uint8_t(std::min(255.0f, mapped * 255.0f + 0.5f));
+      if (c < 3) {
+        rgba[i * 4 + c] = byte;
+      } else {
+        alpha[i * 4] = alpha[i * 4 + 1] = alpha[i * 4 + 2] = byte;
+      }
+    }
+    rgba[i * 4 + 3] = 255;
   }
 }
 constexpr uint32_t kHeightMaximumTarget = 2048;
@@ -1723,8 +1805,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     }
     // FH1: and, for the whole frame after the dump, every 8-bit color image of 300 pixels or wider right after its
     // copy (frame_<order>_dest<address>_<size>.png): the post-processing chain step by step.
-    if (dump_frame_pending_ && resolved && resolved->image.format == kFormatColor && resolved->image.width >= 300 &&
-        dump_frame_done_ < 80) {
+    if (dump_frame_pending_ && resolved && DumpBytesTexel(resolved->image.format) &&
+        (resolved->image.width >= 300 || resolved->image.format != kFormatColor) && dump_frame_done_ < 160) {
       if (draws_) {
         draws_->FinishPass();
       }
@@ -1762,6 +1844,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
         DiagSourceWritten((info_color & 0xFFF) | (pitch << 12));
       }
       target_render->content_invalid = false;
+      fills_depth_.erase((uint64_t(info_color & 0xFFF) << 20) | pitch);  // the clear replaces a pending depth fill
       const uint64_t value_state =
           REXCVAR_GET(fh1_native_diag_clear) ? ~uint64_t(0) : value_raw;
       if (ClearRedundant(*target_render, value_state)) {
@@ -3107,7 +3190,92 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     // in a swap and nobody has cleared it, it has to be brought back. Without this, the first frame that
     // draws without clearing shows the previous frame.
     RestoreContent(*image);
+    if (!fills_depth_.empty()) {
+      ApplyFillDepth(*image, base, pitch);  // fh1_native_depth_fill_color
+    }
     return image;
+  }
+
+  // FH1 (fh1_native_depth_fill_color). On the console a color target and a depth buffer with the same base are the
+  // same EDRAM, and Direct3D clears a color target through it: at evening FH1 points the depth buffer at the
+  // shadow / headlight mask (base 2D0) and draws a depth-only rectangle with Z = 1 and stencil FF, which leaves
+  // FFFFFFFF = white in every pixel; the headlight pass then multiplies its light into green, blue and alpha.
+  // Here the two are separate images, so the mask kept the daytime picture (blue and alpha 0 on everything but the
+  // sky, green multiplied down to 0 frame after frame) and the car paint, which reads the headlight light from
+  // those channels, came out flat green. The fill is noted by the draw; the next pass that draws into the 8-bit
+  // color target of that base and pitch first gets the depth buffer's bytes (the pass of TextureResolvedBytes:
+  // red = stencil, then the 24-bit depth from its lowest byte, which is the EDRAM word).
+  void NoteFillDepth(uint32_t base, uint32_t format, uint32_t pitch) override {
+    if (REXCVAR_GET(fh1_native_depth_fill_color)) {
+      fills_depth_[(uint64_t(base) << 20) | pitch] = format;
+    }
+  }
+
+  void ApplyFillDepth(Image& color, uint32_t base, uint32_t pitch) {
+    const auto it = fills_depth_.find((uint64_t(base) << 20) | pitch);
+    if (it == fills_depth_.end()) {
+      return;
+    }
+    const uint32_t format_depth = it->second;
+    fills_depth_.erase(it);
+    if (color.format != kFormatColor || !DepthBytesReady()) {
+      return;
+    }
+    const Image* depth = GetDepth(base, format_depth, pitch);
+    if (!depth || !depth->prepared || depth->width != color.width || depth->height != color.height) {
+      return;
+    }
+    const DepthBytesSource* source = DepthBytesSourceOf(depth->image);
+    if (!source || !Record()) {
+      return;
+    }
+    VkFramebuffer& framebuffer = fills_depth_framebuffers_[color.image];
+    if (framebuffer == VK_NULL_HANDLE) {
+      VkFramebufferCreateInfo info{};
+      info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+      info.renderPass = depth_bytes_pass_;
+      info.attachmentCount = 1;
+      info.pAttachments = &color.view;
+      info.width = color.width;
+      info.height = color.height;
+      info.layers = 1;
+      if (dfn_.vkCreateFramebuffer(device_, &info, nullptr, &framebuffer) != VK_SUCCESS) {
+        framebuffer = VK_NULL_HANDLE;
+        return;
+      }
+      REXLOG_INFO("[fh1] color target base {:03X} pitch {} is filled through the depth buffer on the same EDRAM: "
+                  "its bytes are written before the next draw into it",
+                  base, pitch);
+    }
+    if (draws_) {
+      draws_->FinishPass();
+    }
+    MarkGpu(kGpuCopies);
+    BarrierGlobal(commands_work_);
+    VkRenderPassBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    begin.renderPass = depth_bytes_pass_;
+    begin.framebuffer = framebuffer;
+    begin.renderArea = {{0, 0}, {color.width, color.height}};
+    dfn_.vkCmdBeginRenderPass(commands_work_, &begin, VK_SUBPASS_CONTENTS_INLINE);
+    const VkViewport viewport{0.0f, 0.0f, float(color.width), float(color.height), 0.0f, 1.0f};
+    dfn_.vkCmdSetViewport(commands_work_, 0, 1, &viewport);
+    dfn_.vkCmdSetScissor(commands_work_, 0, 1, &begin.renderArea);
+    dfn_.vkCmdBindPipeline(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_bytes_pipeline_);
+    dfn_.vkCmdBindDescriptorSets(commands_work_, VK_PIPELINE_BIND_POINT_GRAPHICS, depth_bytes_layout_, 0, 1,
+                                 &source->set, 0, nullptr);
+    const uint32_t float24 = format_depth == 1 ? 1 : 0;  // kD24FS8
+    dfn_.vkCmdPushConstants(commands_work_, depth_bytes_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(float24),
+                            &float24);
+    dfn_.vkCmdDraw(commands_work_, 3, 1, 0, 0);
+    dfn_.vkCmdEndRenderPass(commands_work_);
+    BarrierGlobal(commands_work_);
+    if (draws_) {
+      draws_->ForgetStateBound();
+    }
+    color.content_invalid = false;
+    state_target_[&color].clear_clean = false;  // no longer the color of its last clear
+    ++fills_depth_applied_;
   }
 
   ImageNative* TargetDepth(uint32_t base, uint32_t format, uint32_t pitch) override {
@@ -3495,6 +3663,10 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       dfn_.vkDestroyImageView(device_, source.stencil, nullptr);
     }
     depth_bytes_sources_.clear();
+    for (auto& [image, framebuffer] : fills_depth_framebuffers_) {
+      if (framebuffer != VK_NULL_HANDLE) dfn_.vkDestroyFramebuffer(device_, framebuffer, nullptr);
+    }
+    fills_depth_framebuffers_.clear();
     if (depth_bytes_pipeline_ != VK_NULL_HANDLE) dfn_.vkDestroyPipeline(device_, depth_bytes_pipeline_, nullptr);
     if (depth_bytes_vs_ != VK_NULL_HANDLE) dfn_.vkDestroyShaderModule(device_, depth_bytes_vs_, nullptr);
     if (depth_bytes_ps_ != VK_NULL_HANDLE) dfn_.vkDestroyShaderModule(device_, depth_bytes_ps_, nullptr);
@@ -3519,6 +3691,11 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   VkPipeline depth_bytes_pipeline_ = VK_NULL_HANDLE;
   bool depth_bytes_failed_ = false;
   uint64_t depth_bytes_passes_ = 0;
+  // fh1_native_depth_fill_color: depth buffers filled by a depth-only rectangle and not yet copied to the color
+  // target on their EDRAM (key = base << 20 | pitch, value = depth format), and the framebuffers of those targets.
+  std::unordered_map<uint64_t, uint32_t> fills_depth_;
+  std::unordered_map<VkImage, VkFramebuffer> fills_depth_framebuffers_;
+  uint64_t fills_depth_applied_ = 0;
 
   // fh1_native_lazy_depth. DrawsVulkan sets it around the textures of the final composition
   // when its depth sampling is dead (no blur).
@@ -6014,12 +6191,25 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     dfn_.vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1,
                               &barrier, 0, nullptr, 0, nullptr);
   }
+  // FH1 debug: "x.png" -> "x_float_tm.png" (a float image, tone-mapped), and its numbers in the log.
+  static std::string DumpNameFloat(const std::string& name) {
+    const size_t dot = name.rfind('.');
+    return name.substr(0, dot) + "_float_tm" + (dot == std::string::npos ? "" : name.substr(dot));
+  }
+  static void DumpLogFloat(const std::string& name, const DumpFloatStats& stats) {
+    const double n = double(std::max<uint64_t>(stats.pixels, 1));
+    REXLOG_INFO("[fh1] dump_resolved float {}: max {:.3f} {:.3f} {:.3f} {:.3f} mean {:.4f} {:.4f} {:.4f} {:.4f} "
+                "negative {} nan {}",
+                name, stats.maximum[0], stats.maximum[1], stats.maximum[2], stats.maximum[3], stats.sum[0] / n,
+                stats.sum[1] / n, stats.sum[2] / n, stats.sum[3] / n, stats.negative, stats.nan);
+  }
   // NFSC debug: one colour image to dump_resolved/<name>.png (waits for the GPU; debug only).
   void DumpImage(const Image& image, const std::string& name) {
-    if (!image.prepared || image.format != kFormatColor || !Record()) {
+    const uint32_t bytes_texel = DumpBytesTexel(image.format);
+    if (!image.prepared || !bytes_texel || !Record()) {
       return;
     }
-    const VkDeviceSize bytes = VkDeviceSize(image.width) * image.height * 4;
+    const VkDeviceSize bytes = VkDeviceSize(image.width) * image.height * bytes_texel;
     VkBuffer buffer = VK_NULL_HANDLE;
     VkDeviceMemory memory_block = VK_NULL_HANDLE;
     uint32_t type = 0;
@@ -6039,19 +6229,29 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     SendWork(true);
     WaitGpu();
     std::vector<uint8_t> rgba;
-    rgba.resize(size_t(bytes));
-    std::memcpy(rgba.data(), mapped, rgba.size());
-    std::vector<uint8_t> alpha(rgba.size());
-    for (size_t i = 0; i < rgba.size(); i += 4) {
-      alpha[i] = alpha[i + 1] = alpha[i + 2] = rgba[i + 3];
-      alpha[i + 3] = 255;
+    std::vector<uint8_t> alpha;
+    std::string name_file = name;
+    if (image.format == kFormatColor) {
+      rgba.resize(size_t(bytes));
+      std::memcpy(rgba.data(), mapped, rgba.size());
+      alpha.resize(rgba.size());
+      for (size_t i = 0; i < rgba.size(); i += 4) {
+        alpha[i] = alpha[i + 1] = alpha[i + 2] = rgba[i + 3];
+        alpha[i + 3] = 255;
+      }
+      for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 255;
+    } else {  // FH1: a float image, tone-mapped for the PNG
+      DumpFloatStats stats;
+      DumpFloatToRgba(image.format, static_cast<const uint8_t*>(mapped), image.width, image.height, rgba, alpha,
+                      stats);
+      name_file = DumpNameFloat(name);
+      DumpLogFloat(name_file, stats);
     }
-    for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 255;
     std::error_code ec;
     const std::filesystem::path folder = std::filesystem::current_path() / "dump_resolved";
     std::filesystem::create_directories(folder, ec);
-    FH1_DUMP_LOG(folder, name, rgba, image.width, image.height);
-    FH1_DUMP_LOG(folder, std::string("alpha_") + name, alpha, image.width, image.height);
+    FH1_DUMP_LOG(folder, name_file, rgba, image.width, image.height);
+    FH1_DUMP_LOG(folder, std::string("alpha_") + name_file, alpha, image.width, image.height);
     dfn_.vkUnmapMemory(device_, memory_block);
     dfn_.vkDestroyBuffer(device_, buffer, nullptr);
     dfn_.vkFreeMemory(device_, memory_block, nullptr);
@@ -6089,6 +6289,7 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     }
     struct DumpEntry {
       uint32_t base, width, height;
+      VkFormat format = kFormatColor;
       VkBuffer buffer = VK_NULL_HANDLE;
       VkDeviceMemory memory_block = VK_NULL_HANDLE;
       uint8_t* data = nullptr;
@@ -6113,12 +6314,13 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     }
     for (auto& [base, image_ptr] : sources) {
       const Image& image = *image_ptr;
-      if (!image.prepared || image.format != kFormatColor) {
+      const uint32_t bytes_texel = DumpBytesTexel(image.format);
+      if (!image.prepared || !bytes_texel) {
         continue;
       }
-      DumpEntry v{base, image.width, image.height};
+      DumpEntry v{base, image.width, image.height, image.format};
       uint32_t type = 0;
-      const VkDeviceSize bytes = VkDeviceSize(v.width) * v.height * 4;
+      const VkDeviceSize bytes = VkDeviceSize(v.width) * v.height * bytes_texel;
       if (!rex::ui::vulkan::util::CreateDedicatedAllocationBuffer(
               vulkan_device_, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
               rex::ui::vulkan::util::MemoryPurpose::kReadback, v.buffer, v.memory_block, &type)) {
@@ -6142,12 +6344,24 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     std::filesystem::create_directories(folder, ec);
     uint32_t n = 0;
     for (DumpEntry& v : list) {
-      std::vector<uint8_t> rgba(size_t(v.width) * v.height * 4);
-      std::memcpy(rgba.data(), v.data, rgba.size());
-      for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 255;
       char name[96];
       std::snprintf(name, sizeof(name), "%02u_%08X_%ux%u.png", n++, v.base, v.width, v.height);
-      FH1_DUMP_LOG(folder, name, rgba, v.width, v.height);
+      if (v.format == kFormatColor) {
+        std::vector<uint8_t> rgba(size_t(v.width) * v.height * 4);
+        std::memcpy(rgba.data(), v.data, rgba.size());
+        for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 255;
+        FH1_DUMP_LOG(folder, name, rgba, v.width, v.height);
+      } else {  // FH1: a float image, tone-mapped for the PNG
+        std::vector<uint8_t> rgba, alpha;
+        DumpFloatStats stats;
+        DumpFloatToRgba(v.format, v.data, v.width, v.height, rgba, alpha, stats);
+        const std::string name_float = DumpNameFloat(name);
+        DumpLogFloat(name_float, stats);
+        FH1_DUMP_LOG(folder, name_float, rgba, v.width, v.height);
+        if (v.format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+          FH1_DUMP_LOG(folder, std::string("alpha_") + name_float, alpha, v.width, v.height);
+        }
+      }
       dfn_.vkUnmapMemory(device_, v.memory_block);
       dfn_.vkDestroyBuffer(device_, v.buffer, nullptr);
       dfn_.vkFreeMemory(device_, v.memory_block, nullptr);

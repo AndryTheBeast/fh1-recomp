@@ -2341,7 +2341,12 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     last = now;
     std::string values;
     // FH1: plus c32-c43 and c132-c135 (the matrices and parameters of the motion-blur velocity shader).
-    for (uint32_t k = 0; k < 136; k = k == 11 ? 32 : k == 43 ? 132 : k + 1) {
+    // Since 2026-10-05 every constant that is not zero (c0-c255): the car paint's are c40-c169.
+    for (uint32_t k = 0; k < 256; ++k) {
+      if (!(registers_[0x4400 + k * 4] | registers_[0x4400 + k * 4 + 1] | registers_[0x4400 + k * 4 + 2] |
+            registers_[0x4400 + k * 4 + 3])) {
+        continue;
+      }
       values += fmt::format(" c{}=(", k);
       for (uint32_t c = 0; c < 4; ++c) {
         float f;
