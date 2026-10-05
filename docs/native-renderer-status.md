@@ -130,10 +130,9 @@ How item 2 was started (kept as the method; steps 1 and 2 are now tools, see "Di
 1. **Driving: checked by the user on 2026-10-05 after the second session's fixes: "Everything looks normal"**
    (day, night, a race). One thing left to settle: "the rectangular placeholder under the car that has a
    different texture", which the user is not sure is a fault ("we are yet to confirm if that also happens in
-   real xbox gameplay"). Not looked at: first take the same spot on the emulated GPU (`run_emulated_capture.bat`)
-   and compare with footage of the console; if only the native renderer has it, find its draw with
-   `run_native_skip.bat` + `tools\skip_cycle.ps1` (the car's shadow / ambient occlusion quad is the first
-   suspect). The notes from before that drive:
+   real xbox gameplay"). The user then checked the emulated GPU: **"it happens on both"**, so it is not a native
+   renderer fault. Either the game looks like that or both renderers share the cause; only footage of the
+   console can tell. Not looked at (a guess: the car's ground shadow quad). The notes from before that drive:
    **Driving has not been checked since the fixes of 2026-10-04 night.** The user drives by hand: ask for a short
    drive first. To look at: motion blur while moving (the velocity pass now gets real depth and stencil; the car's
    own stencil value, 21, picks its matrix), frame drops (185-230 ms frames were seen before), anything that
