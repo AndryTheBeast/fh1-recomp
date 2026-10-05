@@ -1,39 +1,14 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, fifth session:
-the design creator (paint shop > Design creator) is mostly fixed: the booth is shaded, the wheels are wheels, the
-car has its paint color, the "Leaving paint shop" dialog has its text. **One fault is left in that screen and is
-the first thing to do: the car's sides and its tyres are black and the paint has no gloss** (item 0 below). The
-festival is unchanged by the session's fixes (58 s: 5/16/41/91/121 native, 5/16/41/91/122 emulated, chase view;
-30 fps, real GPU per Swap 19.5-21 ms). Nothing of this session has been seen by the user in their own game yet.
+Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, sixth session:
+**the design creator is fixed** (sides, gloss, badge, tyres and rims of the car in the paint booth; compare
+`build_logs\reference\design-creator-fixed-20261005-*-native-left-emulated-right.png`). The festival is unchanged
+(58 s: 5/16/41/91/122 on both renderers; 100 s: 5/12/40/99/170 native, 5/12/40/98/176 emulated; 30 fps, real GPU
+per Swap 21.0-21.2 ms). The user saw the body fix and the first tyre fix in screenshots ("the tyre seems a little
+too upwards, even going inside the rim": fixed after that); nobody has driven this build yet.
 
-- **0. Paint booth: black sides and tyres, no gloss, no "BOSS 429" badge** (compare
-  `build_logs\reference\design-creator-after-20261005-native-left-emulated-right.png`; the user: "don't forget
-  about the car tyres"). In the paint shop's first menu, with the festival behind, the native car is right; it
-  turns black when the booth (track `UIPaintshop`) loads, and stays so after going back. What is known:
-  - Every texture the body draw reads is now identical on both renderers (`tools\rdc_tex_stats.py`, which now
-    prints every face of a cube): the livery, the booth's static cube (1F29C000, 512x512, LogLuv), the 64x64
-    specular cube the game filters from it (six resolves, 13780000 + n * 4000 in one run), the vertex texture.
-  - Every pixel constant the body shader (VS n2816 / PS n2836, `p_d62cbccfff87d80b`) uses is identical
-    (`tools\rdc_constants.py` on the emulated capture against `--fh1_native_diag_constants_ps=2836`), and so are
-    its booleans (00003417). The light comes from straight above (`psLightDirWS` = 0 1 0).
-  - **The difference: vertex constants c37, c38, c39.** Emulated: (0.388 -0.046 0.0003 -0.0087), (0.385 -0.044
-    0.00002 -0.0089), (0.388 -0.044 -0.0002 -0.0089): one row per color, the look of spherical-harmonic ambient
-    light. Native: all three are 0 (c36 is equal on both: 1.1816 -2.0467 -0.00018 0). The game sets them; it
-    most likely computes them on the CPU from the two 32x32 cubes it renders at the same moment (12 resolves,
-    13774000 + n * 1000, drawn like the 64x64 ones by VS n2132 / PS n3684 from the static cube), read back from
-    guest memory.
-  - Tried, no change: finishing the read-backs of tiny resolves before the game's fences
-    (`TargetsNative::FinishReads` at PM4_INTERRUPT, PM4_MEM_WRITE, PM4_EVENT_WRITE_SHD, PM4_REG_TO_MEM; kept, it
-    is what the console does); the read-back off (`--fh1_native_read_resolved_texels=0`).
-  - Next steps, in this order: (1) compare the 32x32 faces with the emulated ones (a capture at the frame they
-    are made: `--fh1_native_diag_frame_s=76 --fh1_native_diag_frames=220 --fh1_native_diag_frame_pitches=80`
-    shows the frame; they were only checked to have content, B G R = 0.24 0.78 0.47); (2) check what the
-    read-back leaves in guest memory against what the emulated resolve writes there (byte order of a
-    copy with copy_dest_swap and endian 2: the exposure read-backs are grey, so a red / blue exchange would never
-    have shown; with red and blue exchanged the LogLuv exponent decodes to about 2^-33, which is the 0 seen);
-    (3) find where the game writes c37-c39 (a write watch on the vertex constants in `WriteRegister`, then the
-    caller) and what it reads.
+- **0. Paint booth: DONE in the sixth session** (see "What was fixed on 2026-10-05, sixth session" below). Left
+  of it: **car damage has not been looked at** (same undeclared streams; ask the user to hit something).
 - **0b. The thumbnail bug is back: saving a car with a new modification gives a wrong thumbnail** (the user: "the
   thumbnail bug is here again when I save the car with a new modification"). Not started: **ask the user first**
   whether it also happens on the emulated GPU and what it looks like. On the emulated GPU the car photos were
@@ -311,6 +286,64 @@ into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. 
 
 Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
 target they clear (the same EDRAM, four samples per pixel drawn).
+
+## What was fixed on 2026-10-05, sixth session: the paint booth's light, tyres and rims
+
+Pictures: `build_logs\reference\design-creator-fixed-20261005-native-left-emulated-right.png` (two views),
+`...-front-native-left-emulated-right.png` (the front view of second 81) and `...-tyre-...png` (the front wheel),
+`festival-after-sixth-session-native-left-emulated-right.png`.
+
+- **Black sides, no gloss, no badge.** The vertex constants c37-c39 (ambient light) were 0. Found step by step:
+  the twelve 32x32 faces were identical on both renderers, in the GPU and in guest memory (`--fh1_dump_memory`),
+  and making their read-back immediate changed nothing. The game's record with the light values was then found in
+  a memory dump of the emulated run by its numbers, and a write trap on its page (`--fh1_trap_writes_to`) named
+  the code: `sub_82449728` copies them each frame from a scene object (vtable 8200373C, twelve floats at +7376,
+  scale at +8756), and that object fills them once per scene in `sub_82DC8B30`: it locks a **256x128 texture of
+  16-bit floats** (a sphere map the game renders from the 32x32 cube and resolves, k_16_16_16_16_FLOAT) and sums
+  its texels on the CPU. The native renderer only wrote 8-bit resolves of up to 64x64 texels back to guest
+  memory, so the game summed zeros. Now a resolve to k_16_16_16_16_FLOAT of up to 32768 texels is written back at
+  once (`fh1_native_read_resolved_half_texels`; tiled, eight bytes per texel, the copy's byte order; log line
+  `read-back of a 16-bit float resolve`). It happens twice when a menu scene loads, not per frame. Also kept:
+  `fh1_native_reads_at_once` (read-backs of 32x32 or less finish before the next command is read).
+- **Flat black tyres with a wrong outline.** The tyre shader (VS n1716 / PS n1260) had the same constants and the
+  same textures on both renderers. Its vertex shader reads the tyre's morph shapes with fetches that are not in
+  the vertex declaration (`fh1Fetch(30, ...)` in the HLSL, a `// FH1_FETCH_CONSTANT 30` line at its top) when its
+  constant `vsUseMorph` is set; 457 shaders of the disc do this with fetch constants 29, 30 or 31 (tyres, rims,
+  car parts). The translator emitted the read, but the renderer never wrote where the stream is
+  (`g_FetchAddress`, shared words 156-163), so the shader read zeros. Now `RawFetchSlots` finds such fetches in
+  the microcode (control flow, exec blocks, fetch instructions outside the declaration) and Draw uploads each
+  stream like the animated people's bones (`fh1_native_raw_fetches`; log line `reads the undeclared stream of
+  fetch slot`). Such a draw keeps the usual vertex binding (the base-zero path renumbers the vertices the shader
+  sees).
+- **Tyre too high, inside the rim** (the user, on the first fix's picture). The shader reads two shapes of the
+  same vertex: a full fetch indexed by r0.x **whose result goes into r0**, then a mini fetch, which on the
+  console reads the vertex of the full fetch before it. The translator wrote the mini fetch as another read at
+  r0.x, by then the first shape's value: every vertex took its second shape from vertex 0. Now the index of a
+  full fetch read from memory goes into a variable of its own (`float fh1Index<address> = r0.x;`) that the full
+  fetch and its mini fetches use, for both kinds (`fh1Fetch`, `fh1FetchRanked`). 502 shaders re-translated; the
+  library and fh1.exe must match again. The same fault was in the people's bones path, unseen.
+- **Two things that were tried and are wrong** (kept as options, off): moving a stream's place by the draw's
+  first vertex (`fh1_native_raw_fetch_shift=1`) made the booth's car explode: the streams indexed by the vertex
+  number are already counted from the draw's own first vertex (body parts share one stream of 21157 entries and
+  draw with vmin 6888-10623, and look right without it). The stream at fetch constant 29 (1000 entries of 32
+  bytes, shared by every part: a 10x10x10 grid, most likely the damage deformation) is indexed by a number the
+  shader computes from the vertex position.
+- **Debug aids of this session**: `--fh1_dump_memory=<address:bytes,...>` with `--fh1_dump_memory_at_s` (physical
+  memory, or `v<address>` for the game's own addresses, to `memdump_*.bin` next to fh1.exe: works with both
+  renderers), `--fh1_trap_writes_to=<hex bytes>` with `_at_s`, `_skip`, `_bytes`, `_hit` (finds a record by its
+  contents, makes its page read-only and lets every write through except the one wanted: the crash report names
+  the writer), `--gpu_log_small_resolves=N` (emulated GPU: destination and format of each small resolve; it
+  stops after 4000 lines, which the festival's exposure fills in 20 s), `--fh1_native_raw_fetch_log=<VS number>`
+  (the undeclared streams of one shader's draws with their first words), `tools\image_xref.py` (which code builds
+  an address of the game's image: finds the function that uses a string). `--fh1_native_diag_constants_vs` now
+  prints every vertex constant that is not zero.
+- **Method that worked**: when a value the *game* computes is wrong, dump the game's memory on both renderers and
+  search for the good numbers; the record's writer leads to the input. For the tyre: constants and textures
+  equal on both sides left the vertex data, and reading the vertex shader's HLSL around its fetches showed both
+  faults.
+- **Seen on the way, not changed**: RenderDoc could not replay the first native capture of the booth (device
+  lost, twice; a capture after the fixes replayed); `fh1_find_string` compares chars with bytes, so a word above
+  7F never matches (the trap had the same fault first).
 
 ## What was fixed on 2026-10-05, fifth session: the design creator
 
@@ -730,7 +763,8 @@ Late night session (crowd animation, over-sharp picture, brightness). Compare `b
   after 4/12/33/80/114, gradient 1.35. So it is now slightly darker and softer than the emulated picture (was much
   brighter and harder).
 - 2026-10-05, the clamp for float pictures (item 0): built and run (festival at dusk with three seconds of
-  throttle, `build_logseference	est-clamp-20261005-102s.png`): daylight numbers unchanged, 30 fps, no specks on
+  throttle, `build_logs
+eference	est-clamp-20261005-102s.png`): daylight numbers unchanged, 30 fps, no specks on
   the silhouette. **Not proven**: the specks were never reproduced here before the change either (the user saw them
   driving on the road at night); the user has to look again. In the user's night crop the car is orange, not green:
   the green of item 2 belongs to the festival at evening (stage lights nearby), not to night in general.

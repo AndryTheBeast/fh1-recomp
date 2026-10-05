@@ -2340,7 +2340,11 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       constants_vs_swap_ = swaps_.load();
     }
     std::string values;
-    for (uint32_t k = 32; k < 164; k = k == 39 ? 128 : k == 131 ? 156 : k + 1) {
+    for (uint32_t k = 0; k < 256; ++k) {  // every constant that is not zero
+      if (!(registers_[0x4000 + k * 4] | registers_[0x4000 + k * 4 + 1] | registers_[0x4000 + k * 4 + 2] |
+            registers_[0x4000 + k * 4 + 3])) {
+        continue;
+      }
       values += fmt::format(" c{}=(", k);
       for (uint32_t c = 0; c < 4; ++c) {
         float f;

@@ -55,3 +55,9 @@ nfsc-recomp stays a source of fixes, ported by hand when they work for FH1. To c
   - Vertex fetches with a computed index in quad lists (billboards): each stored vertex repeated four times;
     k_10_11_11 positions on by default; alpha to mask as an alpha test.
 - SDK: `rex/ui/vulkan/device.h` and `vulkan_device.cpp` enable VK_KHR_maintenance5 as nfsc-recomp does.
+
+## FH1's own additions since (not from nfsc-recomp)
+
+- 2026-10-05: resolves to 16-bit float textures written back to guest memory (the game computes a menu scene's
+  ambient light from one on the CPU); vertex streams read without a declaration (`RawFetchSlots`,
+  `g_FetchAddress`): morph shapes of tyres, rims and car parts.

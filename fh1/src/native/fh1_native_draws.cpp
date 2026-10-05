@@ -1205,6 +1205,17 @@ constexpr uint32_t kRegFetch = 0x4800;
 // Negative = cut negative values and NaN to 0; its mantissa carries the cut at the top, 2^(the fetch's exponent
 // adjust), which is where the console's unsigned resolved format ends (fh1_native_float_cut; INT32_MIN or the
 // option off = no cut). `scale` is a power of two.
+REXCVAR_DEFINE_BOOL(fh1_native_raw_fetches, true, "FH1",
+                    "Native renderer: vertex streams a shader reads without declaring them (fetch constants 24-31: "
+                    "the morph shapes of tyres and car parts) are uploaded and their place given to the shader; "
+                    "false = the shader reads zeros (flat black tyres in the paint booth)");
+REXCVAR_DEFINE_INT32(fh1_native_raw_fetch_log, 0, "FH1",
+                     "Native renderer, debug: log the undeclared streams of the draws of this vertex shader number");
+REXCVAR_DEFINE_INT32(fh1_native_raw_fetch_base_zero, 0, "FH1",
+                     "Native renderer, test: 1 = draws with undeclared streams may use the base-zero binding");
+REXCVAR_DEFINE_INT32(fh1_native_raw_fetch_shift, 0, "FH1",
+                     "Native renderer: 1 = the place of an undeclared stream indexed by the vertex number is moved by the draw's first "
+                     "vertex (vmin) times its stride");
 REXCVAR_DEFINE_BOOL(fh1_native_float_cut, true, "FH1",
                     "Native renderer: fetches of a resolved picture kept in a float image are cut at the value the "
                     "console's 10-bit resolved format ends at (4 for the scene, 16 for the reflection cube map). "
@@ -1256,6 +1267,11 @@ constexpr uint32_t kWordSlotsVs = 253;   // FH1: g_VsSlots, the slot of each ver
 constexpr uint32_t kWordsShared = 256;  // FH1: g_PosScale (252); FH1: all 256 booleans (244-251); NFSC: + 32 loop constants (words 122-153); FH1: g_GuestBase / g_FetchAddress (154-163), exponent scales (164-179), ranked fetches (180-243)
 constexpr uint32_t kWordFetchRankAddress = 180;  // FH1: g_FetchRankAddress, one word per declared fetch 0-31
 constexpr uint32_t kWordFetchRankParam = 212;    // FH1: g_FetchRankParam
+constexpr uint32_t kWordFetchAddress = 156;      // FH1: g_FetchAddress(24..31), streams read without a declaration
+constexpr uint32_t kRankRaw = 32;                // a memory source of rank kRankRaw + n is fetch constant 24 + n
+constexpr uint32_t WordOfFetchSource(uint32_t rank) {
+  return rank >= kRankRaw ? kWordFetchAddress + (rank - kRankRaw) : kWordFetchRankAddress + rank;
+}
 constexpr uint32_t kWordExpScale = 164;  // FH1: <sampler>_ExpScale, one float per fetch constant 0-15
 constexpr uint32_t kWordInvSize = 90;
 // Constants through a dynamic UBO (fh1_native_constants_ubo). The bit is SPEC_CONSTANT_CONSTANTS_UBO
@@ -1973,6 +1989,16 @@ struct EntryVertices {
     uint32_t param = 0;  // stride in words | offset in words << 8 | format << 24 | signed << 30 | integer << 31
   };
   std::vector<FetchMemory> fetches_memory;
+  // FH1: vertex fetch slots of streams the shader reads from memory without declaring them (fh1Fetch in
+  // shader_common.h, fetch constants 24-31): the morph shapes of tyres and car parts. Found in the microcode
+  // (RawFetchSlots); Draw uploads each stream and writes its place in g_FetchAddress (shared words 156-163).
+  // The index of such a fetch is the vertex number itself, counted from the start of the stream.
+  struct FetchRaw {
+    uint8_t slot = 0;
+    uint8_t stride_words = 0;
+    bool by_vertex = false;  // indexed by r0.x (the vertex number); otherwise by a number the shader computes
+  };
+  std::vector<FetchRaw> fetches_raw;
   uint32_t specialization = 0;
   uint64_t fingerprint = 0;
 };
@@ -2947,7 +2973,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       uint64_t address = 0;
       uint32_t rank = 0;
       uint32_t cached = 0;  // offset in the streams buffer (StreamInCache)
+      // FH1: an undeclared stream is indexed by the vertex number, and the shader's vertex number starts at the
+      // draw's first vertex (vertexOffset = -vmin): the place given to the shader is moved by that many vertices.
+      uint32_t shift = 0;
     };
+    bool raw_sources = false;  // such a draw keeps the usual binding (the base-zero path renumbers its vertices)
     std::array<SourceMemory, 32> sources_memory{};
     size_t sources_memory_n = 0;
     for (const EntryVertices::FetchMemory& m : entry->fetches_memory) {
@@ -2968,6 +2998,57 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       sources_memory[sources_memory_n++] = {memory_->TranslatePhysical(uint32_t(address)),
                                             static_cast<xenos::Endian>(d1 & 0x3), uint32_t(available), address,
                                             m.rank};
+    }
+    // FH1: undeclared streams (EntryVertices::fetches_raw). A slot the game left empty is skipped: the shader then
+    // reads zeros, and it only reads at all when its own constant says so (vsUseMorph).
+    if (REXCVAR_GET(fh1_native_raw_fetches)) {
+      for (const EntryVertices::FetchRaw& raw : entry->fetches_raw) {
+        const uint8_t slot = raw.slot;
+        const uint32_t d0 = r[kRegFetch + uint32_t(slot) * 2];
+        const uint32_t d1 = r[kRegFetch + uint32_t(slot) * 2 + 1];
+        const uint64_t address = uint64_t(d0 & 0x1FFFFFFC);
+        const uint64_t available = uint64_t((d1 >> 2) & 0xFFFFFF) * 4;
+        if ((d0 & 0x3) != uint32_t(xenos::FetchConstantType::kVertex) || !available ||
+            available > (uint64_t(16) << 20) || address + available > kMemoryPhysical ||
+            sources_memory_n >= sources_memory.size()) {
+          continue;
+        }
+        sources_memory[sources_memory_n++] = {memory_->TranslatePhysical(uint32_t(address)),
+                                              static_cast<xenos::Endian>(d1 & 0x3), uint32_t(available), address,
+                                              kRankRaw + (uint32_t(slot) / 3 - 24), 0,
+                                              raw.by_vertex && REXCVAR_GET(fh1_native_raw_fetch_shift) == 1
+                                                  ? vmin * uint32_t(raw.stride_words) * 4
+                                                  : 0u};
+        raw_sources = true;
+        if (int32_t(p.vs->number) == REXCVAR_GET(fh1_native_raw_fetch_log) && raw_fetches_wanted_ < 6) {
+          ++raw_fetches_wanted_;
+          std::string words;
+          const uint8_t* const data = memory_->TranslatePhysical(uint32_t(address));
+          for (uint32_t at : {uint32_t(0), vmin * uint32_t(raw.stride_words) * 4}) {
+            words += fmt::format(" | at {}:", at);
+            for (uint32_t i = 0; i < 8 && at + i * 4 + 4 <= available; ++i) {
+              uint32_t w;
+              std::memcpy(&w, data + at + i * 4, 4);
+              words += fmt::format(" {:08X}", xenos::GpuSwap(w, xenos::Endian::k8in32));
+            }
+          }
+          REXLOG_INFO("[fh1] raw fetch of VS n{}: slot {} address {:08X} bytes {} endian {} stride {} by vertex {} vmin {} "
+                      "vmax {} count {} indexed {} index offset {} bindings {} stride0 {}{}",
+                      p.vs->number, slot, uint32_t(address), available, d1 & 0x3, raw.stride_words, raw.by_vertex,
+                      vmin, vmax, count, con_indices, r[gr::XE_GPU_REG_VGT_INDX_OFFSET] & 0xFFFFFF,
+                      entry->bindings.size(), entry->bindings.empty() ? 0u : uint32_t(entry->bindings[0].stride),
+                      words);
+        }
+        if (raw_fetches_logged_ < 48 && raw_fetches_seen_.insert((uint32_t(p.vs->number) << 8) | slot).second) {
+          ++raw_fetches_logged_;
+          REXLOG_INFO("[fh1] VS n{} reads the undeclared stream of fetch slot {} from memory: {:08X}, {} bytes; "
+                      "stride {} words, by vertex {}, vmin {} vmax {} count {} indexed {} index offset {} bindings {} (stride {})",
+                      p.vs->number, slot, uint32_t(address), available, raw.stride_words, raw.by_vertex, vmin, vmax,
+                      count,
+                      con_indices, r[gr::XE_GPU_REG_VGT_INDX_OFFSET] & 0xFFFFFF, entry->bindings.size(),
+                      entry->bindings.empty() ? 0u : uint32_t(entry->bindings[0].stride));
+        }
+      }
     }
     // Kept across frames in a buffer of their own when they fit (the bones of the festival people are 2.4 MB that
     // never change); otherwise copied to the upload buffer like any vertices.
@@ -3535,7 +3616,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       if (streams_cached) {
         const uint64_t base = streams_address_;
         std::memcpy(shared + 154, &base, sizeof(base));
-        shared[kWordFetchRankAddress + source.rank] = source.cached;
+        shared[WordOfFetchSource(source.rank)] = source.cached + source.shift;
         continue;
       }
       VkDeviceSize offset;
@@ -3553,7 +3634,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
       const uint64_t base = upload_address_;
       std::memcpy(shared + 154, &base, sizeof(base));
-      shared[kWordFetchRankAddress + source.rank] = uint32_t(offset);
+      shared[WordOfFetchSource(source.rank)] = uint32_t(offset) + source.shift;
     }
     VkDeviceSize offset_indices = 0;
     if (con_indices) {
@@ -4208,7 +4289,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
      */
     bool base_zero = false;
     uint32_t first_vertex = 0;  // offset / stride: where the copy starts, in vertices
-    if (vertices_base_zero_ && entry->bindings.size() == 1) {
+    if (vertices_base_zero_ && entry->bindings.size() == 1 &&
+        !(raw_sources && REXCVAR_GET(fh1_native_raw_fetch_base_zero) == 0)) {
       const VkDeviceSize stride = entry->bindings[0].stride;
       if (offsets_vertices[0] % stride == 0) {
         base_zero = CheckBaseZero(offsets_vertices[0], stride, sources[0].bytes, vmin, first_vertex);
@@ -9081,6 +9163,59 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     return key ? key : 1;
   }
 
+  // FH1: the vertex fetch instructions of a shader that are not in its declaration and take their stream from
+  // fetch constants 24-31 (the translator turns them into fh1Fetch). The microcode starts with its control flow,
+  // two 48-bit instructions per three words, up to the first executed address; each exec block names its
+  // instructions and marks the fetches among them (two bits per instruction, the low one).
+  static void RawFetchSlots(const EntryShader& vs, std::span<const uint32_t> code,
+                            std::vector<EntryVertices::FetchRaw>& slots) {
+    const size_t instructions = code.size() / 3;
+    size_t end_flow = instructions;
+    for (size_t i = 0; i < end_flow; ++i) {
+      const uint32_t w0 = code[i * 3], w1 = code[i * 3 + 1], w2 = code[i * 3 + 2];
+      const uint64_t flow[2] = {uint64_t(w0) | (uint64_t(w1 & 0xFFFF) << 32),
+                                uint64_t(w1 >> 16) | (uint64_t(w2) << 16)};
+      for (const uint64_t c : flow) {
+        const uint32_t opcode = uint32_t(c >> 44) & 0xF;
+        if (!((opcode >= 1 && opcode <= 6) || opcode == 13 || opcode == 14)) {
+          continue;  // not an exec block
+        }
+        const uint32_t address = uint32_t(c) & 0xFFF;
+        const uint32_t count = uint32_t(c >> 12) & 0x7;
+        const uint32_t sequence = uint32_t(c >> 16) & 0xFFF;
+        if (count && address < end_flow) {
+          end_flow = address;
+        }
+        for (uint32_t j = 0; j < count; ++j) {
+          const size_t at = size_t(address) + j;
+          if (!((sequence >> (j * 2)) & 0x1) || at >= instructions) {
+            continue;
+          }
+          const uint32_t f0 = code[at * 3], f1 = code[at * 3 + 1];
+          if ((f0 & 0x1F) != 0 || ((f1 >> 30) & 0x1)) {
+            continue;  // a texture fetch, or a mini fetch (it reads the stream of the full fetch before it)
+          }
+          const uint32_t constant = (f0 >> 20) & 0x1F;
+          bool declared = constant < 24;
+          for (const ElementVertex& element : vs.elements) {
+            declared |= element.instruction == at;
+          }
+          const uint8_t slot = uint8_t(constant * 3 + ((f0 >> 25) & 0x3));
+          bool known = false;
+          for (const EntryVertices::FetchRaw& other : slots) {
+            known |= other.slot == slot;
+          }
+          if (!declared && !known) {
+            slots.push_back({slot, uint8_t(code[at * 3 + 2] & 0xFF), ((f0 >> 5) & 0x3F) == 0 && ((f0 >> 30) & 0x3) == 0});
+          }
+        }
+      }
+    }
+  }
+  std::unordered_set<uint32_t> raw_fetches_seen_;
+  uint32_t raw_fetches_logged_ = 0;
+  uint32_t raw_fetches_wanted_ = 0;
+
   const EntryVertices* ComputeEntry(const RequestDraw& p) {
     const EntryShader& vs = *p.vs;
     entry_.remaps.fill(kRemapIdentity);
@@ -9089,6 +9224,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       Reject(20, "the ring's VS does not have the container's length");
       return nullptr;
     }
+    RawFetchSlots(vs, patched, entry_.fetches_raw);
     uint32_t locations_used = 0;
     for (const ElementVertex& element : vs.elements) {
       const uint32_t reg_entry = (vs.microcode[size_t(element.instruction) * 3] >> 12) & 0x3F;

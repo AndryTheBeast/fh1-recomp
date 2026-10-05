@@ -34,6 +34,7 @@ struct ShaderRecompiler : StringBuffer
     // (fh1Fetch in shader_common.h); the renderer fills g_GuestBase and g_FetchAddress(c) for the
     // constants listed in the HLSL as "// FH1_FETCH_CONSTANT" lines.
     std::set<uint32_t> rawFetchConstants;
+    std::string fullFetchIndexVar;  // FH1: the variable holding the index of the last full fetch read from memory
     // Vertex inputs whose usage has no fixed location (USAGE_LOCATIONS): the next free one, from 16.
     uint32_t nextFreeLocation = 16;
     std::string freeLocationNotes;

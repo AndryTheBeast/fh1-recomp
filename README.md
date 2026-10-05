@@ -60,6 +60,9 @@ APU: Zen 4 CPU and an RDNA 3 integrated GPU, running Windows 11.
 
 - **Playground Games / Turn 10 / Microsoft** — creators of Forza Horizon. This is an unofficial fan project with no affiliation.
 - **[stevensnd — nfsmw-nx](https://github.com/stevensnd)** — the Switch port this project starts from.
+- **[GoatHonks](https://github.com/GoatHonks)** — [nfsc-recomp](https://github.com/GoatHonks/nfsc-recomp) (Need for
+  Speed: Carbon Recompiled): Forza Horizon's native Vulkan renderer started from his, and his fixes keep being
+  ported; his Switch port of it is the model for our Switch build.
 - **[madelrandel-blip — NFSMW Recompiled](https://github.com/madelrandel-blip/NFSMW-Recompiled)**
 - **[ReXGlue](https://github.com/rexglue/rexglue-sdk)**, built on the work of the **[Xenia](https://xenia.jp)** team.
 - **[hedge-dev — XenosRecomp](https://github.com/hedge-dev/XenosRecomp)**, **mesa-switch** (danfromtico, NaGaa95),

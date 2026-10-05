@@ -197,10 +197,32 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         fullFetchStride = instr.stride;
         fullFetchRounded = instr.isIndexRounded;
         fullFetchAddress = address;
+        fullFetchIndexVar.clear();
     }
 #endif
 
+#ifdef NFSMW_RECOMP
+    // FH1: a fetch read from memory keeps the index its full fetch had when it ran: the full fetch may write
+    // the very register it was indexed by (the tyres: r0 = fetch at r0.x, then a mini fetch of the same vertex),
+    // so the index is put in a variable of its own before the full fetch's line.
+    const size_t lineStart = out.size();
+#endif
     indent();
+#ifdef NFSMW_RECOMP
+    const std::string lineIndent = out.substr(lineStart);
+    auto latchIndex = [&]() -> std::string
+    {
+        if (!instr.isMiniFetch)
+        {
+            fullFetchIndexVar = fmt::format("fh1Index{}", address);
+            out.insert(lineStart, fmt::format("{}float {} = r{}.{};\n", lineIndent, fullFetchIndexVar, fullFetchSrc,
+                                              "xyzw"[fullFetchSwizzle]));
+        }
+        // A mini fetch whose full fetch was an ordinary attribute has no such variable: the register itself.
+        return fullFetchIndexVar.empty() ? fmt::format("r{}.{}", fullFetchSrc, "xyzw"[fullFetchSwizzle])
+                                         : fullFetchIndexVar;
+    };
+#endif
     print("r{}.", instr.dstRegister);
     printDstSwizzle(instr.dstSwizzle, false);
 
@@ -233,7 +255,7 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         const uint32_t rankFull = rankOf(fullFetchAddress);
         if (rankOwn >= 32 || rankFull >= 32 || !vertexElements.count(fullFetchAddress))
             throw std::runtime_error(fmt::format("computed-index FETCH beyond the 32 declared fetches (address {})", address));
-        print("fh1FetchRanked({}, {}, r{}.{}, {})", rankFull, rankOwn, fullFetchSrc, "xyzw"[fullFetchSwizzle],
+        print("fh1FetchRanked({}, {}, {}, {})", rankFull, rankOwn, latchIndex(),
               fullFetchRounded ? "true" : "false");
         out += '.';
         printDstSwizzle(instr.dstSwizzle, true);
@@ -260,7 +282,9 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         if (c < 24)
             throw std::runtime_error(fmt::format("direct FETCH with constant {} (only 24-31)", c));
         rawFetchConstants.insert(c);
-        print("fh1Fetch({}, r{}.{}, {}, {}, {}, {}, {}, {})", c, src, "xyzw"[swz], rounded ? "true" : "false",
+        (void)src;
+        (void)swz;
+        print("fh1Fetch({}, {}, {}, {}, {}, {}, {}, {})", c, latchIndex(), rounded ? "true" : "false",
               stride, int32_t(instr.offset), uint32_t(instr.format), instr.formatCompAll ? "true" : "false",
               instr.numFormatAll ? "false" : "true");
         out += '.';

@@ -187,9 +187,14 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         cast shadows again) — 2026-10-05
   - [x] Shader translator: loops inside loops, cube lookups in a loop, cube lookups with another operand order
         (240 of 940 were looked up in permuted directions) — 2026-10-05
-  - [ ] **Design creator / paint booth: the car's sides and tyres are black, no gloss, no "BOSS 429" badge**: the
-        vertex constants c37-c39 (ambient light, set by the game) are 0 on the native renderer; see the status
-        document: first thing next session
+  - [x] Design creator / paint booth: black sides, no gloss, no badge: the game computes the ambient light on the
+        CPU from a 256x128 sphere map of 16-bit floats it resolves; such resolves now reach guest memory
+        (`fh1_native_read_resolved_half_texels`) — 2026-10-05, sixth session
+  - [x] Tyres in the booth (flat black, then too high inside the rim): vertex streams a shader reads without
+        declaring them (morph shapes of tyres, rims and car parts, damage grid; 457 shaders) are now uploaded
+        (`fh1_native_raw_fetches`), and the translator keeps a fetch's index for the fetches that follow it
+        (502 shaders re-translated) — 2026-10-05, sixth session
+  - [ ] Car damage on the native renderer: not looked at (it uses the same undeclared streams: check a crash)
   - [ ] Thumbnail wrong again when a car is saved with a new modification (user, 2026-10-05)
   - [ ] Night colors at the festival: the native picture is warm grey where the emulated one is blue (340 s mean
         color 69 55 49 against 63 60 56, brightness equal): the night color grading; next thing to look at
@@ -201,6 +206,13 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] 13 shaders still on an old translation (loop constants i0 / i16 not declared: DXC rejects the new HLSL)
   - [ ] The game stops sending commands after one frame of about 3.2 s (new pipelines compiled in the ring: seen
         again on 2026-10-05 with a new option's first run)
+  - [ ] **Offline shader library for the PC (user, 2026-10-05)**: the game must not stutter while it prepares shaders
+        as it runs. Today the shaders themselves are already translated offline (`fh1_shaders.nfsp`); what is
+        still built while playing is the pipeline of each shader pair with its render state (about 500 known ones
+        are built during the logo videos, the rest when first drawn: that is the stutter, and one such frame of
+        3.2 s freezes the game). To do: record every pipeline a play-through needs (festival, roads, day and
+        night, races, garage, paint shop, menus) into a list shipped next to the library, build all of them before
+        the title screen with a progress display, and keep the driver's pipeline cache on disk between runs
   - [ ] Make the native renderer the default once it matches the emulated picture
 
 ## Tools (done)
@@ -228,7 +240,7 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
 
 ## Later — Nintendo Switch (separate repository)
 
-Started from this repo once PC is done. The Tegra X1 has ~20-50x less GPU and much slower CPU
+Started from this repo once PC is done (model: GoatHonks' nfsc-nx, see "Other projects to borrow from"). The Tegra X1 has ~20-50x less GPU and much slower CPU
 cores than the Legion Go, so it needs the native renderer, the pre-translated shaders, no CPU
 spinning, audio decoding on a worker, and probably lower handheld settings. What costs time on PC
 today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/`.
@@ -236,7 +248,23 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
 - [ ] Build with devkitA64 and the Horizon layer in `sdk/`
 - [ ] Memory map, threads, audio out
 - [ ] Native renderer and shader library on the console
+- [ ] **Offline shader library for the Switch (user, 2026-10-05)**: the console cannot compile shaders and
+      pipelines while playing the way the PC does, so everything must be ready beforehand: the translated
+      shaders in the form its GPU driver takes, and the full pipeline list of the PC item above built at
+      install time or at first boot, never during play
 - [ ] Performance on the console
+
+## Other projects to borrow from
+
+- nfsc-recomp (GoatHonks, https://github.com/GoatHonks/nfsc-recomp, local copy `..\repos\nfsc-recomp-main`):
+  the native renderer FH1's started from
+- nfsc-nx (GoatHonks; his repository says it is private for now, so no link here; local copy `..\repos\nfsc-nx-main`), added by the
+  user on 2026-10-05: the Switch side of his Carbon port (devkitA64 / libnx toolchain file, the Mesa / NVK
+  driver patch and build notes, the Switch documents; it takes the PC port in as a git submodule). **The
+  reference for our first Switch build**: read its README, ROADMAP and `docs/` before starting ours
+- pinyon-shift (https://github.com/arcanite24/pinyon-shift), added by the user on 2026-10-05: a source for
+  things we may want later, such as its trainer, its fps unlock and some of its fixes. Not looked at yet: read
+  it before starting the 60 fps unlock or any cheat / trainer feature
 
 ## Maybe later
 

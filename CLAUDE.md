@@ -23,7 +23,7 @@ in daylight and at evening is close to it; driving at night works since 2026-10-
 no blue on the car, map selector); reflections soft and textures on the
 console's gamma curve since the third session of 2026-10-05; smooth edges (four samples per pixel) since the
 same day; first-person view, brightness jumps and the darker picture fixed in the fourth session (brightness now
-equal to the emulated picture at the festival); design creator fixed in the fifth session except for the car's black sides and tyres in its booth; still open: that, the thumbnail of a saved car, night colors, races, garage and car photos. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+equal to the emulated picture at the festival); design creator fixed in the fifth and sixth sessions (booth, wheels, paint, dialog, ambient light, tyres); still open: the thumbnail of a saved car, night colors, races, garage and car photos, car damage. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
 docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
 the frame time goes and what to cut for the Switch.
 
@@ -328,6 +328,27 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
   blamed four times before the constants showed three vertex constants at 0.
 - The first run with a new option or a new shader library can freeze on a loading screen (a frame of more than
   about 3.2 s while pipelines compile): run it again before believing it.
+
+- 2026-10-05, sixth session: the paint booth is right (ambient light, tyres, rims). The game reads a 256x128
+  sphere map of 16-bit floats back on the CPU to compute a menu scene's ambient light: such resolves now reach
+  guest memory. Tyres, rims and car parts read their morph shapes from vertex streams outside the declaration
+  (fetch constants 29-31, 457 shaders): the renderer uploads them, and the translator keeps a full fetch's index
+  for its mini fetches (the full fetch may overwrite the register it was indexed by).
+- When a value the game computes on the CPU is wrong on one renderer (a constant that is 0), do not compare GPU
+  inputs for long: dump the game's memory on both (`--fh1_dump_memory`), find the good numbers, and trap the write
+  (`--fh1_trap_writes_to`); the crash report names the function, and its code shows what it reads.
+- `std::search` between a `uint8_t` buffer and a `std::string` needle never matches a byte above 7F (char is
+  signed): use a `std::vector<uint8_t>` needle.
+- Python patch scripts go in a file made with the Write tool: a bash heredoc turned a backslash-n inside a C++
+  string into a real line break again on 2026-10-05, and a quote in the text ended another heredoc early. A
+  script that rewrites a document must keep its line endings (ROADMAP.md is LF; check `git diff --stat`).
+- Other repos next to this one (`..\repos\`): `nfsc-recomp-main` (GoatHonks' Carbon PC port, the source of the
+  native renderer) and, since 2026-10-05, `nfsc-nx-main` (his Switch port of it: toolchain file, Mesa / NVK patch,
+  Switch documents): the reference for our first Switch build. The user also named
+  https://github.com/arcanite24/pinyon-shift as a source for later (trainer, fps unlock, fixes): ROADMAP.md,
+  "Other projects to borrow from".
+- User, 2026-10-05: an offline shader library for the PC and for the Switch is on the roadmap (no shader or
+  pipeline building while playing; the Switch cannot do it at all).
 
 Local folder layout (2026-10-04): `build_logs\reference\` = the screenshots, traces and logs the documents
 refer to; `build_logs\archive-2026-10-04\` = every earlier test, run and build log (nothing there is needed
