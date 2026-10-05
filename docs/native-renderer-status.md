@@ -9,13 +9,31 @@ too upwards, even going inside the rim": fixed after that); nobody has driven th
 
 - **0. Paint booth: DONE in the sixth session** (see "What was fixed on 2026-10-05, sixth session" below). Left
   of it: **car damage has not been looked at** (same undeclared streams; ask the user to hit something).
-- **0b. The thumbnail bug is back: saving a car with a new modification gives a wrong thumbnail** (the user: "the
-  thumbnail bug is here again when I save the car with a new modification"). Not started: **ask the user first**
-  whether it also happens on the emulated GPU and what it looks like. On the emulated GPU the car photos were
-  fixed on 2026-10-01 by `readback_resolve=fast` (the game reads the resolved picture back from guest memory to
-  make the photo). The native renderer's resolves only reach guest memory up to 64x64
-  (`--fh1_native_read_resolved_texels`): find which resolve the photo comes from (a trace while the user saves,
-  `run_native_capture.bat` + "now") and copy that one to guest memory in the console's format.
+- **0b. FIRST THING NEXT SESSION: the photos of a car after saving a paint job are wrong, native only.** The
+  user saved a paint job on both renderers on 2026-10-05 (sixth session's build) and sent both screens of the
+  car list: `build_logs\reference\user-thumbnail-20261005-emulated-correct.webp` (both photos show the orange
+  Mustang) and `user-thumbnail-20261005-native-wrong.webp`. On the native renderer:
+  - the small thumbnail of the car list (grey studio background) shows **a piece of another car**, the red
+    Corrado of the same garage, **turned on its side and enlarged**, with a vertical strip of red speckles, and
+    a sliver of the orange car at the bottom left;
+  - the big photo (road, wind turbines) shows the red Corrado twice, once upright at the right and once turned
+    on its side, with rows of red and green speckles along the top and across the middle, and no Mustang;
+  - the other cars' thumbnails (Fiat, Corrado) are right: they were made earlier, on the emulated GPU.
+  What that says before any measurement (guesses, to be checked with numbers): the photo's background and
+  size are right, so the game does draw and read back a picture; its content is another car's and partly a
+  rotated copy, the look of **a texture read with the wrong layout or from the wrong place** (tiled against
+  linear, a resolve into a rectangle of a larger texture, an old resolved image found at the same address)
+  and of **compressed blocks written from garbage** (the speckles; the game compresses the photo on the CPU
+  from what it reads back). On the emulated GPU the photos were fixed on 2026-10-01 by `readback_resolve=fast`
+  (the game reads the resolved picture back from guest memory); the native renderer writes back 8-bit
+  resolves of up to 64x64 texels and, since the sixth session, 16-bit float ones of up to 32768. Where to
+  start: (1) which resolves the photo pass makes (the user starts `run_native_capture.bat`, goes to the save
+  screen, types "now" just before confirming; or a trace of many frames with `--fh1_native_diag_frames`), their
+  sizes and formats, and whether each reaches guest memory; (2) the same on the emulated GPU with
+  `--gpu_log_small_resolves` raised to the photo's size (its 4000-line limit fills in 20 s: start it late or
+  raise the limit); (3) `--fh1_dump_memory` of the destination on both renderers right after the save and a
+  comparison of the bytes, as for the 32x32 faces in the sixth session. **The unattended test must never save
+  a design**: the user does it.
 - **0c. The user's two new items**: remove the Carbon / Most Wanted code that has no use in FH1's renderer (one
   piece at a time, a festival comparison after each; this session found one by its fault,
   `fh1_shadows_without_vegetation`), and Carbon's fps counter and frame time viewer on F3 for the native renderer

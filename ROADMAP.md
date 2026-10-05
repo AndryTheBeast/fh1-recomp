@@ -195,7 +195,9 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         (`fh1_native_raw_fetches`), and the translator keeps a fetch's index for the fetches that follow it
         (502 shaders re-translated) — 2026-10-05, sixth session
   - [ ] Car damage on the native renderer: not looked at (it uses the same undeclared streams: check a crash)
-  - [ ] Thumbnail wrong again when a car is saved with a new modification (user, 2026-10-05)
+  - [ ] **Photos of a car after saving a paint job: wrong on the native renderer only** (another car's
+        picture, partly turned on its side, with speckles; right on the emulated GPU; user's screenshots of
+        2026-10-05 in `build_logs\reference\user-thumbnail-*`): first thing next session
   - [ ] Night colors at the festival: the native picture is warm grey where the emulated one is blue (340 s mean
         color 69 55 49 against 63 60 56, brightness equal): the night color grading; next thing to look at
   - [ ] Races, garage, car photos on the native renderer (the user drives there)
