@@ -12,8 +12,13 @@ Earlier the same day: soft reflections, the console's gamma curve, smooth edges,
   see "Item 5" in the fourth session's section). The user drives there.
 - **B. Ask the user** how the crowd's edges look up close (`--fh1_native_alpha_to_mask_samples=false` is the old
   test at one half) and whether the first-person view is right while driving (it was only checked parked).
-- C. Night (300-340 s) was not measured again after the bloom fix: the third session had green and blue low
-  there, which the missing glow may have been. Take `auto_test.ps1 -Shots "300,340"` on both renderers first.
+- **C. Night colors at the festival: still different** (measured after every fix of the fourth session,
+  `build_logs\reference\test-ngN-*` / `test-ngX-*`, the car parked in the bumper view). Brightness is equal
+  (340 s: 5/25/50/79/147 native, 5/28/54/79/147 emulated) but the mean color is 69 55 49 against 63 60 56: more
+  red, less green and blue, at 300 s too (71 58 53 against 65 62 60). Daylight has no such difference (63 54 46 on
+  both). Not looked at: capture both renderers at 320 s (`auto_test.ps1 -RenderDoc -Triggers "320"`) and compare
+  the composite's inputs with `tools\rdc_tex_stats.py` (the color grading cube changes with the time of day; the
+  scene before post-processing matched at dusk in the third session, not checked at night).
 - D. Then: frame time while driving, items 6-8 below, the depth pre-pass drawing alpha to mask draws solid.
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
