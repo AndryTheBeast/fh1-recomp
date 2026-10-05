@@ -523,6 +523,10 @@ REXCVAR_DEFINE_INT32(fh1_native_read_resolved_texels, 4096, "FH1",
                      "Native renderer: resolved textures of up to this many texels are also copied to guest "
                      "memory, which the game reads for its exposure (0 = none; 4096 = 64x64, the ones the exposure "
                      "uses; 57600 = 320x180)");
+REXCVAR_DEFINE_BOOL(fh1_native_read_resolved_float, false, "FH1",
+                    "Native renderer: the small float pictures (levels of the reflection cube map, luminance) are "
+                    "copied to guest memory too, converted to the format the game resolved them in. false = only the "
+                    "8-bit ones (the default: tried on 2026-10-05, the picture did not change)");
 REXCVAR_DEFINE_BOOL(fh1_native_invalidate_textures_every_copy, false, "FH1",
                     "Native renderer: drop the texture caches on every copy (the behavior before build 127). Since "
                     "127 they are only dropped when a resolved texture is created, remade, prepared or changes its "
@@ -933,6 +937,7 @@ struct ReadPending {
   uint32_t pitch;         // RB_COPY_DEST_PITCH
   uint32_t height_target;
   uint32_t info;          // RB_COPY_DEST_INFO
+  VkFormat format_host = VK_FORMAT_R8G8B8A8_UNORM;  // FH1: of the resolved image (float pictures are converted)
 };
 
 // Output slots with fh1_native_output_without_wait (without it, only slot 0 is used).
@@ -1661,7 +1666,14 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                         base & 0x1FFFFFFF, base_container, row_extra);
           }
         } else {
-          resolved = GetResolved(base & 0x1FFFFFFF, pitch_target, height_target, format_target,
+          uint32_t width_target = pitch_target;
+          if (!width_hint_.empty()) {
+            if (const auto hint = width_hint_.find((uint64_t(pitch_target) << 32) | (base & 0x1FFFFFFF));
+                hint != width_hint_.end()) {
+              width_target = hint->second;
+            }
+          }
+          resolved = GetResolved(base & 0x1FFFFFFF, width_target, height_target, format_target,
                                      (info_target >> 24) & 0x1,
                                      format_copy_fh1 != VK_FORMAT_UNDEFINED ? format_copy_fh1 : kFormatColor);
           base_resolved = base & 0x1FFFFFFF;
@@ -3358,6 +3370,23 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   // out wrong everywhere (the whole scene smeared with the car standing still, speckles on every edge).
   // The bytes are written into an 8-bit color image by a small pass (shaders/fh1_depth_pack.hlsl), once per
   // resolve and only when a draw asks for them. nullptr if it cannot be done: the caller samples the depth as before.
+  // FH1: a resolve only says the pitch of its texture (a multiple of 32 texels), not its width. The game's small
+  // pictures are narrower: the reflection cube map's levels from 16x16 down to 1x1, the smallest bloom levels.
+  // Kept in an image as wide as the pitch, a fetch with coordinates 0..1 read the empty columns too: each smaller
+  // cube level came out darker than the one before, down to black (cars lost their reflections whenever they
+  // sampled those levels). The fetch constant has the real width: the first draw that fetches such a texture
+  // notes it here and the next resolve to that address creates the image that wide.
+  void HintWidthResolved(uint32_t address, uint32_t width) override {
+    const uint64_t key = (uint64_t((width + 31) & ~31u) << 32) | address;
+    auto [it, fresh] = width_hint_.try_emplace(key, width);
+    if (fresh && width_hint_.size() <= 64) {
+      REXLOG_INFO("[fh1] resolved texture at {:08X} is fetched {} wide (pitch {}): its image takes that width",
+                  address, width, (width + 31) & ~31u);
+    }
+    it->second = width;
+  }
+  std::unordered_map<uint64_t, uint32_t> width_hint_;
+
   const ImageNative* TextureResolvedBytes(uint32_t address) override {
     const auto it = resolved_.find(address);
     if (it == resolved_.end() || !it->second.image.prepared || it->second.image.format != format_depth_ ||
@@ -6614,8 +6643,18 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   void ReadResolved(const RegistersCopy& reg, const Resolved& resolved, int32_t x0, int32_t y0,
                     uint32_t dx, uint32_t dy, uint32_t width, uint32_t height) {
     const int32_t maximum = REXCVAR_GET(fh1_native_read_resolved_texels);
+    // FH1: the small float pictures too (fh1_native_read_resolved_float): the levels of the reflection cube map
+    // resolved as k_2_10_10_10 and the luminance resolved as k_32_FLOAT. On the console every resolve lands in
+    // memory, where the game's own code can read it; here those addresses kept whatever was there before.
+    const uint32_t format_guest_read = (reg.rb_copy_dest_info >> 7) & 0x3F;
+    const bool float_read =
+        REXCVAR_GET(fh1_native_read_resolved_float) &&
+        ((resolved.image.format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+          format_guest_read == uint32_t(xenos::ColorFormat::k_2_10_10_10)) ||
+         (resolved.image.format == VK_FORMAT_R32_SFLOAT &&
+          format_guest_read == uint32_t(xenos::ColorFormat::k_32_FLOAT)));
     if (maximum <= 0 || uint64_t(width) * height > uint64_t(maximum) ||
-        resolved.image.format != kFormatColor) {
+        (resolved.image.format != kFormatColor && !float_read)) {
       return;
     }
     const uint64_t key_target =
@@ -6629,7 +6668,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       ++target.skipped;  // exposure changes slowly: the guest keeps the previous one
       return;
     }
-    const VkDeviceSize bytes = VkDeviceSize(width) * height * 4;
+    const VkDeviceSize bytes =
+        VkDeviceSize(width) * height * (resolved.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4);
     const uint64_t key = (uint64_t(reg.rb_copy_dest_base) << 32) ^ (uint64_t(uint32_t(x0)) << 16) ^
                            uint64_t(uint32_t(y0));
     // One buffer per slot: the previous submission may still be copying into the other slot's.
@@ -6675,7 +6715,8 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
                                 read.buffer, 1, &copy);
     reads_pending_.push_back({&read, reg.rb_copy_dest_base, x0, y0, width, height,
                                     reg.rb_copy_dest_pitch & 0x3FFF,
-                                    (reg.rb_copy_dest_pitch >> 16) & 0x3FFF, reg.rb_copy_dest_info});
+                                    (reg.rb_copy_dest_pitch >> 16) & 0x3FFF, reg.rb_copy_dest_info,
+                                    resolved.image.format});
     if (reads_done_++ == 0) {
       REXLOG_INFO("[native] C2: readback of resolved textures of up to {} texels (the first one: {:08X}, {}x{})",
                   maximum, reg.rb_copy_dest_base, width, height);
@@ -6735,6 +6776,52 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
       const uint64_t base = uint64_t(p.base & 0x1FFFFFFF);
       const auto& table = TableTile2DTexel4();
       const uint64_t tiles_by_row = ((p.pitch + 31) & ~uint32_t(31)) >> 5;
+      // FH1: float pictures. k_2_10_10_10: each channel times 2^exp_bias, cut to 0..1, in 10 bits (alpha in 2), red
+      // and blue exchanged with copy_dest_swap; k_32_FLOAT: the value as it is. Then the copy's byte order.
+      if (p.format_host != VK_FORMAT_R8G8B8A8_UNORM) {
+        const bool wide = p.format_host == VK_FORMAT_R16G16B16A16_SFLOAT;
+        const float scale = std::ldexp(1.0f, int32_t((p.info >> 16) << 26) >> 26);
+        for (uint32_t j = 0; j < p.height; ++j) {
+          const uint32_t ty = uint32_t(p.y0) + j;
+          if (p.height_target && ty >= p.height_target) {
+            break;
+          }
+          const uint64_t row = base + ((uint64_t(ty >> 5) * tiles_by_row) << 12);
+          const uint16_t* const local = table.data() + size_t(ty & 31) * 32;
+          const uint8_t* s = read.data + size_t(j) * p.width * (wide ? 8 : 4);
+          for (uint32_t i = 0; i < p.width; ++i, s += wide ? 8 : 4) {
+            const uint32_t tx = uint32_t(p.x0) + i;
+            if (tx >= p.pitch) {
+              break;
+            }
+            const uint64_t address = row + (uint64_t(tx >> 5) << 12) + local[tx & 31];
+            if (address + 4 > 0x20000000) {
+              continue;
+            }
+            uint32_t word = 0;
+            if (wide) {
+              uint16_t h[4];
+              std::memcpy(h, s, sizeof(h));
+              uint32_t field[4];
+              for (uint32_t c = 0; c < 4; ++c) {
+                float v = DumpHalfToFloat(h[c]) * (c < 3 ? scale : 1.0f);
+                v = v > 0.0f ? std::min(v, 1.0f) : 0.0f;  // also NaN
+                field[c] = uint32_t(v * (c < 3 ? 1023.0f : 3.0f) + 0.5f);
+              }
+              if (swap_value) {
+                std::swap(field[0], field[2]);
+              }
+              word = field[0] | (field[1] << 10) | (field[2] << 20) | (field[3] << 30);
+            } else {
+              std::memcpy(&word, s, sizeof(word));
+            }
+            word = xenos::GpuSwap(word, order);
+            std::memcpy(physical + address, &word, sizeof(word));
+          }
+        }
+        RestampAfterRead(p);
+        continue;
+      }
       for (uint32_t j = 0; j < p.height; ++j) {
         const uint32_t ty = uint32_t(p.y0) + j;
         if (p.height_target && ty >= p.height_target) {
@@ -6764,6 +6851,15 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
     reads.clear();
     ns_write_reads_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now() - before_reads).count());
+  }
+
+  // FH1: the read-back itself changed the guest memory under a resolved texture: its fingerprint is taken again,
+  // or the next draw would think the game wrote there and read the texture from memory.
+  void RestampAfterRead(const ReadPending& p) {
+    const auto it = resolved_.find(p.base & 0x1FFFFFFF);
+    if (it != resolved_.end() && !it->second.overwritten) {
+      it->second.stamp_memory = StampMemory(p.base & 0x1FFFFFFF, it->second.image.width, it->second.image.height);
+    }
   }
 
   void DestroyRead(ReadAccess& read) {

@@ -108,6 +108,12 @@ class ContextTargets {
   // FH1: the resolved depth at that address as the bytes the console's resolve writes (red = stencil, then the
   // 24-bit depth from its lowest byte), for draws that fetch it as a color texture. Call it after TextureResolved.
   // nullptr if there is no such image.
+  // FH1: a draw fetches the resolved texture at that address as a texture narrower than its image (the image
+  // took the resolve's pitch, a multiple of 32): the next resolve there makes the image that wide.
+  virtual void HintWidthResolved(uint32_t address, uint32_t width) {
+    (void)address;
+    (void)width;
+  }
   virtual const ImageNative* TextureResolvedBytes(uint32_t address) {
     (void)address;
     return nullptr;

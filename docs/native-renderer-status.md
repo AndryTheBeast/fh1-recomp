@@ -1,9 +1,10 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, second session:
-the three things the user saw on the night drive are fixed and seen by the user (blue outline, headlights on the
-road, map selector; see "What was fixed on 2026-10-05, second session"). Open list, in order: items 1, 3, 4, 5
-below, then 6-8.
+Read this after CLAUDE.md. It is the starting point for the next session. State as of 2026-10-05, third session:
+the reflections are soft like the emulated ones, textures use the console's gamma curve and the loading-screen
+freeze has its cause and a fix (see "What was fixed on 2026-10-05, third session"). Open list, in order: the
+rest of item 3 (post-processing still a little dark, green and blue low at night), item 4 (stair-stepped edges),
+the occlusion queries measured for real, then items 5-8.
 
 The native renderer is FH1's own (`fh1/src/native/fh1_*`, run with `--fh1_renderer=native`). It started as
 GoatHonks' nfsc-recomp renderer; his later fixes are ported by hand when they work for FH1
@@ -253,6 +254,70 @@ into one 1280x720 color texture (1C4E1000) and one depth texture (1DAC5000). 6. 
 
 Direct3D's clears are rectangle lists (VS n1205, PS n3067) on a **4x MSAA surface of half the pitch** of the
 target they clear (the same EDRAM, four samples per pixel drawn).
+
+## What was fixed on 2026-10-05, third session: soft reflections, the console's gamma curve, the loading freeze
+
+Compare `build_logs\reference\item1-car-before-after-emulated-340s.png` (the car at night: native before, native
+after, emulated) and the screenshots `test-cubeN-*` (after the reflections), `test-readN-*` (after everything of
+this session) and `test-cubeX-*` (emulated), all at 58, 95, 300 and 340 s of the same unattended run.
+
+- **Chrome and paint sharper and whiter than the emulated ones (the user's item 1).** Three causes:
+  - The reflection cube map (1C879000, 256x256) had one level. Its fetch constant asks for nine (mip address
+    1C9F9000, largest level 8) and the game renders them itself every frame: each face of level n is drawn from
+    level n - 1 (VS n2128 / PS n1477) and resolved to its place (1C9F9000, 1CA59000, 1CA71000 ... one face after
+    another, 48 small resolves). `PrepareTexture` now gives the cube as many levels as it finds resolved and copies
+    them (`--fh1_native_cube_levels`; log line `cube ... with its faces resolved by C2, 9 levels`).
+  - The translator dropped the level of detail of every fetch. 524 fetches use the register set by setTexLOD
+    (the cars' envSampler and blurredCubemapSampler in 150 shaders, damage and carbon textures) and 828 ask for
+    level 0 (no computed level: shadow maps, post-processing). Now: `g_fh1RegLod` and `fh1Lod(mode, lod)` in
+    `shader_common.h`, emitted by `shader_recompiler.cpp` before such a fetch (mode 1 = that level, mode 2 =
+    computed + bias; no shader of the disc uses a bias).
+  - A resolve only says the pitch of its texture (a multiple of 32), not its width, so the cube levels from 16x16
+    down to 2x2 were kept in images 32 wide. The draw that makes the next level fetched them with coordinates
+    0..1 and read the empty columns too: each level came out darker (level 5 half, level 6 a tenth, 7 and 8
+    black). The fetch constant has the real width: the first fetch notes it (`HintWidthResolved`, log line
+    `resolved texture at ... is fetched N wide`) and the next resolve creates the image that wide. All eight
+    levels now have the mean of level 0 (0.212 0.243 0.266 at dusk). The bloom chain is not affected (its
+    textures really are as wide as their pitch; the game draws into a part of them).
+  - Numbers (car and the ground around it, window pixels 800-1760 x 800-1460, mean horizontal gradient):
+    1.25 before, 0.81 after, emulated 1.18 (the emulated ground is grainier). The picture: the bumper and the
+    paint are soft, the rear window shows its slats.
+- **Darker picture (item 2), the part that is fixed.** Textures fetched with the gamma sign went through the
+  host's sRGB formats. The console's curve is piecewise-linear and brighter in the dark and middle tones (0.5 gives
+  0.25, sRGB 0.214; 0.2 gives 0.05, sRGB 0.033), and the emulated GPU applies it in the shader after the fetch.
+  Now the same here: the texture keeps its plain format, the renderer marks its slot by multiplying the exponent
+  scale by 1.5 (bit 22 of the float) and `fh1Gamma` converts red, green and blue before the swizzle
+  (`--fh1_native_gamma_pwl`; `--fh1_native_gamma_pwl_mask` picks the host formats, log lines `gamma texture
+  kind`). Only when the three color components are the gamma ones and alpha is not; resolved pictures and gamma
+  render targets are unchanged.
+  - The raw scene before post-processing now matches the emulated capture of dusk within a few percent (mean of
+    the linear values, native / emulated: sky 0.97, ground 1.08, road 1.04, crowd 1.06, car roof 0.93). Before,
+    the status document had the emulated ground and car body brighter there.
+  - The final picture, brightness percentiles 5/25/50/75/95: 58 s native 5/14/36/82/111, emulated 5/15/38/90/122
+    (before 4/12/34/80/113); 340 s (night) native 4/23/44/70/137, emulated 5/27/53/80/147 (before 4/21/39/64/131).
+- **Still open of item 2** (see the open list): at dusk the median is 30 against 38, and at night red matches
+  everywhere but green and blue are lower over the whole picture (sky 29 29 35 against 30 40 50; ground 84 73 66
+  against 83 86 80). Since the raw scene matches, it is in the post-processing: exposure, bloom or the color
+  grading (PS n716 reads a 16x16x16 lookup texture, 136FB000, when colorGradingEnable is set).
+- **The loading screen freezing for good.** It happened again on the first run after the new shader library, and
+  this time the log told what it is: the ring thread was not waiting for anything, it was idle (0 packets, 217
+  empty laps a second) because the game had stopped sending commands, right after one frame of 4.2 s. In every
+  run that froze the longest frame was 3.3 s or more (4167 and 3334 ms); runs with 3134 and 3050 ms went on. So
+  the game (or Direct3D's own code in it) gives up after a frame of about 3.2 s. The long frame was the ring
+  compiling ~170 pipelines itself while the prewarm thread, alone, needed 65 s for the 500 of its list and the
+  festival loaded in the middle. Now the list is first walked by several threads at once
+  (`--fh1_native_prewarm_threads`, default half the logical cores, at most 6): 392 pipelines compiled in 7 s,
+  during the logo videos; worst frame of that run 410 ms. What makes the game stop is not found (a frame that
+  long for another reason would freeze it again: look for a time-out around 3.2 s in the game's Direct3D code).
+- **Not a fault: the car's sky reflection "missing" at 95 s in some runs.** At the festival the reflection on the
+  roof switches on between 92 and 95 s of every run (the roof's mean color goes from 32 32 32 to 67 84 91 within
+  three seconds; `test-phaseN-*` has a shot every 3 s). Runs differ by a second or two in loading time, so a
+  shot at 95 s falls on either side. Compare cars at 100 s or later, or at night.
+- Tried and left off: `--fh1_native_read_resolved_float` copies the small float pictures (cube levels, luminance)
+  to guest memory as the console's resolve does. The picture did not change, so the game does not seem to read
+  them; off by default.
+- `tools/fh1_pic_stats.py A.png B.png [--box x0,y0,x1,y1] [--crop out.png]`: the brightness percentiles, mean
+  color, gradient and a side-by-side crop used for every comparison above.
 
 ## What was fixed on 2026-10-05, second session: headlights on the road, map selector, blue outline
 

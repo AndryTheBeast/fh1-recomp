@@ -346,6 +346,7 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
     // FH1: getGradients (screen-space derivatives of a register, no texture involved) is what the UI's curve
     // shaders (menu text, map roads) use to antialias their edges; dropped, every edge came out hard.
     if (instr.opcode != FetchOpcode::TextureFetch && instr.opcode != FetchOpcode::GetTextureWeights &&
+        instr.opcode != FetchOpcode::SetTextureLod &&
         !(instr.opcode == FetchOpcode::GetTextureGradients && isPixelShader))
         return;
 #else
@@ -368,6 +369,15 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
         };
 
 #ifdef NFSMW_RECOMP
+    // FH1: setTexLOD keeps a level of detail for the fetches that ask for it (useRegLod): the car paint and the
+    // chrome pick a blurred level of the reflection cube map this way.
+    if (instr.opcode == FetchOpcode::SetTextureLod)
+    {
+        indent();
+        print("g_fh1RegLod = r{}.{};\n", instr.srcRegister, SWIZZLES[instr.srcSwizzle & 0x3]);
+        closeSiWritesPredicate(markPredicate);
+        return;
+    }
     if (instr.opcode == FetchOpcode::GetTextureGradients)
     {
         // Same result layout as the SDK's translators: x = d(src.x)/dx, y = d(src.x)/dy, z = d(src.y)/dx,
@@ -424,6 +434,34 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
     }
 #endif
 
+#ifdef NFSMW_RECOMP
+    // FH1: the level of detail of the fetch, as on the console: the register set by setTexLOD, or the computed
+    // one (pixel shaders only), or level 0; plus the instruction's bias (1/16 steps).
+    bool lodSet = false;
+    if (instr.opcode == FetchOpcode::TextureFetch)
+    {
+        const float bias = float(instr.lodBias) / 16.0f;
+        if (instr.useRegLod)
+        {
+            indent();
+            print("fh1Lod(1, g_fh1RegLod + {});\n", bias);
+            lodSet = true;
+        }
+        else if (!instr.useCompLod && isPixelShader)
+        {
+            indent();
+            print("fh1Lod(1, {});\n", bias);
+            lodSet = true;
+        }
+        else if (instr.lodBias != 0)
+        {
+            indent();
+            print("fh1Lod({}, {});\n", isPixelShader ? 2 : 1, bias);
+            lodSet = true;
+        }
+    }
+#endif
+
     indent();
     print("r{}.", instr.dstRegister);
     printDstSwizzle(instr.dstSwizzle, false);
@@ -439,7 +477,7 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
     #endif
 
 #ifdef NFSMW_RECOMP
-        out += "fh1Exp(tfetch";  // closed after the swizzle with the slot's exponent scale
+        out += "fh1Exp(fh1Gamma(tfetch";  // both closed below with the slot's exponent scale
 #else
         out += "tfetch";
 #endif
@@ -503,7 +541,16 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
         break;
     }
 
+#ifdef NFSMW_RECOMP
+    // FH1: fh1Gamma converts a texture fetched with the gamma sign with the console's piecewise-linear curve
+    // (before the swizzle: the mark rides in the slot's exponent scale).
+    if (instr.opcode == FetchOpcode::TextureFetch)
+        print("), {}_ExpScale).", constNamePtr);
+    else
+        out += ").";
+#else
     out += ").";
+#endif
 
     printDstSwizzle(instr.dstSwizzle, true);
 
@@ -518,6 +565,13 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
 #endif
 
     out += ";\n";
+#ifdef NFSMW_RECOMP
+    if (lodSet)
+    {
+        indent();
+        out += "fh1Lod(0, 0.0);\n";
+    }
+#endif
 
     printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
 

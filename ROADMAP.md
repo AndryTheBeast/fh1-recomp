@@ -151,6 +151,13 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] Computed vertex index outside quad lists (rejected today)
   - [ ] Small formats: k_24_8 not from a resolve, 1D textures, other texture sign modes
 - [ ] **N5 the rest of the game and speed**
+  - [x] Reflection cube map with its nine levels, level of detail of every fetch, small resolved pictures at their
+        real width (soft chrome and paint) — 2026-10-05
+  - [x] Textures with the gamma sign use the console's piecewise-linear curve (raw scene now matches the emulated
+        one within a few percent) — 2026-10-05
+  - [x] Loading screen frozen for good after a new shader library: pipelines prewarmed by several threads (the
+        game stops after a frame of ~3.2 s; that time-out itself is not found) — 2026-10-05
+  - [ ] Post-processing still a little dark; green and blue low at night (exposure, bloom or color grading)
   - [ ] Races, garage, car photos, paint shop on the native renderer
   - [ ] Frame time while driving (185-230 ms frames were seen; render-target copies rejected)
   - [ ] Remove the Carbon / Most Wanted special cases left in the draw code, one at a time

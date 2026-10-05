@@ -278,10 +278,36 @@ void fh1ExpFloat(float s, out float scale, out float cut)
     scale = ldexp(1.0, exponent - 1.0);
     cut = code > 0.5 ? ldexp(1.0, code - 17.0) : asfloat(0x7f7fffff);
 }
+// FH1: a texture fetched with the gamma sign. The console decodes it with a piecewise-linear curve, which is
+// brighter than sRGB in the dark and middle tones (0.5 gives 0.25, sRGB 0.214): with the host's sRGB formats the
+// whole scene came out darker than on the emulated GPU. The renderer marks such a slot by multiplying its
+// (power of two) exponent scale by 1.5; red, green and blue are converted after filtering, as the emulated GPU does.
+#define FH1_GAMMA_MARK 0x00400000u
+float3 fh1PwlGammaToLinear(float3 g)
+{
+    g = saturate(g);
+    float3 scale = float3(1.0 / 1024.0, 1.0 / 1024.0, 1.0 / 1024.0);
+    float3 offset = float3(0.0, 0.0, 0.0);
+    scale = select(g >= 64.0 / 255.0, float3(2.0 / 1024.0, 2.0 / 1024.0, 2.0 / 1024.0), scale);
+    offset = select(g >= 64.0 / 255.0, float3(-64.0, -64.0, -64.0), offset);
+    scale = select(g >= 96.0 / 255.0, float3(4.0 / 1024.0, 4.0 / 1024.0, 4.0 / 1024.0), scale);
+    offset = select(g >= 96.0 / 255.0, float3(-256.0, -256.0, -256.0), offset);
+    scale = select(g >= 192.0 / 255.0, float3(8.0 / 1024.0, 8.0 / 1024.0, 8.0 / 1024.0), scale);
+    offset = select(g >= 192.0 / 255.0, float3(-1024.0, -1024.0, -1024.0), offset);
+    float3 l = g * ((255.0 * 1024.0) * scale) + offset;
+    l += trunc(l * scale);
+    return l * (1.0 / 1023.0);
+}
+float4 fh1Gamma(float4 v, float s)
+{
+    if (s > 0.0 && (asuint(s) & FH1_GAMMA_MARK) != 0)
+        v.xyz = fh1PwlGammaToLinear(v.xyz);
+    return v;
+}
 float4 fh1Exp(float4 v, float s)
 {
     if (s >= 0.0)
-        return v * s;
+        return v * asfloat(asuint(s) & ~FH1_GAMMA_MARK);
     float scale, cut;
     fh1ExpFloat(s, scale, cut);
     // "v > 0" is false for NaN as well
@@ -291,11 +317,34 @@ float3 fh1Exp(float3 v, float s) { return fh1Exp(float4(v, 0.0), s).xyz; }
 float2 fh1Exp(float2 v, float s) { return fh1Exp(float4(v, 0.0, 0.0), s).xy; }
 float fh1Exp(float v, float s) { return fh1Exp(float4(v, 0.0, 0.0, 0.0), s).x; }
 
-// FH1: implicit-level sampling is only allowed in pixel shaders; vertex shaders use level 0.
+// FH1: level of detail of a fetch. The translator calls fh1Lod just before a fetch that does not use the computed
+// level (and fh1Lod(0, 0) after it): mode 1 = this level (the register of setTexLOD, or 0, plus the instruction's
+// bias), mode 2 = the computed level plus a bias. Both are literals at each call, so the compiler keeps one
+// branch. Implicit-level sampling is only allowed in pixel shaders; vertex shaders use level 0.
+static int g_fh1LodMode = 0;
+static float g_fh1Lod = 0.0;
+static float g_fh1RegLod = 0.0;
+void fh1Lod(int mode, float lod)
+{
+    g_fh1LodMode = mode;
+    g_fh1Lod = lod;
+}
 #ifdef FH1_VERTEX_SHADER
-#define FH1_SAMPLE(TEXTURE, SAMPLER, COORD) (TEXTURE).SampleLevel(SAMPLER, COORD, 0)
+#define FH1_SAMPLE(TEXTURE, SAMPLER, COORD) (TEXTURE).SampleLevel(SAMPLER, COORD, g_fh1LodMode == 1 ? g_fh1Lod : 0.0)
 #else
-#define FH1_SAMPLE(TEXTURE, SAMPLER, COORD) (TEXTURE).Sample(SAMPLER, COORD)
+#define FH1_SAMPLE_BODY(TYPE, COORD_TYPE) \
+    float4 fh1Sample(TYPE<float4> t, SamplerState s, COORD_TYPE c) \
+    { \
+        if (g_fh1LodMode == 1) \
+            return t.SampleLevel(s, c, g_fh1Lod); \
+        if (g_fh1LodMode == 2) \
+            return t.SampleBias(s, c, g_fh1Lod); \
+        return t.Sample(s, c); \
+    }
+FH1_SAMPLE_BODY(Texture2D, float2)
+FH1_SAMPLE_BODY(Texture3D, float3)
+FH1_SAMPLE_BODY(TextureCube, float3)
+#define FH1_SAMPLE(TEXTURE, SAMPLER, COORD) fh1Sample(TEXTURE, SAMPLER, COORD)
 #endif
 
 Texture2D<float4> g_Texture2DDescriptorHeap[] : register(t0, space0);

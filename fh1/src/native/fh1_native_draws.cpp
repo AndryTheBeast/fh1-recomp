@@ -374,6 +374,18 @@ REXCVAR_DEFINE_BOOL(fh1_native_mipmaps, true, "FH1",
                     "Native renderer: uploads the mip levels the game provides (as on the Xbox 360). false: only "
                     "the base level, as before build 136")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(fh1_native_gamma_pwl, true, "FH1",
+                    "Native renderer: textures fetched with the gamma sign are converted in the shader with the "
+                    "console's piecewise-linear curve (as the emulated GPU does). false = the host's sRGB formats, "
+                    "as before (a darker picture)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_INT32(fh1_native_gamma_pwl_mask, 31, "FH1",
+                     "Debug: host formats that take the console curve in the shader (1 RGBA8, 2 BC1, 4 BC2, 8 BC3, 16 "
+                     "others); the rest keep the host sRGB format");
+REXCVAR_DEFINE_BOOL(fh1_native_cube_levels, true, "FH1",
+                    "Native renderer: the reflection cube map gets the smaller levels the game renders (as on the "
+                    "console). false: the first level only (sharp, white reflections)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // A mip level read from the wrong place (packed tail offset, row or slice alignment) causes no Vulkan
 // errors, only smudges in the distance. The game's mips are reductions of the base level, so their
 // average color has to resemble the base level's.
@@ -494,6 +506,9 @@ REXCVAR_DEFINE_BOOL(fh1_native_diag_reuse, true, "FH1",
  * each on the console (56 of them in the first race, 5.2 s of stutter). It happens the first time after any
  * change to the shader library, the driver or the key, and on a fresh install. See LoopPrewarm.
  */
+REXCVAR_DEFINE_INT32(fh1_native_prewarm_threads, -1, "FH1",
+                     "Native renderer: threads that walk the pipeline prewarm list at once before the ordered walk "
+                     "(-1 = half the logical cores, at most 6; 0 = the single ordered walk, as before)");
 REXCVAR_DEFINE_BOOL(fh1_native_pipelines_prewarm, true, "FH1",
                     "Native renderer (26/09, build 186): at startup, a lowest-priority thread re-creates in the "
                     "Vulkan cache the pipelines the ring created in earlier sessions (their list is in "
@@ -8644,6 +8659,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     REXLOG_INFO("[native] C6: texture caches across frames (fh1_native_texture_cache_across_frames) = {}",
                 cache_between_frames_ ? "SI" : "no");
     mipmaps_ = REXCVAR_GET(fh1_native_mipmaps);
+    cube_levels_ = REXCVAR_GET(fh1_native_cube_levels);
+    gamma_pwl_ = REXCVAR_GET(fh1_native_gamma_pwl);
     gamma_textures_ = REXCVAR_GET(fh1_native_gamma_textures);
     gamma_targets_ = REXCVAR_GET(fh1_native_gamma_targets);
     REXLOG_INFO("[native] C3: gamma textures read as sRGB (fh1_native_gamma_textures) = {}",
@@ -9143,6 +9160,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         // shimmered as the camera moved. Resolved textures report their size like any other.
         width_host_out = resolved->width;
         height_host_out = resolved->height;
+        // FH1: fetched narrower than the image, which took the resolve's pitch (see HintWidthResolved).
+        if (const uint32_t width_fetch = (f[2] & 0x1FFF) + 1;
+            !one_d && width_fetch < resolved->width && ((width_fetch + 31) & ~31u) == resolved->width) {
+          context_->HintWidthResolved(base & 0x1FFFFFFF, width_fetch);
+        }
         if (exp_bias_) {
           exp_scale_out = std::ldexp(1.0f, exp_fetch + resolved->exp_bias);
         }
@@ -9205,7 +9227,44 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // out too bright and the whole picture looked washed out. The host's sRGB formats do that conversion (the
     // console's curve is piecewise-linear, close to sRGB). The signs are part of the texture key, so the same
     // memory fetched without them keeps its own plain image.
-    if (gamma_textures_ && ((f[0] >> 2) & 0x3F) == 0x3F) {
+    // FH1 (fh1_native_gamma_pwl): the console's curve is not sRGB (it is brighter in the dark and middle tones),
+    // so the texture stays in its plain format and the shader converts what it fetched (fh1Gamma in
+    // shader_common.h), as the emulated GPU does. The mark is the exponent scale times 1.5. Only when red, green
+    // and blue of the fetched value are the gamma components (or constants) and alpha is not.
+    bool gamma_in_shader = false;
+    if (gamma_textures_ && gamma_pwl_ && ((f[0] >> 2) & 0x3F) == 0x3F && exp_scale_out > 0.0f) {
+      const uint32_t signs_all = (f[0] >> 2) & 0xFF;
+      gamma_in_shader = true;
+      for (uint32_t i = 0; i < 4; ++i) {
+        const uint32_t source = (swizzle >> (3 * i)) & 0x7;
+        if (source >= 4) {
+          continue;  // constant 0 or 1: the curve leaves both as they are
+        }
+        const bool gamma_component = ((signs_all >> (2 * source)) & 0x3) == 3;
+        if (gamma_component != (i < 3)) {
+          gamma_in_shader = false;
+        }
+      }
+      {
+        const int32_t mask = REXCVAR_GET(fh1_native_gamma_pwl_mask);
+        const uint32_t bit = tf.format == VK_FORMAT_R8G8B8A8_UNORM ? 1 : tf.format == VK_FORMAT_BC1_RGBA_UNORM_BLOCK ? 2
+                             : tf.format == VK_FORMAT_BC2_UNORM_BLOCK ? 4 : tf.format == VK_FORMAT_BC3_UNORM_BLOCK ? 8 : 16;
+        if (!(uint32_t(mask) & bit)) {
+          gamma_in_shader = false;
+        }
+        const uint64_t kind = (uint64_t(format) << 32) | (uint64_t(swizzle) << 12) | (signs_all << 1) | (gamma_in_shader ? 1 : 0);
+        if (kinds_gamma_.insert(kind).second) {
+          REXLOG_INFO("[fh1] gamma texture kind: format {} swizzle {:03X} signs {:02X} host format {} -> {} (first {:08X} "
+                      "{}x{})", format, swizzle, signs_all, uint32_t(tf.format),
+                      gamma_in_shader ? "console curve in the shader" : "host sRGB format", base, (f[2] & 0x1FFF) + 1,
+                      ((f[2] >> 13) & 0x1FFF) + 1);
+        }
+      }
+      if (gamma_in_shader) {
+        exp_scale_out *= 1.5f;
+      }
+    }
+    if (gamma_textures_ && !gamma_in_shader && ((f[0] >> 2) & 0x3F) == 0x3F) {
       switch (tf.format) {
         case VK_FORMAT_R8G8B8A8_UNORM: tf.format = VK_FORMAT_R8G8B8A8_SRGB; break;
         case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: tf.format = VK_FORMAT_BC1_RGBA_SRGB_BLOCK; break;
@@ -9322,7 +9381,29 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       }
       if (resolved_2) {
         const VkFormat format_faces = faces[0]->format;
-        const uint64_t key_resolved = key ^ 0x9E3779B97F4A7C15ull ^ (uint64_t(format_faces) << 40);
+        // FH1: the game also renders the cube map's smaller levels (each face of level n drawn from level n - 1
+        // and resolved to its place after the mip address: 1C9F9000, 1CA59000, 1CA71000 ...). Chrome and paint
+        // sample those blurred levels; with the first level alone the reflections were sharp and white.
+        std::array<std::array<const ImageNative*, 6>, 16> faces_mip{};
+        uint32_t levels_cube = 1;
+        if (cube_levels_) {
+          for (uint32_t s = 1; s <= level_max && s < 16; ++s) {
+            bool whole = true;
+            for (uint32_t c = 0; c < 6 && whole; ++c) {
+              const ImageNative* face = context_->TextureResolved(
+                  uint32_t((dir_mips + regions[s].displacement + c * regions[s].stride) & 0x1FFFFFFF));
+              faces_mip[s][c] = face;
+              whole = face && face->format == format_faces && face->width >= std::max(width >> s, 1u) &&
+                      face->height >= std::max(height >> s, 1u);
+            }
+            if (!whole) {
+              break;
+            }
+            levels_cube = s + 1;
+          }
+        }
+        const uint64_t key_resolved =
+            key ^ 0x9E3779B97F4A7C15ull ^ (uint64_t(format_faces) << 40) ^ (uint64_t(levels_cube) << 52);
         if (exp_bias_) {
           exp_scale_out = std::ldexp(1.0f, exp_fetch + faces[0]->exp_bias);
         }
@@ -9331,7 +9412,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         }
         Texture& texture = textures_[key_resolved];
         if (texture.image.image == VK_NULL_HANDLE) {
-          if (!CreateTexture(texture.image, format_faces, width, height, layers)) {
+          if (!CreateTexture(texture.image, format_faces, width, height, layers, 0, levels_cube)) {
             textures_.erase(key_resolved);
             Notify(32, "could not create a texture");
             return;
@@ -9339,9 +9420,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           texture.layers = layers;
           texture.bytes = uint64_t(width) * height * (format_faces == VK_FORMAT_R8G8B8A8_UNORM ? 4 : 8) * layers;
           bytes_textures_ += texture.bytes;
-          REXLOG_INFO("[native] C3: cube {:08X} {}x{} with its faces resolved by C2 (fetch {:08X} {:08X} {:08X} "
-                      "{:08X} {:08X} {:08X})",
-                      base, width, height, f[0], f[1], f[2], f[3], f[4], f[5]);
+          REXLOG_INFO("[native] C3: cube {:08X} {}x{} with its faces resolved by C2, {} levels (fetch {:08X} {:08X} "
+                      "{:08X} {:08X} {:08X} {:08X})",
+                      base, width, height, levels_cube, f[0], f[1], f[2], f[3], f[4], f[5]);
         }
         if (texture.frame != frame_) {
           const VkCommandBuffer upload = context_->CommandsUpload();
@@ -9360,6 +9441,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
             copy.extent = {width, height, 1};
             copy_image_(upload, faces[c]->image, VK_IMAGE_LAYOUT_GENERAL, texture.image.image,
                            VK_IMAGE_LAYOUT_GENERAL, 1, &copy);
+            for (uint32_t s = 1; s < levels_cube; ++s) {
+              copy.dstSubresource.mipLevel = s;
+              copy.extent = {std::max(width >> s, 1u), std::max(height >> s, 1u), 1};
+              copy_image_(upload, faces_mip[s][c]->image, VK_IMAGE_LAYOUT_GENERAL, texture.image.image,
+                             VK_IMAGE_LAYOUT_GENERAL, 1, &copy);
+            }
           }
           // Rear-view mirror diagnostic: how many times the faces are copied to the cubemap per submission.
           ++cubes_refreshed_;
@@ -12733,6 +12820,16 @@ class DrawsVulkanImpl final : public DrawsVulkan {
 #endif
     prewarm_priority_.store(priority, std::memory_order_relaxed);
     const ShadersNative& library = *library_prewarm_;
+    // FH1: the list is walked twice. First by several threads at once, only to fill the pipeline cache (each
+    // with its own modules and passes, results thrown away); then in order by this thread, which now finds
+    // everything in the cache. With one thread a new shader library took 65 s to prewarm, the festival loaded
+    // in the middle of it, the ring compiled ~170 pipelines itself in one frame of 4 s, and the game stopped
+    // sending commands for good (loading screen frozen, sound running; seen with frames of 3.3 and 4.2 s, never
+    // with 3.1 s or less).
+    std::atomic<size_t> next_parallel{0};
+    std::atomic<uint32_t> compiled_parallel{0};
+    std::atomic<uint64_t> ns_compiled_parallel{0};
+    const auto walk = [&](const bool parallel) {
     std::unordered_map<uint64_t, VkShaderModule> modules;  // (variant << 32) | number
     std::unordered_map<uint64_t, VkRenderPass> passes;       // by formats
     const auto create = [&](const uint32_t* spirv, size_t bytes) {
@@ -12798,8 +12895,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     uint32_t done = 0, compiled = 0, sin_shader = 0, other_mode = 0, failed = 0;
     uint64_t ns_compiled = 0;
     const size_t n = list_file_.size();
-    for (size_t i = 0; i < n; ++i) {
+    for (size_t k_walk = 0; k_walk < n; ++k_walk) {
       if (prewarm_stop_.load(std::memory_order_relaxed)) {
+        break;
+      }
+      const size_t i = parallel ? next_parallel.fetch_add(1, std::memory_order_relaxed) : k_walk;
+      if (i >= n) {
         break;
       }
       const RegisterPipeline& r = list_file_[i];
@@ -12853,10 +12954,14 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           ++failed;
         }
       }
+      if (parallel) {
+        continue;
+      }
       state_list_[i] = state;
       prewarm_done_.store(done, std::memory_order_relaxed);
-      prewarm_compiled_.store(compiled, std::memory_order_relaxed);
-      prewarm_ns_compiled_.store(ns_compiled, std::memory_order_relaxed);
+      prewarm_compiled_.store(compiled + compiled_parallel.load(std::memory_order_relaxed), std::memory_order_relaxed);
+      prewarm_ns_compiled_.store(ns_compiled + ns_compiled_parallel.load(std::memory_order_relaxed),
+                                 std::memory_order_relaxed);
       prewarm_without_shader_.store(sin_shader, std::memory_order_relaxed);
       prewarm_other_mode_.store(other_mode, std::memory_order_relaxed);
       prewarm_failed_.store(failed, std::memory_order_relaxed);
@@ -12872,6 +12977,34 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         dfn_.vkDestroyRenderPass(device_, pass, nullptr);
       }
     }
+    if (parallel) {
+      compiled_parallel.fetch_add(compiled, std::memory_order_relaxed);
+      ns_compiled_parallel.fetch_add(ns_compiled, std::memory_order_relaxed);
+      return std::array<uint32_t, 5>{};
+    }
+    return std::array<uint32_t, 5>{done, compiled, sin_shader, other_mode, failed};
+    };
+    uint32_t threads_parallel = 0;
+#if !REX_PLATFORM_SWITCH
+    {
+      const int32_t requested = REXCVAR_GET(fh1_native_prewarm_threads);
+      threads_parallel = requested >= 0 ? uint32_t(requested)
+                                        : std::min<uint32_t>(6, std::max<uint32_t>(std::thread::hardware_concurrency(), 2) / 2);
+      std::vector<std::thread> helpers;
+      for (uint32_t t = 0; t < threads_parallel; ++t) {
+        helpers.emplace_back([&walk] { walk(true); });
+      }
+      for (std::thread& helper : helpers) {
+        helper.join();
+      }
+    }
+#endif
+    const std::array<uint32_t, 5> totals = walk(false);
+    const uint32_t done = totals[0], compiled = totals[1] + compiled_parallel.load(), sin_shader = totals[2],
+                   other_mode = totals[3], failed = totals[4];
+    const uint64_t ns_compiled = ns_compiled_parallel.load();
+    const size_t n = list_file_.size();
+    REXLOG_INFO("[native] C6 prewarm: {} threads walked the list first", threads_parallel);
     const double seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - prewarm_start_).count();
     REXLOG_INFO("[native] C6 prewarm (build 186): {} in {:.1f} s, priority {:#x}: {} of {} pipelines prewarmed, {} "
@@ -13861,6 +13994,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   bool vs_textures_ = true;           // fh1_native_vs_textures
   bool cache_between_frames_ = true;  // fh1_native_texture_cache_across_frames
   bool mipmaps_ = true;                 // fh1_native_mipmaps
+  bool cube_levels_ = true;             // fh1_native_cube_levels
+  bool gamma_pwl_ = true;               // fh1_native_gamma_pwl
+  std::unordered_set<uint64_t> kinds_gamma_;  // logged once each
   bool gamma_textures_ = true;          // fh1_native_gamma_textures
   bool gamma_targets_ = true;           // fh1_native_gamma_targets
   bool diag_mips_ = false;              // fh1_native_diag_mips

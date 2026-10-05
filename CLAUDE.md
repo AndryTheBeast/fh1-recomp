@@ -20,8 +20,9 @@ normal play, 26-28 in the busiest spots. Default graphics = the SDK's emulated X
 (default) and Vulkan (`--gpu_backend=vulkan`), both correct. In progress: the native Vulkan renderer
 (`--fh1_renderer=native`): boot, videos, menus and loading screens match the emulated picture; the festival
 in daylight and at evening is close to it; driving at night works since 2026-10-05 (headlights light the road,
-no blue on the car, map selector); still open: reflections sharper than the emulated ones, a slightly darker
-picture, stair-stepped edges, races and garage not checked. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
+no blue on the car, map selector); reflections soft and textures on the
+console's gamma curve since the third session of 2026-10-05; still open: the post-processing a little dark (green
+and blue low at night), stair-stepped edges, glows through walls, races and garage not checked. ROADMAP.md has the current plan (short); docs/README.md lists the documents;
 docs/history/roadmap-history.md is the detailed log of everything done; docs/performance-review.md where
 the frame time goes and what to cut for the Switch.
 
@@ -266,6 +267,15 @@ docs/history/roadmap-history.md); docs/native-renderer-fh1.md has the phases (N0
   were fine; cause not confirmed).
 - A test window started with a temporary option looks like the normal game to the user: say so before they
   look (on 2026-10-05 a glow seen in such a window was taken for an effect of the build).
+- 2026-10-05, third session: the reflection cube map has its nine levels (the game renders them; each fetch now
+  honors its level of detail), textures with the gamma sign use the console's piecewise-linear curve in the shader
+  (the host's sRGB formats were darker), and the loading-screen freeze is explained: the game stops sending
+  commands for good after one frame of about 3.2 s or more (it was the pipelines of a new shader library being
+  compiled; they are now compiled by several threads during the logo videos).
+- A resolve only gives the pitch of its texture (a multiple of 32). A texture narrower than that (the cube levels
+  of 16x16 and less) must get its width from the fetch constant, or it is read with empty columns.
+- Before chasing a difference between two screenshots of the festival, check that it is not the moment: lights and
+  reflections change within seconds around 92-95 s, and runs differ by a second or two (take a shot every 3 s).
 - Do not edit sources while a build is running: a header changed in the middle gives a mixed build (it happened on
   2026-10-04; rebuild after the last edit). `build_windows.ps1 -SkipCodegen` still runs the code generator when
   rexglue.exe was relinked.
