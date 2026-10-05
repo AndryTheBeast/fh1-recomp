@@ -170,12 +170,14 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [x] RenderDoc capture of the native renderer's own frame (`--fh1_native_renderdoc`, `tools\view_capture.ps1`,
         `auto_test.ps1 -Triggers`) and number tools for both renderers (`tools\rdc_tex_stats.py`,
         `rdc_pick.py`, `rdc_draw_textures.py`) — 2026-10-05
-  - [ ] Crowd cut-out edges: alpha to mask covers 0 to 4 samples (`--fh1_native_alpha_to_mask_samples`), see the
-        status document for its state
+  - [x] Crowd cut-out edges: alpha to mask covers 0 to 4 samples with the game's dither offsets
+        (`--fh1_native_alpha_to_mask_samples`); not judged up close by the user yet — 2026-10-05
+  - [x] Paint shop: the blurred background (depth of field): fetches addressed in texels, the doubled scene depth
+        reports its guest size — 2026-10-05
   - [x] Glows through walls: on both renderers, the user takes it for the game's own behavior; measured mode kept
         behind `--fh1_native_occlusion=1` — 2026-10-05
   - [x] Smooth edges seen by the user while driving ("edges look good now") — 2026-10-05
-  - [ ] Races, garage, car photos, paint shop on the native renderer
+  - [ ] Races, garage, car photos on the native renderer (the user drives there)
   - [ ] Frame time while driving (185-230 ms frames were seen; render-target copies rejected)
   - [ ] Remove the Carbon / Most Wanted special cases left in the draw code, one at a time
   - [ ] Make the native renderer the default once it matches the emulated picture

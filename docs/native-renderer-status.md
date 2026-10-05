@@ -8,8 +8,8 @@ Earlier the same day: soft reflections, the console's gamma curve, smooth edges,
 
 **Open list (2026-10-05, end of the fourth session):**
 
-- **A. Races, garage, car photos, paint shop on the native renderer** (the user's item 5): see "Item 5" in the
-  fourth session's section for what was checked and what was not.
+- **A. Races, garage, car photos on the native renderer** (the rest of the user's item 5; the paint shop is done,
+  see "Item 5" in the fourth session's section). The user drives there.
 - **B. Ask the user** how the crowd's edges look up close (`--fh1_native_alpha_to_mask_samples=false` is the old
   test at one half) and whether the first-person view is right while driving (it was only checked parked).
 - C. Night (300-340 s) was not measured again after the bloom fix: the third session had green and blue low
@@ -317,6 +317,21 @@ and `test-blN-*` / `test-blX-*` (58 and 103 s) in the same folder.
   when two samples would be covered. `--fh1_native_alpha_to_mask_samples=false` is the old test. Festival at 58 s:
   brightness unchanged (5/20/35/92/130), 30 fps, real GPU per Swap 15.9 ms; the crowd strip looks like the
   emulated one at that distance (`test-a2mN-*-58s.png`). Not judged up close: the user drives.
+- **Item 5, the part done unattended: the paint shop** (pressing X at the festival's "Paint shop: enter now"
+  prompt: `auto_test.ps1 -Autoplay "...;60+0.3=x"`; picture `item5-paintshop-before-after-emulated.png`). The car
+  was right, the background was a flat blue-grey haze where the emulated GPU shows the blurred festival. Two
+  causes, both in the depth of field (surface 05000140, three render targets, PS n2998 then two blur passes PS
+  n1964 / n2126, then the composite variant PS n2063):
+  - The blur passes address their pictures in texels: the fetch instruction's tx_coord_denorm bit, with the pixel
+    position as the coordinate. The translator ignored the bit, every tap landed on the picture's edge and the
+    blur came out as one color (`rdc_tex_stats.py`: output min = max after the second pass). Now such a fetch is
+    emitted as `(coordinate) * <sampler>_InvSize` (`shader_recompiler.cpp`); sixteen shaders use it.
+  - 1/size of the scene's resolved depth was the host image's (2560x1440 since the smooth edges). Texel offsets
+    and texel coordinates count the console's texels: a resolved picture exactly twice its fetch constant's size
+    now reports the fetch constant's size (`PrepareTexture`). Before this the fixed blur also blurred the car.
+  - After both: 4/16/56/92/146 against 4/15/54/90/146 (72 s, the car turning on its stand), 30 fps.
+  - **Not checked: races, garage, car photos** (the user drives there). Menus with a blurred background (pause,
+    garage) use the same depth of field and should be looked at first.
 - **Tools of this session.** `--fh1_native_renderdoc=true` (the game started through RenderDoc): a capture of the
   native renderer's own frame each time a file `capture_now` appears next to fh1.exe.
   `tools\view_capture.ps1 -Name x [-Native] [-RenderDoc] [-NoCapture]` cycles the camera with RB, recognises the
