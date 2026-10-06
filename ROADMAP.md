@@ -321,8 +321,13 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
     - [x] fh1.exe finds the disc's files in the folder `game` next to itself when `--game_data_root` is not
           given (a double click works in an installed folder) - 2026-10-06
     - [x] No path of the build PC in fh1.exe and its DLLs (`-ffile-prefix-map`, `/pdbaltpath`) - 2026-10-06
-    - [ ] fh1.exe: the vertex shaders Direct3D rewrites at run time (the 42 of `build_logs\shaders\synth*`) are
-          translated and compiled on the user's PC when first uploaded, and saved
+    - [x] fh1.exe: the vertex shaders Direct3D rewrites at run time (the 42 of `build_logs\shaders\synth*`) are
+          translated and compiled on the user's PC when first uploaded, and saved (`fh1_extra_shaders.cpp`,
+          `shaders_extra` next to fh1.exe, tools in `tools` or `--fh1_native_shader_tools`). With the
+          installer's disc-only library: 29 shaders made in the first 100 s at the festival (0.2-0.9 s each,
+          30 fps kept, containers byte-identical to the Python tool's), read back at the second start, picture
+          equal to the own library's (59 s: 8/29/89/168/246 on both) - 2026-10-06. Not tried yet: first-person
+          view and the paint booth with such a library (the user's check)
     - [ ] The VC++ runtime check; a window title without the SDK's build name ("fh1 [rexglue-v0.10.0.0-dev...]")
     - [x] The installer, step 1: the window, the ISO check (title ID and version from the disc's default.xex) and
           the folder check (`installer/`, built by `installer\build_installer.ps1`, 19 KB) - 2026-10-06; the

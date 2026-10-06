@@ -4,6 +4,7 @@
 
 #include "fh1_native_shaders.h"
 
+#include "fh1_extra_shaders.h"
 #include "fh1_shader_library.h"
 
 #include <rex/cvar.h>
@@ -15,7 +16,10 @@
 #include <span>
 #include <filesystem>
 #include <cstring>
+#include <deque>
 #include <map>
+#include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -313,8 +317,18 @@ struct HashKeyRaw {
 
 }  // namespace
 
+// Shaders made on this PC while the game runs (fh1_extra_shaders.h) are added to the entries by the ring
+// thread. Room for them is reserved at Load, so an entry never moves: pointers to entries stay good.
+constexpr size_t kMaxAddedEntries = 1024;
+
 struct ShadersNative::Data {
   fh1::native::LibraryShaders library;
+  // The shaders made on this PC: the saved ones (read at Load) and this session's. A deque: adding one does
+  // not move the others, and the entries point at them.
+  std::deque<fh1::native::Shader> extras;
+  uint32_t next_number = 0;
+  // Other threads read the entries (ByNumber, IdentifyContainer) while the ring thread may add one.
+  mutable std::shared_mutex mutex;
   std::vector<EntryShader> entries;
   std::unordered_map<const fh1::native::Shader*, uint32_t> por_shader;
   // (vertices, words) -> candidate entries.
@@ -404,26 +418,34 @@ bool ShadersNative::Load(const std::filesystem::path& file) {
                 e.what());
     return false;
   }
-  const auto& shaders = d.library.shaders();
+  // The library's shaders, then the ones earlier sessions made on this PC.
+  d.extras.clear();
+  for (fh1::native::Shader& s : extra_shaders::LoadSaved()) d.extras.push_back(std::move(s));
+  std::vector<const fh1::native::Shader*> shaders;
+  for (const fh1::native::Shader& s : d.library.shaders()) shaders.push_back(&s);
+  for (const fh1::native::Shader& s : d.extras) shaders.push_back(&s);
+  const size_t from_library = d.library.shaders().size();
+  d.next_number = uint32_t(shaders.size());
+  std::unique_lock<std::shared_mutex> lock(d.mutex);
   uint32_t con_kill = 0, sin_kill = 0;
   uint32_t with_map_shadows = 0, with_minimum = 0;  // fh1_native_shadow_minimum
   d.entries.clear();
-  d.entries.reserve(shaders.size());
+  d.entries.reserve(shaders.size() + kMaxAddedEntries);
   uint32_t vertex = 0, pixel = 0;
   for (uint32_t i = 0; i < shaders.size(); ++i) {
     EntryShader e;
-    e.shader = &shaders[i];
+    e.shader = shaders[i];
     e.number = i;
-    if (const char* reason = Read(shaders[i], e)) {
+    if (const char* reason = Read(*shaders[i], e)) {
       REXLOG_WARN("[native] C5a: library container {} ignored: {}", i, reason);
       continue;
     }
     if (!e.vertices) {
-      e.kills = CountKills(shaders[i].spirv);
+      e.kills = CountKills(shaders[i]->spirv);
       e.discards = e.kills != 1;                // 1 = only the alpha test one
       (e.discards ? con_kill : sin_kill) += 1;
       // fh1_native_shadow_minimum. Whether its SPIR-V can take the shadow map minimum.
-      e.shadow_minimum = HasMarkShadowMinimum(shaders[i].spirv);
+      e.shadow_minimum = HasMarkShadowMinimum(shaders[i]->spirv);
       for (const SamplerShader& s : e.samplers) {
         if (s.map_shadows) {
           ++with_map_shadows;
@@ -462,6 +484,9 @@ bool ShadersNative::Load(const std::filesystem::path& file) {
   REXLOG_INFO("[native] C5a: library with {} shaders ({} vertex, {} pixel); {} groups with the same microcode, {} "
               "of them with different SPIR-V",
               d.entries.size(), vertex, pixel, repeated, repeated_different);
+  REXLOG_INFO("[native] C5c: {} of those shaders were made on this PC by earlier sessions (shaders_extra); the "
+              "library file has {}",
+              shaders.size() - from_library, from_library);
   REXLOG_INFO("[native] C5a: pixel shaders that can discard pixels {} of {} (the rest only have the alpha-test "
               "kill: with no color to write, their stage can be removed)",
               con_kill, con_kill + sin_kill);
@@ -477,6 +502,7 @@ bool ShadersNative::Load(const std::filesystem::path& file) {
 const EntryShader* ShadersNative::Identify(bool vertices,
                                                  std::span<const uint32_t> microcode) {
   Data& d = *data_;
+  Adopt(d);
   ++d.statistics.loads;
   const KeyRaw key{XXH3_64bits(microcode.data(), microcode.size_bytes()),
                          uint32_t(microcode.size()), vertices};
@@ -598,9 +624,48 @@ const EntryShader* ShadersNative::Identify(bool vertices,
   }
   if (!chosen) {
     DumpMicrocodeUnknown(vertices, key.fingerprint, microcode);
+    // A helper thread makes it on this PC; Adopt takes it in when it is ready.
+    extra_shaders::Request(vertices, key.fingerprint, microcode);
   }
   d.cache.emplace(key, chosen);
   return chosen;
+}
+
+// Ring thread: takes in the shaders the helper thread has finished (fh1_extra_shaders.h). Each becomes an
+// entry like the library's; the unknown microcodes are forgotten so that the next upload is matched again.
+void ShadersNative::Adopt(Data& d) {
+  fh1::native::Shader made;
+  while (d.loaded && extra_shaders::TakeFinished(made)) {
+    if (d.entries.size() >= d.entries.capacity()) {
+      REXLOG_WARN("[native] C5c: no room left for a shader made in this session: it is used from the next start");
+      continue;
+    }
+    d.extras.push_back(std::move(made));
+    EntryShader e;
+    e.shader = &d.extras.back();
+    e.number = d.next_number++;
+    if (const char* reason = Read(*e.shader, e)) {
+      REXLOG_WARN("[native] C5c: shader made on this PC ignored: {}", reason);
+      continue;
+    }
+    if (!e.vertices) {
+      e.kills = CountKills(e.shader->spirv);
+      e.discards = e.kills != 1;
+      e.shadow_minimum = HasMarkShadowMinimum(e.shader->spirv);
+    }
+    const bool vertices = e.vertices;
+    const uint32_t words = uint32_t(e.microcode.size()), number = e.number;
+    {
+      std::unique_lock<std::shared_mutex> lock(d.mutex);
+      const uint32_t index = uint32_t(d.entries.size());
+      d.entries.push_back(std::move(e));
+      d.candidates[{vertices, words}].push_back(index);
+      d.por_shader[d.entries[index].shader] = index;
+    }
+    std::erase_if(d.cache, [](const auto& item) { return item.second == nullptr; });
+    REXLOG_INFO("[native] C5c: {} shader n{} ({} words) taken in: what it draws appears from now on",
+                vertices ? "vertex" : "pixel", number, words);
+  }
 }
 
 const EntryShader* ShadersNative::IdentifyContainer(
@@ -609,6 +674,7 @@ const EntryShader* ShadersNative::IdentifyContainer(
   if (!d.loaded) {
     return nullptr;
   }
+  std::shared_lock<std::shared_mutex> lock(d.mutex);
   const fh1::native::Shader* shader = d.library.Find(container);
   if (!shader) {
     return nullptr;
@@ -623,6 +689,7 @@ const EntryShader* ShadersNative::ByNumber(uint32_t number) const {
   if (!d.loaded) {
     return nullptr;
   }
+  std::shared_lock<std::shared_mutex> lock(d.mutex);
   const auto it = std::lower_bound(d.entries.begin(), d.entries.end(), number,
                                    [](const EntryShader& e, uint32_t n) { return e.number < n; });
   return it != d.entries.end() && it->number == number ? &*it : nullptr;

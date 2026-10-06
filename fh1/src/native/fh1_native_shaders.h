@@ -105,6 +105,7 @@ class ShadersNative {
 
  private:
   struct Data;
+  static void Adopt(Data& d);  // shaders made on this PC during the session (fh1_extra_shaders.h)
   std::unique_ptr<Data> data_;
 };
 

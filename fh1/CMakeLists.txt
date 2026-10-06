@@ -45,6 +45,7 @@ set(FH1_SOURCES
     src/native/fh1_native_targets.cpp
     src/native/fh1_native_shaders.cpp
     src/native/fh1_shader_library.cpp
+    src/native/fh1_extra_shaders.cpp
     src/native/fh1_native_hooks.cpp
     src/native/fh1_native_draws.cpp
     src/native/fh1_native_texture_pool.cpp

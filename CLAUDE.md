@@ -391,7 +391,13 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   when a file names this PC's user folder), Install copies it and builds the library (`ShaderLibrary.cs`, the
   C# form of the Python scripts). `FH1Installer.exe --install ISO FOLDER` does all of it without the window.
   A zip's entry count has 16 bits: `media\tracks\colorado\bin.zip` holds 230,057 files (the count says 33,449),
-  so a zip reader must walk the whole central directory. When several test windows open, say for each one
+  so a zip reader must walk the whole central directory.
+  Step 5: a shader the library does not know is made on the PC while the game runs
+  (`fh1/src/native/fh1_extra_shaders.cpp`: container from the microcode, `fh1_hlsl.exe`, `dxc.exe`, saved in
+  `shaders_extra` next to fh1.exe; log lines `C5c`). It needs the tools folder: `tools` next to fh1.exe (the
+  installer's layout) or `--fh1_native_shader_tools=<repo>\installer\out\package\tools` on the developer's
+  build, which has none. It also found a vertex shader the developer's own library lacks (v_B6AA15E7F187FBAF).
+  `fh1\out\win-release\shaders_extra.test-20261006` is that test's output (game-derived: never commit). When several test windows open, say for each one
   whose saves it uses (the user took a picture test on the real save for the empty-saves test).
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.
