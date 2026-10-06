@@ -510,3 +510,17 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   repo, this repo inside it as the submodule `recomp\`, added with `--reference` so nothing was downloaded
   twice). devkitPro was not installed on the PC that day (`C:\devkitPro` missing, `DEVKITPRO` not set). The
   60 fps option stays PC only.
+- **2026-10-06, fourteenth session: the first Switch build exists** (`..\fh1-nx\out\sw\fh1-nx.nro`, not run on
+  the console yet; status document, "Fourteenth session"). The Switch side is the private repository fh1-nx
+  (`docs/building.md`, `docs/running.md`); the console is a Switch OLED. One command each:
+  `fh1-nx\tools\build_nro.ps1` (after a PC build: the generated code is shared) and
+  `fh1-nx\tools\package_sd.ps1` (`-NoGame` when only the program changed). Tools: MSYS2 in `C:\msys64`,
+  devkitPro in `C:\msys64\opt\devkitpro`, the driver in `..\mesa-switch`.
+- Switch-only SDK files (`*_switch*`, `threading_posix.cpp`, `watchdog.cpp`) are never compiled on the PC: a
+  rename or a shared change can break them unseen (the English rename did). After touching the SDK, build the
+  NRO too. Shared files they lean on: `presenter.cpp` (display pause), `kernel_state.cpp` (modules linked in).
+- A file added to an SDK CMake list, or any change to `fh1/CMakeLists.txt`, gives the long PC build; a source
+  that only the Switch needs goes into the `REXGLUE_PLATFORM_SWITCH` branch of the list.
+- PowerShell 5.1 cuts `-DNAME=3.5` in two when it is not quoted (`"-DCMAKE_POLICY_VERSION_MINIMUM=3.5"`).
+- A background `ninja` may still be compiling its last file when its log looks finished: check the process
+  (`tasklist`) before starting another build in the same folder or editing a source.

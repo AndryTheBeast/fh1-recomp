@@ -334,7 +334,11 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
       day: the console runs HOS 22.5.0 with Atmosphere 1.11.2 and has the SD card; downloads and installs
       are allowed; the Switch files live in the new repository **fh1-nx** (private for now, fh1-recomp as
       its submodule `recomp/`, local folder `..\fh1-nx`). Order: docs/next-session-prompt.md
-- [ ] Build with devkitA64 and the Horizon layer in `sdk/`
+- [x] Build with devkitA64 and the Horizon layer in `sdk/` (2026-10-06: `fh1-nx.nro`, 106 MB, links; tools,
+      driver and steps in fh1-nx `docs/building.md`; the two run-time modules are linked into the program)
+- [x] SD card package (fh1-nx `tools/package_sd.ps1`, `docs/running.md`): program, settings, shader library,
+      pipeline list, PC-made shaders, game files (7.1 GB)
+- [ ] **First run on the console** (next: the user starts it and brings back `logs`)
 - [ ] Memory map, threads, audio out
 - [ ] Native renderer and shader library on the console
 - [ ] **Offline shader library for the Switch (user, 2026-10-05)**: the console cannot compile shaders and

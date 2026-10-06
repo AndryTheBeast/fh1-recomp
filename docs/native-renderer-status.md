@@ -12,6 +12,46 @@ plan changed that night: the other fixes of this list wait; next is the offline 
 per Swap 21.0-21.2 ms). The user saw the body fix and the first tyre fix in screenshots ("the tyre seems a little
 too upwards, even going inside the rim": fixed after that); nobody has driven this build yet.
 
+## Fourteenth session (2026-10-06, night): the first Switch build (fh1-nx)
+
+**The program builds and the SD card folder is made; it has not run on the console yet.** The user's console:
+Switch OLED (Mariko), system 22.5.0, Atmosphere 1.11.2, more than 10 GB free on the card. The Switch-only files
+are in the private repository fh1-nx (`..\fh1-nx`: `docs/building.md`, `docs/running.md`, `mesa/README.md`).
+
+1. **Tools installed on the PC**: MSYS2 (`C:\msys64`), devkitPro through its pacman (`C:\msys64\opt\devkitpro`:
+   devkitA64 with GCC 16.1.0, libnx 4.12.0), Rust (GNU toolchain, `aarch64-unknown-linux-gnu`), the Mesa build
+   tools. About 1 GB of downloads in all.
+2. **The graphics driver** (`..\mesa-switch`, danfromtico's mesa-switch at `1a8c1a66d6f` with StevensND's patch
+   and GoatHonks' leak fix): built here in about 40 minutes, `libvulkan.a` 93 MB. Four small changes were needed
+   for a current MSYS2 (in fh1-nx's patch); two packages its notes do not name were missing
+   (`switch-libdrm_nouveau`, Rust's `rustfmt`).
+3. **What had to change to compile and link** (commits 70276c1, d08d6d9):
+   - Our Switch-only SDK files had been broken by the English rename of 2026-10-04 (a variable renamed onto its
+     own parameter, for one) and had never been compiled since: replaced by GoatHonks' current versions, with
+     his watchdog and the presenter's pause pieces they need.
+   - **The game's two run-time modules** (`XMediaFacade_default.xex`, `SpeechFacade_default.xex`): DLLs on the
+     PC, linked into the program on the Switch, which cannot load a library
+     (`KernelState::RegisterStaticModuleLibrary`, `fh1/src/fh1_static_modules.cpp`, the generator's
+     `dll_targets_cmake.inja`). Carbon and Most Wanted have nothing like it.
+   - FFmpeg's `config.h` (a fetched file, now tracked) did not know the Switch; RenderDoc captures and the
+     installer's unpack mode are guarded.
+   - `fh1_register.cpp` is compiled with `-O0` by GCC (33 minutes without an end otherwise). The rest of the
+     generated code (about 320 MB of C++) compiles in about 30 minutes with three jobs: far less than feared.
+4. **The result**: `fh1-nx\out\sw\fh1-nx.nro`, 106 MB; `fh1-nx\out\sd\switch\fh1-nx\` (7.1 GB: program,
+   `fh1.toml`, `fh1_shaders.nfsp` = the developer's library, `fh1_pipelines.nfpl`, `shaders_extra` = 43 files
+   from the PC, `game_root`).
+5. **On the Switch**: smooth edges at double size off (`fh1_native_ssaa = false`), no 60 fps, the emulated GPU
+   not used; the watchdog closes the game after 60 s without a frame (600 s for the first one) and writes
+   `logs/rex/watchdog.log`. `fh1_native_extra_shaders` must stay on: it is also what reads `shaders_extra`.
+6. **Not in this build** (each waits for the first numbers): LTO, direct calls, function ordering, PGO, the
+   vertex cache across frames, the cube faces in rotation, a render-queue wait, the FFmpeg video decoder, native
+   audio functions. The list with reasons is in `fh1/src/native/README.md`.
+7. **PC after the shared changes**: full build, unattended new-game run at 30.0 fps, pictures right
+   (`build_logs\test-swsession-*`).
+8. **Known risks for the first run**: memory (FH1 is larger than Carbon), a shader the library lacks (the
+   console cannot make it: its draws are left out), the pipeline list (about a minute before the game starts,
+   if it costs what Carbon's did, 59 ms each), a loading frame near 3 s.
+
 ## "Alpha - 0.1.1" is published (2026-10-06, evening): 60 fps as an option of the installer
 
 **Published with the user's yes: tag `alpha-0.1.1`, named "Alpha - 0.1.1"** (main at 23386c7; the files are kept
