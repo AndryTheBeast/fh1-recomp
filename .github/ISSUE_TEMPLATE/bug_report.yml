@@ -88,7 +88,7 @@ body:
     attributes:
       label: Version of the port
       description: The title bar of the installer shows it.
-      placeholder: "Alpha - 0.1.0"
+      placeholder: "Alpha - 0.1.1"
     validations:
       required: true
   - type: textarea

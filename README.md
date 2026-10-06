@@ -23,6 +23,7 @@ frame cap on the Xbox 360).
 
 **The default since October 2026: a native Vulkan renderer** that draws the game directly, without emulating the
 Xbox 360 GPU. It is what the Switch port will need, so it is the one we want reports about. It runs at 30 fps
+(an experimental option of the installer, since Alpha - 0.1.1, goes up to 60 where the PC is fast enough)
 and still has some picture faults ([known issues](docs/install.md#known-issues)). Plan in [ROADMAP.md](ROADMAP.md),
 details in [docs/native-renderer-status.md](docs/native-renderer-status.md).
 

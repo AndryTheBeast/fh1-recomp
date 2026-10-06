@@ -61,6 +61,13 @@ back on; they will be removed at some point.
 The game runs at **30 frames per second**: that is the game's own limit on the Xbox 360. **F3** shows a frame
 rate and frame time monitor, **F4** the port's settings.
 
+**60 frames per second (experimental, since Alpha - 0.1.1).** The installer has an option for it, off unless
+you tick it. With it the game draws and moves 60 times a second where your PC is fast enough, at its normal
+speed; how much you get depends on your graphics chip (the test PC, a Legion Go, reaches 50-58 in the opening
+and 32-40 while driving). It is new and little tested: if something moves too fast or looks wrong, start the
+installer again, choose the same folder, untick it and click **Update**. It works with the native renderer
+(`FH1.exe`); the choice is the line `fh1_fps60` in `fh1.toml` next to `FH1.exe`.
+
 Your saves are kept in your Documents folder, in `fh1`. They stay there when you update or delete the game.
 
 ## Updating
