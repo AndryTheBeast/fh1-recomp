@@ -1,52 +1,50 @@
 # Prompt for the next session
 
-Paste this to start the session after 2026-10-06 (pre-release 1 is published).
+Paste this to start the session after 2026-10-06 (pre-release 1 is published and its files were replaced with
+fixed ones the same day).
 
 ---
 
 Read fh1-recomp/CLAUDE.md, then ROADMAP.md (Stage 3: the items marked "After the first pre-release") and
-fh1-recomp/docs/native-renderer-status.md ("Pre-release 1 is published"). The first pre-release is out
-(v0.1.0-pre1, https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1). This session we fix the
-native renderer's bugs, starting with the ground textures that are not drawn.
+fh1-recomp/docs/native-renderer-status.md ("After pre-release 1: flat ground and missing characters"). The files
+of v0.1.0-pre1 (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1) were replaced on
+2026-10-06 with fixed ones: characters with a skeleton are drawn, the ground of a first run is no longer flat,
+and unknown pipelines are compiled in the background again.
 
 Do it in this order:
-1. **The first bug: some ground textures are not drawn** (native renderer only). My screenshot is
-   build_logs\reference\user-ground-flat-newgame-20261006-native.webp: the new game's first drive, 1.7 miles from
-   the festival, by day; the strip of ground between the road and the leaves is one flat brown color with
-   straight edges. The emulated picture of the same stretch (ground-newgame-1.7mi-20261006-emulated.png) has
-   gravel and grass there. The spot is on the new-game route, so you can reach it without me: empty saves
-   (--user_data_root=<empty folder>), Start / A every few seconds, the drive begins at about 140 s. Capture both
-   renderers there with RenderDoc and compare the ground's draws pass by pass (textures, then constants) before
-   reading any shader. The screenshot is from a copy installed from the release
-   (%USERPROFILE%\Downloads\Forza Horizon; its log is build_logs\reference\user-ground-flat-newgame-20261006-native.log:
-   30 shaders made on the PC, none failed, 206 draws rejected with cause 317). So check first whether the
-   developer's build (its own shader library) shows the flat ground at that spot too: if only the installed copy
-   does, a shader made on the PC, or cause 317, is the suspect. Tell me the plan in plain words before you start. It is probably the same fault as the
-   missing ground at the Montano Plains outpost: check that spot once this one is fixed (I drive there).
+1. Ask me what I saw in the updated game (I run FH1Installer.exe again on %USERPROFILE%\Downloads\Forza Horizon):
+   the deer and the presenter of the opening, the people of the festival and its crowd (the crowd's bones now
+   take their order from the renderer too: it must still be animated and whole), the ground of the first drive,
+   and whether the game ever stood still. If I send a log, read its longest "[fps] worst frame gap" first.
 2. Look at the GitHub issues of the repository (gh issue list) and tell me what players reported, in plain
-   words. Do not answer or close an issue without asking me.
+   words. Do not answer or close an issue without asking me. (None on 2026-10-06.)
 3. Ask me whether I have driven more. If yes: merge my cache file into the shipped pipeline list
    (python tools\fh1_pipelines.py info fh1\data\fh1_pipelines.nfpl <my cache file>; then merge, build, commit).
-   My installed copy is in %USERPROFILE%\Downloads\FH1 (its list: cache\fh1_native_pipelines.bin).
-4. The other faults, one at a time, each checked against the emulated GPU at the same spot before any guess
+   My installed copy's list: cache\fh1_native_pipelines.bin.
+4. Objects that show late in a first run, now that nothing waits on the ring: the shaders that are not on the
+   disc are made one at a time, half a second to four seconds each (fh1_extra_shaders.cpp, one worker thread;
+   the big ones are the bone shaders). Make several at once, and when a shader is taken in, hand the shipped
+   list's records that wait for it to the helper threads at once. One shader could not be made on the PC at
+   all (v_39E8051E5F332A24, 294 words, seen at the festival): find out why. Measure on an installed test copy
+   with the driver's cache set aside, and read the longest frame.
+5. The other faults, one at a time, each checked against the emulated GPU at the same spot before any guess
    (RenderDoc on both renderers, pass by pass):
-   - the ground missing at the Montano Plains outpost and the dark patch east of it (if step 1 did not fix it);
+   - the ground missing at the Montano Plains outpost and the dark patch east of it (ask me first whether it is
+     still there at a second start of the game: the flat ground of the first drive was a first-run fault);
    - upside-down scenery patches in a mountain race;
    - the car's dashboard that never lights up (ask me first whether it lights up with the emulated launcher; a
      lead, not checked: the log line "texture format not supported yet: an empty one is used (cause 422)");
    - a car's thumbnail that is sometimes wrong (timing: start at fh1_native_read_one_off_wait_texels);
    - then night colors, garage / car damage, the Carbon clean-up.
-5. Objects that show late in a first run: the shaders that are not on the disc are made one at a time, about a
-   second each (fh1_extra_shaders.cpp, one worker thread). Make several at once and measure it on an installed
-   test copy with the driver's cache set aside.
-6. When a fix is worth giving to players: tell me, and only with my yes make the next pre-release (v0.1.0-pre2:
-   Program.Version in the installer, a new release text, installer\build_installer.ps1,
-   installer\make_package.ps1, the complete test, then gh release create).
+6. When a fix is worth giving to players: tell me, and only with my yes publish it (replace the files of the
+   pre-release as on 2026-10-06, or v0.1.0-pre2: Program.Version in the installer, a new release text,
+   installer\build_installer.ps1, installer\make_package.ps1, the complete test, then gh release create).
 
 Left for later, only if I ask: the game window's title still shows the SDK's build name; the installer's unpack
 step flashes the game window for a second; the "Preparing shaders" screen uses small text and does not show on
-the emulated launchers; the emulated Vulkan monitor's title line is the backend's own long name; about 206 draws
-rejected in every run of the new-game route (cause 317).
+the emulated launchers; the emulated Vulkan monitor's title line is the backend's own long name; the folders
+%LOCALAPPDATA%\AMD\VkCache.test-* that the first-run tests leave behind (driver caches of test runs: mine to
+delete).
 
 Rules:
 - Explain things to me in plain words: I am not a programmer. Say exactly what to run and when.
@@ -57,11 +55,13 @@ Rules:
 - The installer is written for the C# 5 compiler that is part of Windows: no newer language features.
 - Tests never use my saves or my installed copy: a new empty folder on the Desktop, and a game started for a
   test gets --user_data_root=<another empty folder>. My save is no longer in Documents (the game starts a new
-  game), so the unattended route is the new-game one (Start / A every few seconds; the first drive at about
-  140 s). An installer test overwrites my desktop shortcut: copy it first and put it back. Delete the test
+  game), so the unattended route is the new-game one (Start / A every few seconds; the opening at about
+  100 s, the first drive at about 140 s, later when the driver's cache is set aside). An installer test overwrites my desktop shortcut: copy it first and put it back. Delete the test
   folders when done.
 - A test about first runs must set the graphics driver's cache aside (tools\fresh_pc_test.ps1 shows how) and
-  put it back: with the cache there, everything is "already compiled" and the test proves nothing.
+  put it back: with the cache there, everything is "already compiled" and the test proves nothing. Run it on
+  an installed test copy, and never make the game wait for a shader or a pipeline: a frame of about 3 seconds
+  stops the game for good (it froze twice on 2026-10-06).
 - Never give tools\auto_test.ps1 an option the script already passes (an option given twice makes the game drop
   all of them), and never an empty -ExtraArgs. A plain run is the native renderer: an emulated reference shot
   needs -ExtraArgs "--fh1_renderer=xenos".
