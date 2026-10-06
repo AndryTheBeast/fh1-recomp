@@ -70,7 +70,7 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
    If the repo folder was copied from another PC, delete `out\`, `fh1\out\` and `sdk\out\`: their
    CMake caches keep the old PC's tool paths (e.g. a missing ninja.exe).
 2. In `%USERPROFILE%\Desktop\FH1-recomp\`: put the ISO there, run
-   `git clone https://github.com/AndryTheBeast/Forza-Horizon-Windows-Port.git fh1-recomp`, and copy
+   `git clone https://github.com/AndryTheBeast/fh1-recomp.git`, and copy
    `fh1-recomp\tools\build_fh1.bat` and `run_fh1.bat` next to the ISO.
 3. Run `fh1-recomp\tools\setup_windows.bat` (winget installs Git, CMake, Ninja, Python 3.13, LLVM,
    VS 2022 Build Tools C++ workload, VC++ redist, GitHub CLI; accept the UAC prompts).

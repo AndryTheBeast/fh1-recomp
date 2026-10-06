@@ -94,7 +94,7 @@ public static class Web {
 // (a developer's build), otherwise the two zips of the release.
 public static class Source {
   // Set by --source (tests): another address or folder that holds the two zips.
-  public static string Base = "https://github.com/AndryTheBeast/Forza-Horizon-Windows-Port/releases/download/v" + Program.Version + "/";
+  public static string Base = "https://github.com/AndryTheBeast/fh1-recomp/releases/download/v" + Program.Version + "/";
   public const string PortZip = "fh1-win64.zip";
   public const string ToolsZip = "fh1-shader-tools.zip";
 
@@ -194,11 +194,11 @@ public static class Launchers {
       "\r\n" +
       "Something went wrong?\r\n" +
       "  Every start of the game writes a log into the folder \"logs\" here (fh1_001.log, fh1_002.log, ...).\r\n" +
-      "  Open an issue at https://github.com/AndryTheBeast/Forza-Horizon-Windows-Port/issues and attach the newest one,\r\n" +
+      "  Open an issue at https://github.com/AndryTheBeast/fh1-recomp/issues and attach the newest one,\r\n" +
       "  plus logs\\fh1.crash.txt if the game crashed. A log can contain your Windows user name inside\r\n" +
       "  file paths. Never attach files of the game itself.\r\n" +
       "\r\n" +
-      "Guide and known issues: https://github.com/AndryTheBeast/Forza-Horizon-Windows-Port/blob/main/docs/install.md\r\n" +
+      "Guide and known issues: https://github.com/AndryTheBeast/fh1-recomp/blob/main/docs/install.md\r\n" +
       "To update: start a newer FH1Installer.exe and choose this same folder.\r\n";
 
   static string Bat(string what, string option) {

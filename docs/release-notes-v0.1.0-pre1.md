@@ -24,7 +24,7 @@ textures can take a long time to appear, because the shaders are prepared on you
 only once: the same place is fine the next time, and the game gets smoother the more you play.
 
 You only download `FH1Installer.exe`; it fetches the two zips itself. The full guide, with what to do about
-Smart App Control, is in [docs/install.md](https://github.com/AndryTheBeast/Forza-Horizon-Windows-Port/blob/main/docs/install.md).
+Smart App Control, is in [docs/install.md](https://github.com/AndryTheBeast/fh1-recomp/blob/main/docs/install.md).
 
 ## What works
 

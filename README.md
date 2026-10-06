@@ -57,7 +57,7 @@ APU: Zen 4 CPU and an RDNA 3 integrated GPU, running Windows 11.
 ## Installing (pre-release)
 
 Pre-releases come with a small Windows installer, `FH1Installer.exe`, on the
-[Releases](https://github.com/AndryTheBeast/Forza-Horizon-Windows-Port/releases) page: you choose your own disc image (.iso, USA
+[Releases](https://github.com/AndryTheBeast/fh1-recomp/releases) page: you choose your own disc image (.iso, USA
 version) and a folder, and it copies the game's files, downloads the pre-built port and prepares the shaders on
 your PC. The guide, the known issues and how to report a problem (with the log the game always writes) are in
 **[docs/install.md](docs/install.md)**. The installer is modelled on StevensND's installer for nfsmw-nx; its
