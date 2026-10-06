@@ -18,6 +18,7 @@ public sealed class MainForm : Form {
   readonly Button folderButton_ = new Button();
   readonly Button runtimeButton_ = new Button();
   readonly Label needsStatus_ = new Label();
+  readonly CheckBox fps60Box_ = new CheckBox();
   Thread worker_;
   volatile bool cancel_;
   bool closeWhenStopped_;
@@ -48,7 +49,7 @@ public sealed class MainForm : Form {
     StartPosition = FormStartPosition.CenterScreen;
     FormBorderStyle = FormBorderStyle.FixedSingle;
     MaximizeBox = false;
-    ClientSize = new Size(S(760), S(630));
+    ClientSize = new Size(S(760), S(730));
 
     TableLayoutPanel table = new TableLayoutPanel();
     table.Dock = DockStyle.Fill;
@@ -90,7 +91,17 @@ public sealed class MainForm : Form {
     AddRow(table, ReadOnly(folderBox_), Sized(folderButton_));
     AddRow(table, Status(folderStatus_, "Choose an empty folder (about 9 GB are needed)."));
 
-    AddRow(table, Heading("3. Install"));
+    AddRow(table, Heading("3. Options"));
+    fps60Box_.Text = "60 frames per second (experimental)";
+    fps60Box_.AutoSize = true;
+    fps60Box_.Margin = new Padding(S(6), S(4), S(3), S(0));
+    AddRow(table, fps60Box_);
+    AddRow(table, Note("The game runs at 30 frames per second, its limit on the Xbox 360. With this it draws and " +
+                       "moves 60 times a second where your PC is fast enough (a strong graphics chip is needed to " +
+                       "hold 60 while driving). New and little tested: if something moves too fast or looks " +
+                       "wrong, start this installer again, untick it and click Update."));
+
+    AddRow(table, Heading("4. Install"));
     installButton_.Text = "Install";
     installButton_.Enabled = false;
     installButton_.Click += delegate { if (worker_ != null) Cancel(); else Install(); };
@@ -244,6 +255,8 @@ public sealed class MainForm : Form {
     } catch (ArgumentException) {
     }
     if (worker_ == null) installButton_.Text = again ? "Update" : "Install";
+    // An installation shows the choice it was made with.
+    if (again && worker_ == null) fps60Box_.Checked = Options.ReadFps60(folderBox_.Text);
   }
 
   void Install() {
@@ -252,10 +265,12 @@ public sealed class MainForm : Form {
     cancel_ = false;
     isoButton_.Enabled = false;
     folderButton_.Enabled = false;
+    fps60Box_.Enabled = false;
+    bool fps60 = fps60Box_.Checked;
     installButton_.Text = "Cancel";
     stage_.ForeColor = SystemColors.ControlText;
     stage_.Text = "Copying the game's files from your disc image...";
-    worker_ = new Thread(delegate() { Work(iso, folder); });
+    worker_ = new Thread(delegate() { Work(iso, folder, fps60); });
     worker_.IsBackground = true;
     worker_.Start();
   }
@@ -283,7 +298,7 @@ public sealed class MainForm : Form {
   }
 
   // On the worker thread. The bar: the disc copy is its first quarter, the shaders the rest.
-  void Work(string iso, string folder) {
+  void Work(string iso, string folder, bool fps60) {
     string error = null;
     string summary = null;
     bool finished = false;
@@ -330,6 +345,8 @@ public sealed class MainForm : Form {
                                " in the folder; the two .bat files there start the emulated picture."
                          : " Start the game with " + Launchers.Exe + " in the folder (the desktop shortcut could " +
                                "not be made); the two .bat files there start the emulated picture.";
+          Options.WriteFps60(folder, fps60);
+          if (fps60) summary += " 60 frames per second is on.";
         }
       }
     } catch (OperationCanceledException) {
@@ -348,6 +365,7 @@ public sealed class MainForm : Form {
     }
     isoButton_.Enabled = true;
     folderButton_.Enabled = true;
+    fps60Box_.Enabled = true;
     installButton_.Text = "Install";
     installButton_.Enabled = true;
     if (error != null) {

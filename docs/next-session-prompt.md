@@ -8,7 +8,23 @@ in the opening cutscene and 32-40 while driving, because the graphics chip needs
 60 needs 16.7. Without the smooth edges it reaches 40-50, and I said that picture looks bad: smooth edges
 stay on. My decision of 2026-10-06: the PC version will have the 60 fps patch, the Switch port will not.
 
-Start by asking me what I saw when I drove with it (I start it with `run_fh1.bat --fh1_fps60=true`):
+**Unfinished, do this first: pre-release 0.1.1 with 60 fps as an option of the installer** (I asked for it on
+2026-10-06, then had to shut the PC down). Done and on main: the installer's sources (`Program.Version` =
+`0.1.1-pre1`, a checkbox "60 frames per second (experimental)" that writes `fh1_fps60 = true` into `fh1.toml`
+next to FH1.exe, `FH1Installer.exe --install ISO FOLDER --fps60` for tests). `installer\out\FH1Installer.exe`
+was built once from them; nothing else was built, tested or published. Left to do, in this order:
+1. `installer\build_installer.ps1` and `installer\make_package.ps1` (fh1.exe of the thirteenth session is built;
+   check it is still the one of main).
+2. Test on the installed test copy (`Desktop\FH1-install-test`, its own empty saves folder, never mine; put my
+   desktop shortcut back afterwards): install with `--fps60`, check `fh1.toml`, the log's `[fps60] on` line, a
+   shot; install again without it and check the line is gone and the game is back at 30. Look at the new
+   window once (the checkbox row, nothing cut off at the bottom: the window is 100 pixels taller).
+3. Texts: `docs/release-notes-v0.1.1-pre1.md` (what is new: the 60 fps option, what it reaches on the Legion Go,
+   that it is experimental), `docs/install.md` (the 30 fps line), README, the issue form's version example.
+4. Publish `v0.1.1-pre1` as a pre-release with the four files: I asked for this release, but tell me it is ready
+   and wait for my yes before the upload.
+
+After that: ask me what I saw when I drove with it (I start it with `run_fh1.bat --fh1_fps60=true`):
 speedometer and race timer against a stopwatch, the festival's crowd and people, traffic, particles, buying a
 car (the camera of that scene), the HUD (flashing?), night, far scenery, whether the road loads in time on a
 long fast drive. Then, depending on my answer:

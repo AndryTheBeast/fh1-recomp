@@ -6,7 +6,8 @@
 //   FH1Installer.exe                          the window
 //   FH1Installer.exe --check ISO FOLDER       prints both checks and exits (for tests; no window)
 //   FH1Installer.exe --extract ISO FOLDER     both checks, then copies the disc's files (for tests; no window)
-//   FH1Installer.exe --install ISO FOLDER     the whole installation without the window (for tests)
+//   FH1Installer.exe --install ISO FOLDER     the whole installation without the window (for tests);
+//                                             a fourth word --fps60 ticks "60 frames per second"
 //   --source ADDRESS (before the rest)        where the two zips are, instead of the release (for tests)
 using System;
 using System.IO;
@@ -16,7 +17,7 @@ using System.Windows.Forms;
 namespace Fh1Installer {
 
 public static class Program {
-  public const string Version = "0.1.0-pre1";
+  public const string Version = "0.1.1-pre1";
 
   [DllImport("user32.dll")]
   static extern bool SetProcessDPIAware();
@@ -52,7 +53,7 @@ public static class Program {
       return 0;
     }
     // The whole installation as the window does it, without the window (for tests).
-    if (args.Length == 3 && args[0] == "--install") {
+    if ((args.Length == 3 || (args.Length == 4 && args[3] == "--fps60")) && args[0] == "--install") {
       DateTime start = DateTime.UtcNow;
       CheckResult disc = Checks.Disc(args[1]);
       CheckResult folder = Checks.Folder(args[2], disc.Bytes);
@@ -76,6 +77,8 @@ public static class Program {
         Console.WriteLine("library: " + r.Compiled + " of " + r.Containers + " shaders, " + r.Bytes + " bytes");
       }
       Console.WriteLine("desktop shortcut: " + (Launchers.Write(args[2]) ?? "NOT made"));
+      Options.WriteFps60(args[2], args.Length == 4);
+      Console.WriteLine("60 frames per second: " + (Options.ReadFps60(args[2]) ? "on" : "off"));
       Console.WriteLine("installed in " + (DateTime.UtcNow - start).TotalSeconds.ToString("0") + " s");
       return 0;
     }

@@ -161,6 +161,44 @@ public static class Source {
   }
 }
 
+// The installer's options, kept in the port's own settings file next to FH1.exe (fh1.toml: one "name = value"
+// per line, read at every start and rewritten by the F4 menu). Only the option's own line is touched.
+public static class Options {
+  public const string SettingsName = "fh1.toml";
+  const string Fps60 = "fh1_fps60";
+
+  static bool IsLine(string line, string name) {
+    string t = line.TrimStart();
+    return t.StartsWith(name, StringComparison.Ordinal) && t.Substring(name.Length).TrimStart().StartsWith("=");
+  }
+
+  public static bool ReadFps60(string folder) {
+    try {
+      string path = Path.Combine(folder, SettingsName);
+      if (!File.Exists(path)) return false;
+      foreach (string line in File.ReadAllLines(path)) {
+        if (IsLine(line, Fps60)) return line.Substring(line.IndexOf('=') + 1).Trim().StartsWith("true");
+      }
+    } catch (Exception) {
+    }
+    return false;
+  }
+
+  public static void WriteFps60(string folder, bool on) {
+    string path = Path.Combine(folder, SettingsName);
+    System.Collections.Generic.List<string> lines = new System.Collections.Generic.List<string>();
+    if (File.Exists(path)) {
+      foreach (string line in File.ReadAllLines(path)) {
+        if (!IsLine(line, Fps60)) lines.Add(line);
+      }
+    } else if (!on) {
+      return;  // nothing to say: the port's default is off
+    }
+    if (on) lines.Add(Fps60 + " = true");
+    File.WriteAllLines(path, lines.ToArray());
+  }
+}
+
 // How the game is started: FH1.exe by itself draws with the native Vulkan renderer (the default since
 // 2026-10-06, the user's decision); two .bat files in the folder start the emulated Xbox 360 GPU, on
 // Direct3D 12 and on Vulkan.
@@ -191,6 +229,11 @@ public static class Launchers {
       "\r\n" +
       "In the game: F3 shows the frame rate, F4 the port's settings. The game runs at 30 frames per second,\r\n" +
       "its own limit on the Xbox 360. Your saves are in your Documents folder, in \"fh1\".\r\n" +
+      "\r\n" +
+      "60 frames per second (experimental, native renderer): tick it in the installer (start FH1Installer.exe\r\n" +
+      "again, choose this folder, Update), or untick it there if something moves too fast or looks wrong. The\r\n" +
+      "game then draws and moves 60 times a second where your PC is fast enough, and less where it is not.\r\n" +
+      "The choice is the line fh1_fps60 in fh1.toml here.\r\n" +
       "\r\n" +
       "Something went wrong?\r\n" +
       "  Every start of the game writes a log into the folder \"logs\" here (fh1_001.log, fh1_002.log, ...).\r\n" +
