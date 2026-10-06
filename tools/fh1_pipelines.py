@@ -50,14 +50,21 @@ def read_list(path):
     return [data[HEADER_LIST + i * size:HEADER_LIST + (i + 1) * size] for i in range(count)]
 
 
+def identity(r):
+    """What tells two pipelines apart whatever library recorded them: the key without its two shader numbers
+    (they depend on the library: the developer's and an installed copy's differ) plus the two shaders'
+    fingerprints, which follow the key in the record. The game matches the same way (LoadListPipelines)."""
+    return r[8:KEY_BYTES] + r[KEY_BYTES:KEY_BYTES + 16]
+
+
 def union(paths, report):
     seen = {}
     for path in paths:
         records = read_list(path)
         new = 0
         for r in records:
-            if r[:KEY_BYTES] not in seen:
-                seen[r[:KEY_BYTES]] = r
+            if identity(r) not in seen:
+                seen[identity(r)] = r
                 new += 1
         if report:
             print(f"{path}: {len(records)} pipelines, {new} new")
