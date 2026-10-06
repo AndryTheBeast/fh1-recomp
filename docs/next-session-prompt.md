@@ -1,67 +1,72 @@
 # Prompt for the next session
 
-Paste this to start the session after 2026-10-06 (twelfth session: several shaders made at once and the
-pipeline list at 1067 are on main, not in a release yet).
+Paste this to start the session after 2026-10-06 (twelfth session). The user's choice for it: a 60 fps patch.
 
 ---
 
-Read fh1-recomp/CLAUDE.md, then ROADMAP.md (Stage 3: the items marked "After the first pre-release" and the
-ones under them) and fh1-recomp/docs/native-renderer-status.md ("Twelfth session"). The files of v0.1.0-pre1
-(https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1) are still those of 2026-10-06's eleventh
-session. On main since then, tested but not published: shaders the library lacks are made up to four at once,
-the pipeline list's records that waited for one are compiled the moment it is taken in, and the shipped list
-has 1067 pipelines (887 before).
+Read fh1-recomp/CLAUDE.md, then fh1-recomp/docs/native-renderer-status.md ("Twelfth session") and ROADMAP.md
+("Tried and dropped", "Other projects to borrow from", "Maybe later"). This session is about one thing: **a
+60 fps patch for driving** (the game draws the 3D world at 30 frames per second; the logo videos and menus
+already run at 60). It is an option that is off by default until I say it is good.
+
+What is known before starting:
+
+* It was tried once on the emulated GPU by turning vsync off, and dropped: it broke distant rendering
+  (ROADMAP.md, "Tried and dropped"). Find that attempt in docs/history/roadmap-history.md and in git before
+  repeating it.
+* The game paces itself on the screen's refresh: its GPU wait (WAIT_REG_MEM) sits almost entirely on one memory
+  word, twice per frame (docs/history/roadmap-history.md; --gpu_log_waits shows it). That is the 30 fps cap as
+  the port sees it.
+* pinyon-shift (https://github.com/arcanite24/pinyon-shift) has an fps unlock for this game: read how it does
+  it before writing anything (ROADMAP.md, "Other projects to borrow from").
+* 60 fps needs a frame in 16.7 ms. The native renderer's GPU time per frame at the festival was about 21 ms on
+  my Legion Go (docs/performance-review.md, status document): the patch can be right and still not reach 60
+  there. Measure and tell me plainly.
+* A text I was given about this engine (general advice, nothing in it is checked against our game; treat each
+  point as a guess to prove or disprove, and tell me which were true):
+  1. the menus / videos and the 3D world are paced separately, and the world's loop presents on every second
+     screen refresh (a divider or a fixed time step of 33.33 ms to find and change to 16.67 ms);
+  2. physics and input already run at 60 per second, and the picture is interpolated to 30; forcing 60 may make
+     menu animations, people, particles and traffic run at double speed unless the time step that drives them
+     follows the real frame time;
+  3. the loading of the world while driving may be budgeted for 33.3 ms per frame, so at 60 the road could load
+     too late.
 
 Do it in this order:
 
-1. Ask me whether I want those three things given to players now (replace the files of the pre-release as on
-   2026-10-06, or v0.1.0-pre2: Program.Version in the installer, a new release text,
-   installer\build_installer.ps1, installer\make_package.ps1, the complete test, then gh release create).
-   Nothing is published without my yes at that moment.
-2. Look at the GitHub issues (gh issue list) and tell me what players reported, in plain words. Do not answer
-   or close an issue without asking me. (None on 2026-10-06.)
-3. Ask me whether I have driven more. If yes: python tools\fh1_pipelines.py info fh1\data\fh1_pipelines.nfpl
-   fh1\out\win-release\cache\fh1_native_pipelines.bin, then merge, build, commit.
-4. The black window: rarely (2 of 319 starts) the window stays black for the whole run while the game runs;
-   the log has "Presenter: paint mode -> none" in the first seconds (sdk/src/ui/presenter.cpp,
-   PaintFromUIThread). Read who is meant to bring painting back, and make it come back. Changing the SDK gives
-   the long build.
-5. The other faults, one at a time, each checked against the emulated GPU at the same spot before any guess
-   (RenderDoc on both renderers, pass by pass):
-   * the car's dashboard: dark with dim dials on the Volkswagen, lit on the Subaru, dark at dusk on the Mustang
-     (my pictures: build_logs\reference\user-dashboard-*-20261006.webp; ask me whether the Volkswagen's lights
-     up with the emulated launcher; a lead, not checked: the log line "texture format not supported yet: an
-     empty one is used (cause 422)");
-   * a car's thumbnail that is sometimes a grey card (timing: start at fh1_native_read_one_off_wait_texels;
-     user-thumbnail-grey-20261006.webp);
-   * the pink triangles on the tyre icons of the upgrade menu (user-upgrade-tyres-pink-20261006.webp: compare
-     with the emulated picture first, they may be the game's own);
-   * the ground missing at the Montano Plains outpost and the dark patch east of it (ask me first whether it is
-     still there: the developer's build had no shader tools until 2026-10-06, and that gave flat ground);
-   * upside-down scenery patches in a mountain race (same question first);
-   * then night colors, garage / car damage, the Carbon clean-up.
+1. Tell me the plan in plain words before changing code: where the 30 comes from in our game (the refresh
+   counter the game waits on, the present interval it asks Direct3D for, or a time step in its own code), which
+   of the three you will try first, and how I will see that it worked.
+2. Find it. Tools we have: --gpu_log_waits, --fh1_profile, --fh1_dump_image with the strings / cross-reference
+   scripts, hooks on game functions (REX_HOOK_RAW), --fh1_dump_memory and --fh1_trap_writes_to. Change settings
+   in memory only, never in the game's files (the game verifies them).
+3. Make it an option (for example --fh1_fps60), off by default, on the native renderer first. Check with it on:
+   the frame rate in the [fps] lines, the speed of the game against a clock (the car's speedometer and the race
+   timer must agree with real seconds; menu animations, people, traffic and particles must not run fast), far
+   scenery (what broke last time), that the road still loads in time at full speed, and that no frame comes
+   near 3 seconds.
+4. Compare the picture with the option off at the same spot (tools\fh1_pic_stats.py), and tell me what to
+   drive to judge it myself. I decide whether it stays.
+5. Only if I ask afterwards: give players what is on main and not published yet (several shaders made at once,
+   the pipeline list at 1067), and the 60 fps option once I call it good.
 
-Left for later, only if I ask: the game window's title still shows the SDK's build name; the installer's unpack
-step flashes the game window for a second; the "Preparing shaders" screen uses small text and does not show on
-the emulated launchers; the emulated Vulkan monitor's title line is the backend's own long name; the folders
-%LOCALAPPDATA%\AMD\VkCache.test-* that the first-run tests leave behind (driver caches of test runs: mine to
-delete); the festival's crowd after the bone change (I have not looked: it must still be animated and whole).
+Waiting, not for this session unless I ask (ROADMAP.md has them): the rare black window at the start (SDK
+presenter "paint mode -> none"), the dark dashboard of the Volkswagen, the grey thumbnail, the pink triangles
+on the upgrade menu's tyre icons, the Montano Plains ground, the upside-down scenery, night colors, garage /
+car damage, the Carbon clean-up. If a GitHub issue has come in (gh issue list), tell me what it says first; do
+not answer or close one without asking me.
 
 Rules:
 
 * Explain things to me in plain words: I am not a programmer. Say exactly what to run and when.
 * The repository is public: nothing committed may contain my Windows user folder or my e-mail address.
-* StevensND's installer is the model for the app: credit him by name; his installer and nfsmw-nx are public
-  (reference/nfsmw-README.md has the links). GoatHonks' repositories are private: credit him by name, never write
-  a link to them.
-* The installer is written for the C# 5 compiler that is part of Windows: no newer language features.
-* Tests never use my saves or my installed copy: a new empty folder on the Desktop, and a game started for a
-  test gets --user_data_root=<another empty folder>. The unattended route is the new-game one (CLAUDE.md,
-  twelfth session, has the timetable). An installer test overwrites my desktop shortcut: copy it first and put
-  it back. Delete the test folders when done.
-* A test about first runs must set the graphics driver's cache aside (tools\fresh_pc_test.ps1 shows how) and
-  put it back. Run it on an installed test copy, and never make the game wait for a shader or a pipeline: a
-  frame of about 3 seconds stops the game for good.
+* GoatHonks' repositories are private: credit him by name, never write a link to them. pinyon-shift is public:
+  credit it by name and link if anything is taken from it, and check its license first.
+* Tests never use my saves or my installed copy: a game started for a test gets --user_data_root=<an empty
+  folder> and the new-game route (CLAUDE.md, twelfth session, has the timetable). Delete the test folders when
+  done.
+* Never make the game wait for a shader or a pipeline, and never let a frame come near 3 seconds: it stops the
+  game for good.
 * Never give tools\auto_test.ps1 an option the script already passes, and never an empty -ExtraArgs. A plain
   run is the native renderer: an emulated reference shot needs -ExtraArgs "--fh1_renderer=xenos".
 * Before test windows open, say how many, and for each one whose saves it uses. Look at a shot of a test run
@@ -70,8 +75,7 @@ Rules:
   while my game is open: check it with a command that prints "running" or "closed", and ask me to close it.
   Don't edit sources while a build is running, and never wait with an open-ended loop. Changing
   fh1\CMakeLists.txt or the SDK gives the long build (about 14 minutes).
-* After any change to how fh1.exe draws, check the picture against the emulated GPU at the same moment
-  (tools\fh1_pic_stats.py); two runs drift apart by seconds, so take shots every few seconds and look at them.
+* One run each of "on" and "off" is not a result for something that comes and goes: repeat before blaming.
 * Write patch scripts to a file first, and keep a document's line endings when a script rewrites it.
 * Nothing is published (no release, no tag, no upload) without my yes at that moment.
 * Commit and push to main when something works, and keep the status document, ROADMAP.md and CLAUDE.md up to
