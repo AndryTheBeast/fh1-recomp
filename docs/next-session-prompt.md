@@ -8,14 +8,16 @@ fixed ones the same day).
 Read fh1-recomp/CLAUDE.md, then ROADMAP.md (Stage 3: the items marked "After the first pre-release") and
 fh1-recomp/docs/native-renderer-status.md ("After pre-release 1: flat ground and missing characters"). The files
 of v0.1.0-pre1 (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1) were replaced on
-2026-10-06 with fixed ones: characters with a skeleton are drawn, the ground of a first run is no longer flat,
-and unknown pipelines are compiled in the background again.
+2026-10-06, twice, with fixed ones: characters with a skeleton are drawn (the deer, the driver, the presenter and
+the people at the diner), the ground of a first run is no longer flat, and unknown pipelines are compiled in the
+background again.
 
 Do it in this order:
 1. Ask me what I saw in the updated game (I run FH1Installer.exe again on %USERPROFILE%\Downloads\Forza Horizon):
-   the deer and the presenter of the opening, the people of the festival and its crowd (the crowd's bones now
-   take their order from the renderer too: it must still be animated and whole), the ground of the first drive,
-   and whether the game ever stood still. If I send a log, read its longest "[fps] worst frame gap" first.
+   the people at the diner and at the festival, the festival's crowd (the crowd's bones now take their order
+   from the renderer too: it must still be animated and whole), and whether the game ever stood still. On a
+   first run I saw a slab of hillside hanging over the road and a smeared car front; the slab was gone at the
+   second start (objects that show late: step 4). If I send a log, read its longest "[fps] worst frame gap" first.
 2. Look at the GitHub issues of the repository (gh issue list) and tell me what players reported, in plain
    words. Do not answer or close an issue without asking me. (None on 2026-10-06.)
 3. Ask me whether I have driven more. If yes: merge my cache file into the shipped pipeline list
@@ -24,9 +26,8 @@ Do it in this order:
 4. Objects that show late in a first run, now that nothing waits on the ring: the shaders that are not on the
    disc are made one at a time, half a second to four seconds each (fh1_extra_shaders.cpp, one worker thread;
    the big ones are the bone shaders). Make several at once, and when a shader is taken in, hand the shipped
-   list's records that wait for it to the helper threads at once. One shader could not be made on the PC at
-   all (v_39E8051E5F332A24, 294 words, seen at the festival): find out why. Measure on an installed test copy
-   with the driver's cache set aside, and read the longest frame.
+   list's records that wait for it to the helper threads at once. Measure on an installed test copy with the
+   driver's cache set aside, and read the longest frame.
 5. The other faults, one at a time, each checked against the emulated GPU at the same spot before any guess
    (RenderDoc on both renderers, pass by pass):
    - the ground missing at the Montano Plains outpost and the dark patch east of it (ask me first whether it is
