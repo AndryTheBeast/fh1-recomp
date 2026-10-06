@@ -33,6 +33,10 @@ std::vector<Shader> LoadSaved();
 // Does nothing when the shader tools are not there.
 void Request(bool vertices, uint64_t fingerprint, std::span<const uint32_t> microcode);
 
+// Waits until the helper thread is done with a shader asked for with Request (made, or failed), at most
+// --fh1_native_extra_shaders_wait_ms. False when it was not asked for, the wait is off or the time ran out.
+bool Wait(bool vertices, uint64_t fingerprint);
+
 // One shader the helper thread has finished since the last call; false when there is none (one atomic read).
 bool TakeFinished(Shader& out);
 

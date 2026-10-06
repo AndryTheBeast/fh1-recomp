@@ -631,6 +631,15 @@ const EntryShader* ShadersNative::Identify(bool vertices,
     DumpMicrocodeUnknown(vertices, key.fingerprint, microcode);
     // A helper thread makes it on this PC; Adopt takes it in when it is ready.
     extra_shaders::Request(vertices, key.fingerprint, microcode);
+    // The game waits for it (a short pause, once per shader): some things are painted only once, and a stretch of
+    // ground painted while its shader was being made stayed one flat color for the whole session.
+    static thread_local bool waiting = false;
+    if (!waiting && extra_shaders::Wait(vertices, key.fingerprint)) {
+      waiting = true;
+      const EntryShader* made = Identify(vertices, microcode);  // Adopt takes it in, then it is matched again
+      waiting = false;
+      return made;
+    }
   }
   d.cache.emplace(key, chosen);
   return chosen;

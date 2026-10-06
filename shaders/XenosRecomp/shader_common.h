@@ -170,7 +170,8 @@ uint fh1Swap(uint w, uint endian)
 
 // FH1: declared fetches indexed by a computed register (fh1FetchRanked). Per declared fetch instruction (rank of its
 // address, 0-31): word 180 + rank = where its stream is (as g_FetchAddress), word 212 + rank = stride in words (bits
-// 0-7), offset in words (8-23), format (24-29), signed (30), integer (31).
+// 0-5), offset in words (6-11), format (12-17), signed (18), integer (19), destination swizzle (20-31, three bits
+// per component as in the fetch instruction).
 #define g_FetchRankAddress(R) (NFSMW_UBO ? FH1_SHARED_UINT(720 + (R) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 720 + (R) * 4))
 #define g_FetchRankParam(R)   (NFSMW_UBO ? FH1_SHARED_UINT(848 + (R) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 848 + (R) * 4))
 
@@ -213,8 +214,19 @@ float4 fh1FetchRanked(uint rankFull, uint rankOwn, float indexValue, bool rounde
 {
     uint full = g_FetchRankParam(rankFull);
     uint own = g_FetchRankParam(rankOwn);
-    return fh1FetchAt(g_FetchRankAddress(rankFull), indexValue, rounded, full & 0xFFu, int((own >> 8) & 0xFFFFu),
-                      (own >> 24) & 0x3Fu, ((own >> 30) & 1u) != 0u, ((own >> 31) & 1u) == 0u);
+    float4 value = fh1FetchAt(g_FetchRankAddress(rankFull), indexValue, rounded, full & 0x3Fu,
+                              int((own >> 6) & 0x3Fu), (own >> 12) & 0x3Fu, ((own >> 18) & 1u) != 0u,
+                              ((own >> 19) & 1u) == 0u);
+    // Direct3D writes the fetch's destination swizzle when it binds the declaration (a 16-bit format comes out
+    // as y x w z, a 16_16 one may land in any component): the shader of the disc does not have it, so it comes
+    // from the renderer. Component i of the result is what the fetch writes to component i of its register.
+    float4 result;
+    for (uint i = 0u; i < 4u; i++)
+    {
+        uint source = (own >> (20u + i * 3u)) & 7u;
+        result[i] = source < 4u ? value[source] : (source == 5u ? 1.0 : 0.0);
+    }
+    return result;
 }
 
 // c is the stream's place (as g_FetchAddress gives it), not a fetch constant number.

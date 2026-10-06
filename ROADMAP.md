@@ -238,8 +238,13 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         road should be, with sharp straight edges (`user-ground-missing-2-20261006-dusk.webp`, `-map.webp`). Two
         spots close together, day and night: one cause is likely (a ground material of that area). Not looked at:
         check the same spots on the emulated GPU first
-  - [ ] **FIRST for the next session (user, 2026-10-06, after the pre-release): some ground textures are not
-        drawn** (native renderer). Screenshot `build_logs\reference\user-ground-flat-newgame-20261006-native.webp`:
+  - [x] **Characters with a skeleton were not drawn** (the animal and the presenter of the opening, the driver,
+        the festival's people; cause 317, every build): fixed 2026-10-06, eleventh session (status document,
+        "After pre-release 1"). The user checks them in the game
+  - [x] **Fixed 2026-10-06, eleventh session: it only happened on a first run of an installed copy** (a shader
+        being made on the PC while the game painted that ground once; the game now waits for the shader: status
+        document, "After pre-release 1"). The item as it was written: some ground textures are not
+        drawn (native renderer). Screenshot `build_logs\reference\user-ground-flat-newgame-20261006-native.webp`:
         the new game's first drive, 1.7 mi from the festival, by day; the strip between the road and the leaves
         is one flat brown color with straight edges, and the ground further right has its texture. The same
         stretch on the emulated GPU has gravel and grass there

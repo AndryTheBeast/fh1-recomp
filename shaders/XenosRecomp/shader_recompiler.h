@@ -42,6 +42,8 @@ struct ShaderRecompiler : StringBuffer
     std::set<uint32_t> declaredUsages;
     // The last full vertex fetch: mini fetches reuse its constant, index and stride.
     bool haveFullFetch = false;
+    bool fullFetchR0Fetched = false;
+    uint32_t r0FetchWritten = 0;
     uint32_t fullFetchConst = 0, fullFetchSrc = 0, fullFetchSwizzle = 0, fullFetchStride = 0, fullFetchAddress = 0;
     bool fullFetchRounded = false;
 #endif

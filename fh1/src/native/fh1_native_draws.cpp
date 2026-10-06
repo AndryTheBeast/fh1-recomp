@@ -2001,7 +2001,14 @@ struct EntryVertices {
     uint8_t rank = 0;
     uint8_t slot = 0;
     bool stream = false;
-    uint32_t param = 0;  // stride in words | offset in words << 8 | format << 24 | signed << 30 | integer << 31
+    // stride in words | offset in words << 6 | format << 12 | signed << 18 | integer << 19 | the patched fetch's
+    // destination swizzle << 20 (g_FetchRankParam in shader_common.h)
+    uint32_t param = 0;
+    // The rank of the full fetch a mini fetch belongs to (its own for a full fetch). Direct3D turns the fetches
+    // after the first one of a stream into mini fetches when it binds the declaration, but the translator works
+    // on the shader of the disc, where each one is still a full fetch that looks up its own stream: a mini
+    // fetch's rank gets the place of its full fetch's stream too.
+    uint8_t rank_full = 0;
   };
   std::vector<FetchMemory> fetches_memory;
   // FH1: vertex fetch slots of streams the shader reads from memory without declaring them (fh1Fetch in
@@ -3654,6 +3661,11 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       const uint64_t base = upload_address_;
       std::memcpy(shared + 154, &base, sizeof(base));
       shared[WordOfFetchSource(source.rank)] = uint32_t(offset) + source.shift;
+    }
+    for (const EntryVertices::FetchMemory& m : entry->fetches_memory) {
+      if (!m.stream) {
+        shared[WordOfFetchSource(m.rank)] = shared[WordOfFetchSource(m.rank_full)];  // see FetchMemory::rank_full
+      }
     }
     VkDeviceSize offset_indices = 0;
     if (con_indices) {
@@ -9277,6 +9289,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       // FH1: source register and component of the fetch index (word 0 bits 5-10 and 30-31). Anything but r0.x is an
       // index the shader computed; a mini fetch (word 1 bit 30) reuses the vertex of the fetch before it.
       uint32_t d0_full = d0;
+      size_t at_full = q;
       if ((d1 >> 30) & 0x1) {
         // The full fetch a mini fetch belongs to: the nearest fetch instruction before it that is not one.
         size_t best = SIZE_MAX;
@@ -9288,9 +9301,21 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         }
         if (best != SIZE_MAX) {
           d0_full = patched[best];
+          at_full = best;
         }
       }
-      if (((d0_full >> 5) & 0x3F) != 0) {
+      // FH1: r0 is the vertex index only until a fetch writes it. The characters with a skeleton (the animal and the
+      // presenter of the opening, the people of the festival: VS n1376) fetch their four bone numbers into r0 and
+      // then four bones at r0.x, r0.y, r0.z and r0.w: computed indices too. The translator applies the same rule
+      // (shader_recompiler.cpp, r0FetchWritten): declared fetches before the full fetch, by address.
+      uint32_t r0_fetched = 0;
+      for (const ElementVertex& other_value : vs.elements) {
+        const size_t i = size_t(other_value.instruction) * 3;
+        if (i < at_full && (patched[i] & 0x1F) == 0 && ((patched[i] >> 12) & 0x3F) == 0) {
+          r0_fetched |= MaskWritten(patched[i + 1] & 0xFFF);
+        }
+      }
+      if (((d0_full >> 5) & 0x3F) != 0 || ((r0_fetched >> ((d0_full >> 30) & 0x3)) & 0x1)) {
         // Indexed by a computed register: read from memory by the shader, not a vertex attribute.
         uint32_t rank = 0;
         for (const ElementVertex& other_value : vs.elements) {
@@ -9299,8 +9324,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           }
         }
         const int32_t offset_words = int32_t(d2 << 1) >> 9;
-        if (rank >= 32 || offset_words < 0 || offset_words > 0xFFFF) {
-          Reject(318, "vertex fetch with a computed index: beyond the 32 declared fetches or a negative offset");
+        if (rank >= 32 || offset_words < 0 || offset_words > 63 || (d2 & 0xFF) > 63) {
+          Reject(318, "vertex fetch with a computed index: beyond the 32 declared fetches, a negative offset, or "
+                      "an offset or stride beyond 63 words");
           return nullptr;
         }
         bool known = false;
@@ -9308,10 +9334,17 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           known |= m.rank == rank;
         }
         if (!known) {
+          uint32_t rank_full = 0;
+          for (const ElementVertex& other_value : vs.elements) {
+            if (size_t(other_value.instruction) * 3 < at_full) {
+              ++rank_full;
+            }
+          }
           entry_.fetches_memory.push_back(
               {uint8_t(rank), uint8_t(((d0_full >> 20) & 0x1F) * 3 + ((d0_full >> 25) & 0x3)), !((d1 >> 30) & 0x1),
-               (d2 & 0xFF) | (uint32_t(offset_words) << 8) | (((d1 >> 16) & 0x3F) << 24) |
-                   (((d1 >> 12) & 0x1) << 30) | (((d1 >> 13) & 0x1) << 31)});
+               (d2 & 0x3F) | (uint32_t(offset_words) << 6) | (((d1 >> 16) & 0x3F) << 12) |
+                   (((d1 >> 12) & 0x1) << 18) | (((d1 >> 13) & 0x1) << 19) | ((d1 & 0xFFF) << 20),
+               uint8_t(std::min<uint32_t>(rank_full, 31))});
         }
         continue;
       }

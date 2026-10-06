@@ -428,5 +428,14 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   anything about first runs, set `%LOCALAPPDATA%\AMD\VkCache` aside (as `tools\fresh_pc_test.ps1` does) and
   clear the copy's `cache` and `shaders_extra`.
 - The installer test overwrites the desktop shortcut "Forza Horizon.lnk": copy the user's first and put it back.
+- **2026-10-06, eleventh session: flat ground on a first run and the missing characters are fixed** (status
+  document, "After pre-release 1"; not in a release yet). A fault seen only on an installed copy: compare its log
+  with the developer's first (`C5c` lines: which shaders were made on the PC, and when), and ask whether it is
+  still there at the second start, before any capture. A translator change that touches few shaders needs no
+  full library build: translate all into a new folder, compare with the last translation, compile the changed
+  ones and repack with the SPIR-V of the library in use (three shaders took a minute). The translator's rules
+  and the renderer's (`ComputeEntry`) must change together, and `kVersion` in `fh1_extra_shaders.cpp` goes up
+  with them (saved shaders of another version are deleted). The unattended new-game route reaches the opening
+  at about 100 s once Windows has the files cached (not 140 s): take shots from 96 s.
 - Tests cannot use the user's saves (the safety system refused the scripted controller there, and the user moved
   the save out of Documents on 2026-10-06): `--user_data_root=<empty folder>` and the new-game route.

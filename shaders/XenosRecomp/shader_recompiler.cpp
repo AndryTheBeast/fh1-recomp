@@ -198,6 +198,8 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         fullFetchRounded = instr.isIndexRounded;
         fullFetchAddress = address;
         fullFetchIndexVar.clear();
+        // FH1: r0 is the vertex index only until a declared fetch writes it (see r0FetchWritten below).
+        fullFetchR0Fetched = instr.srcRegister == 0 && ((r0FetchWritten >> (instr.srcSwizzle & 3)) & 1) != 0;
     }
 #endif
 
@@ -234,7 +236,18 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
     // bones from a stream at bone index + frame offset) cannot be a vertex attribute, declared or not: it is read
     // from memory like the undeclared streams. Fetches indexed by r0 stay attributes (the billboards use r0.y =
     // index / 4 and the renderer repeats their vertices).
-    const bool computedIndex = haveFullFetch && fullFetchSrc != 0;
+    // r0 itself is a computed index once a declared fetch has written the component used: the characters with a
+    // skeleton fetch their four bone numbers into r0, then four bones at r0.x, r0.y, r0.z and r0.w. The renderer
+    // applies the same rule (ComputeEntry, r0_fetched).
+    const bool computedIndex = haveFullFetch && (fullFetchSrc != 0 || fullFetchR0Fetched);
+    if (findResult != vertexElements.end() && instr.dstRegister == 0)
+    {
+        for (uint32_t i = 0; i < 4; i++)
+        {
+            if (getDestSwizzle(instr.dstSwizzle, i) != FetchDestinationSwizzle::Keep)
+                r0FetchWritten |= 1u << i;
+        }
+    }
     if (findResult != vertexElements.end() && computedIndex)
     {
         // Direct3D fills a declared fetch's stream, stride, offset and format when the game draws, so the shader
@@ -258,7 +271,10 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         print("fh1FetchRanked({}, {}, {}, {})", rankFull, rankOwn, latchIndex(),
               fullFetchRounded ? "true" : "false");
         out += '.';
-        printDstSwizzle(instr.dstSwizzle, true);
+        // The result is already in the order of the destination: Direct3D writes the swizzle when it binds the
+        // declaration, and fh1FetchRanked takes it from the renderer (the skeletons' 16-bit bones were read with
+        // their halves swapped through the swizzle of the disc).
+        printDstSwizzle(instr.dstSwizzle, false);
         out += ";\n";
         printDstSwizzle01(instr.dstRegister, instr.dstSwizzle);
         closeSiWritesPredicate(markPredicate);

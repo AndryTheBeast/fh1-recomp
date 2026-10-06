@@ -12,6 +12,51 @@ plan changed that night: the other fixes of this list wait; next is the offline 
 per Swap 21.0-21.2 ms). The user saw the body fix and the first tyre fix in screenshots ("the tyre seems a little
 too upwards, even going inside the rim": fixed after that); nobody has driven this build yet.
 
+## After pre-release 1: flat ground and missing characters (eleventh session, 2026-10-06)
+
+Two faults fixed, both found from the logs before any capture. **Not yet in a release** (pre-release 2 needs the
+user's yes); the user has not yet looked at the fixed build.
+
+1. **Flat brown ground on the new game's first drive: only on a first run of an installed copy.** The developer's
+   build showed gravel and grass at the spot, and so did the installed copy at its second start. The library an
+   installer builds from the disc lacks the vertex shaders Direct3D rewrites at run time (42 in the developer's
+   library); a first run makes them on the PC, about half a second each, and until 2026-10-06 the draws that
+   needed one were skipped meanwhile. The game paints that strip of ground once, when the drive loads: skipped
+   then, flat for the whole session. The five shaders only the installed copy had were checked first and are
+   innocent (given to the developer's build: ground still right); so is cause 317 (same count on both). **Fix:
+   the ring waits for the shader** (`extra_shaders::Wait`, at most `--fh1_native_extra_shaders_wait_ms`, 20000;
+   0 = the old behaviour), the tools run at normal priority while it waits. Test: developer's exe with a
+   disc-only library, the tools and an empty `shaders_extra`: 39 made, none failed, each taken in within the same
+   half second it was asked for, ground textured along the whole drive. This is also the user's rule "a stutter
+   is better than an object that shows late" applied to shaders.
+2. **The animal and the presenter of the opening, the driver, the people of the festival were not drawn** (cause
+   317, 208 draws in the opening and more than 10,000 at the festival; on every build, not only installed ones).
+   They are characters with a skeleton: VS n1376 (`v_85652bc393548597`) fetches four bone numbers into r0, then
+   four bones from stream 94 at r0.x, r0.y, r0.z and r0.w. Translator and renderer took "indexed by r0" for
+   "indexed by the vertex number". **Rule now, on both sides: r0 is the vertex number only until a declared fetch
+   writes the component used** (`r0FetchWritten` in `shader_recompiler.cpp`, `r0_fetched` in `ComputeEntry`);
+   after that the fetch is read from memory like the crowd's bones (`fh1FetchRanked`). Second gap: Direct3D
+   turns the later fetches of a stream into mini fetches, but the shader of the disc has them all as full
+   fetches, each looking up its own stream: a mini fetch's rank now gets the place of its full fetch's stream
+   (`FetchMemory::rank_full`). Three shaders of 3,871 changed (`v_42e8d3a5700e01e2`, `v_85652bc393548597`,
+   `v_af9687216af8d3bf`). **Third gap, found because the user saw the deer scrambled with the first two closed:
+   Direct3D also writes each fetch's destination swizzle when it binds the declaration** (a 16-bit bone format
+   comes out as y x w z, the 16_16 one lands in x, y, z or w depending on the bone), and the shader of the disc
+   does not have it. `g_FetchRankParam` now carries the patched swizzle (bits 20-31; stride and offset shrank to
+   6 bits each, cause 318 beyond 63 words) and `fh1FetchRanked` returns the value already in the destination's
+   order. That touches all 47 shaders that call it (the crowd's too): only those were recompiled and the library
+   repacked. Result on the new-game route: 0 draws rejected (was 206-213), the driver sits in the car, the birds
+   fly, and the deer of the opening has the emulated GPU's shape (`build_logs\test-deerN-20261006-112911-108s.png`
+   against `test-deerE-20261006-113111-105s.png`). The presenter and the festival's people: the user checks.
+3. **Shaders saved by another version are thrown away**: `shaders_extra\version.txt` ("2"); a folder without it
+   or with another number loses its `.bin` / `.spv` files at the start and they are made again. Needed because a
+   copy installed from pre-release 1 holds shaders of the old translator.
+
+Still open from that session's logs: `v_39E8051E5F332A24` (294 words) could not be translated on the PC (seen
+once, at the festival, with the old tools: try again with the new ones); the Montano Plains ground and the
+upside-down scenery have not been looked at (the first may be the same first-run fault: ask the user whether it
+is still there at a second start). No issue was open on GitHub on 2026-10-06.
+
 ## Pre-release 1 is published (tenth session, 2026-10-06)
 
 **`v0.1.0-pre1` is on GitHub** (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1, commit

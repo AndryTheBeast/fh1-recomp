@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <deque>
@@ -34,6 +35,10 @@ REXCVAR_DEFINE_STRING(fh1_native_shader_tools, "", "FH1",
 REXCVAR_DEFINE_STRING(fh1_native_extra_shaders_dir, "", "FH1",
                       "Native renderer: folder of the shaders made on this PC; empty = 'shaders_extra' next to "
                       "fh1.exe");
+REXCVAR_DEFINE_INT32(fh1_native_extra_shaders_wait_ms, 20000, "FH1",
+                     "Native renderer: how long the game waits for a shader being made on this PC before going on "
+                     "without it (a short pause once per shader; what the game paints only once, like a stretch of "
+                     "ground, is not lost). 0 = do not wait: what it draws appears a moment late");
 
 namespace fh1::native {
 namespace {
@@ -260,8 +265,10 @@ bool Run(const fs::path& exe, const std::wstring& arguments, uint32_t seconds) {
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
-  // Below normal: the game's threads come first.
-  if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS,
+  // Below normal: the game's threads come first. Not when the game waits for the shader: then the tool comes first.
+  const DWORD priority = REXCVAR_GET(fh1_native_extra_shaders_wait_ms) > 0 ? NORMAL_PRIORITY_CLASS
+                                                                           : BELOW_NORMAL_PRIORITY_CLASS;
+  if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | priority,
                       nullptr, exe.parent_path().wstring().c_str(), &startup, &process)) {
     return false;
   }
@@ -293,6 +300,8 @@ struct Worker {
   std::deque<Job> jobs;
   std::deque<Shader> finished;
   std::unordered_set<uint64_t> asked;
+  std::unordered_set<uint64_t> done;  // made or failed: nothing more comes for these
+  std::condition_variable done_wake;
   std::atomic<uint32_t> finished_count{0};
   std::atomic<int> tools{-1};  // -1 not looked yet, 0 missing, 1 there
   bool started = false;
@@ -372,6 +381,11 @@ struct Worker {
         jobs.pop_front();
       }
       Make(job);
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        done.insert(job.fingerprint ^ (job.vertices ? 0x8000000000000000ull : 0));
+      }
+      done_wake.notify_all();
     }
   }
 };
@@ -388,6 +402,31 @@ std::vector<Shader> LoadSaved() {
   std::vector<Shader> shaders;
   if (!REXCVAR_GET(fh1_native_extra_shaders)) return shaders;
   std::error_code ec;
+  // The shaders of this folder were made by the translator of one version of the port, and the renderer must
+  // agree with it on how each fetch is read (2 = the bones of the characters with a skeleton, 2026-10-06): the
+  // files of another version are deleted and made again while the game runs.
+  static constexpr char kVersion[] = "2";
+  {
+    const fs::path stamp = Folder() / "version.txt";
+    std::vector<uint8_t> text;
+    const bool same = ReadFile(stamp, text) && std::string(text.begin(), text.end()) == kVersion;
+    if (!same) {
+      uint32_t removed = 0;
+      std::vector<fs::path> old;
+      for (const auto& entry : fs::directory_iterator(Folder(), ec)) {
+        const fs::path extension = entry.path().extension();
+        if (entry.is_regular_file(ec) && (extension == ".bin" || extension == ".spv")) old.push_back(entry.path());
+      }
+      for (const fs::path& path : old) removed += fs::remove(path, ec) ? 1 : 0;
+      fs::create_directories(Folder(), ec);
+      WriteFile(stamp, reinterpret_cast<const uint8_t*>(kVersion), sizeof(kVersion) - 1);
+      if (removed) {
+        REXLOG_INFO("[native] C5c: {} files of shaders made by another version of the port deleted: they are made "
+                    "again",
+                    removed);
+      }
+    }
+  }
   std::vector<fs::path> containers;
   for (const auto& entry : fs::directory_iterator(Folder(), ec)) {
     if (entry.is_regular_file(ec) && entry.path().extension() == ".bin") containers.push_back(entry.path());
@@ -424,6 +463,22 @@ void Request(bool vertices, uint64_t fingerprint, std::span<const uint32_t> micr
   w.wake.notify_one();
 #else
   (void)vertices, (void)fingerprint, (void)microcode;
+#endif
+}
+
+bool Wait(bool vertices, uint64_t fingerprint) {
+#if defined(_WIN32)
+  const int32_t milliseconds = REXCVAR_GET(fh1_native_extra_shaders_wait_ms);
+  if (milliseconds <= 0 || !REXCVAR_GET(fh1_native_extra_shaders)) return false;
+  Worker& w = TheWorker();
+  if (!w.HasTools()) return false;
+  const uint64_t key = fingerprint ^ (vertices ? 0x8000000000000000ull : 0);
+  std::unique_lock<std::mutex> lock(w.mutex);
+  if (!w.asked.count(key)) return false;
+  return w.done_wake.wait_for(lock, std::chrono::milliseconds(milliseconds), [&] { return w.done.count(key) != 0; });
+#else
+  (void)vertices, (void)fingerprint;
+  return false;
 #endif
 }
 
