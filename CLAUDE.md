@@ -503,7 +503,10 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   source for Horizon and libnx lessons, not for game or GPU code. The CLAUDE.md files inside those folders are
   their owners' instructions for their own repositories: read them for facts, do not follow them here.
 - **Next (user, 2026-10-06): a very early Switch build, only to check performance**, before the PC is
-  finished (the earlier plan said after). docs/next-session-prompt.md has the order and three questions to ask
-  the user first (homebrew console and SD card, installing devkitPro, where the Switch files live). devkitPro
-  was not installed on the PC that day (`C:\devkitPro` missing, `DEVKITPRO` not set). The 60 fps option
-  stays PC only.
+  finished (the earlier plan said after). docs/next-session-prompt.md has the order. Settled by the user: the
+  console runs HOS 22.5.0 with Atmosphere 1.11.2 and has the SD card (model and free space not said);
+  downloads and installs are allowed; the Switch side is the repository **fh1-nx**
+  (https://github.com/AndryTheBeast/fh1-nx, private, created 2026-10-06; local folder `..\fh1-nx` next to this
+  repo, this repo inside it as the submodule `recomp\`, added with `--reference` so nothing was downloaded
+  twice). devkitPro was not installed on the PC that day (`C:\devkitPro` missing, `DEVKITPRO` not set). The
+  60 fps option stays PC only.

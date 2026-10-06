@@ -321,7 +321,7 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
 - Scripted autoplay with route replay: driving tests are done by hand
 - Paused experiments on the emulated GPU: `docs/history/native-render-targets.md`
 
-## Later — Nintendo Switch (separate repository)
+## Later — Nintendo Switch (separate repository: fh1-nx)
 
 Started from this repo once PC is done (model: GoatHonks' nfsc-nx, see "Other projects to borrow from"). The Tegra X1 has ~20-50x less GPU and much slower CPU
 cores than the Legion Go, so it needs the native renderer, the pre-translated shaders, no CPU
@@ -330,9 +330,10 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
 
 - [ ] **An early build only to measure speed (user, 2026-10-06: the next session)**: an NRO that starts and
       shows the game, however slowly, with StevensND's and GoatHonks' Switch fixes taken where they fit;
-      frames per second and where the time goes. Not for playing, not published. The questions to settle
-      first (a homebrew console, installing devkitPro, branch or separate repository) are in
-      docs/next-session-prompt.md
+      frames per second and where the time goes. Not for playing, not published. Settled by the user that
+      day: the console runs HOS 22.5.0 with Atmosphere 1.11.2 and has the SD card; downloads and installs
+      are allowed; the Switch files live in the new repository **fh1-nx** (private for now, fh1-recomp as
+      its submodule `recomp/`, local folder `..\fh1-nx`). Order: docs/next-session-prompt.md
 - [ ] Build with devkitA64 and the Horizon layer in `sdk/`
 - [ ] Memory map, threads, audio out
 - [ ] Native renderer and shader library on the console

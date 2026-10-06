@@ -34,16 +34,22 @@ What is known before starting:
   Switch's chip is 20 to 50 times weaker. GoatHonks' Carbon, a lighter game, runs at 18-25 fps there after a
   lot of tuning. A slideshow is an acceptable result for this session: the numbers are the goal.
 
-Ask me these first, before anything else (the plan depends on them):
+My answers of 2026-10-06 (settled, do not ask again):
 
-1. Do I have a Switch that runs homebrew (custom firmware), and which model? Is there an SD card with about
-   10 GB free? If I have no such console, say plainly what can still be learned without one (an emulator on the
-   PC tells little about speed).
-2. May you install devkitPro (devkitA64 + libnx) and, if the graphics driver must be built, MSYS2? Say the
-   size of each download first: I am on a phone hotspot.
-3. Where should the Switch files live? CLAUDE.md says the Switch port will be a separate repository started
-   from this one once the PC is done. For an early speed test I suggest a branch of this repository
-   (`switch-early`), nothing published; tell me the choices and what you recommend, I decide.
+1. **The console**: my Switch runs HOS 22.5.0 with Atmosphere 1.11.2 (custom firmware, homebrew works) and I
+   have the SD card. Not said yet: which model it is (the first one, the revised one, Lite or OLED) and how
+   much is free on the card (about 10 GB are needed): ask me these two once, at the start. Check that the
+   devkitPro / libnx and Mesa versions you take work on that firmware.
+2. **Downloads**: yes, you can download and install anything (devkitPro with devkitA64 and libnx, MSYS2, Rust,
+   the Vulkan SDK if needed). I am on a phone hotspot, so still say the size before a large one.
+3. **Where the Switch files live**: a new repository, **fh1-nx** (https://github.com/AndryTheBeast/fh1-nx,
+   private for now; local folder `FH1-recomp\fh1-nx`). It is laid out like GoatHonks' nfsc-nx: it holds only
+   what the Switch needs and the PC does not, and takes fh1-recomp in as the git submodule `recomp\`. Today
+   it has a README, the license, ignore rules and the submodule. Shared fixes (SDK, app code, renderer) go into
+   fh1-recomp first, are checked on the PC, then reach the Switch by moving the submodule. Switch-only files
+   (toolchain file, NRO build, Mesa patch, SD package tools, Switch documents) go into fh1-nx; the Switch
+   pieces fh1-recomp inherited from nfsmw-nx (`tools\switch`, `mesa`, `docs\nfsmw-nx`) stay where they are
+   until you tell me the plan for them. It stays private until I say otherwise.
 
 Then do it in this order:
 
@@ -87,10 +93,10 @@ Rules:
 * Tell me when a build is ready. I must not start the game while a build is running, and you cannot build
   while my game is open: check it with a command that prints "running" or "closed". Don't edit sources while a
   build is running, and never wait with an open-ended loop.
-* Ask before any download and say its size. Nothing is installed on the PC without my yes.
+* Downloads and installs are allowed (my yes of 2026-10-06); say the size before a large one.
 * Write patch scripts to a file first, and keep a document's line endings when a script rewrites it.
 * Nothing is published (no release, no tag, no upload) without my yes at that moment. Releases are named
   "Alpha - <version>" with tag `alpha-<version>`. A Switch build is not published at all until I say so.
-* Commit and push when something works (to the place I chose in question 3), and keep the status document,
-  ROADMAP.md and CLAUDE.md up to date.
+* Commit and push when something works (shared code to fh1-recomp, Switch-only files to fh1-nx), and keep
+  the status document, ROADMAP.md, CLAUDE.md and fh1-nx's README up to date.
 * End with a summary of what you did and what is still open, plus a prompt for the session after.
