@@ -468,7 +468,8 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   refreshes: the option runs the guest refresh at 120 Hz (`fh1/src/fh1_fps60.cpp`; method and hook places from
   pinyon-shift, same default.xex, BSD 3-Clause, credited in THIRD_PARTY_NOTICES.md). The log's `[fps60]` line
   (every 10 s, on or off) gives simulation steps a second and game seconds per real second. The Legion Go
-  reaches 32-40 fps driving with it (GPU about 20 ms a frame).
+  reaches 32-40 fps driving with it (GPU about 20 ms a frame). User, same day: the PC version will have the
+  60 fps patch, the Switch port will not (it keeps the game's 30).
 - Code in the middle of a game function: `[[midasm_hook]]` at the end of `fh1/overrides.toml` (address, name,
   registers), the function `void Name(PPCRegister& r7, ...)` in the app with C++ linkage; it needs the code
   generator (the long build). A game function takes one `REX_HOOK_RAW` only, and `fh1_d3d_census.cpp` already

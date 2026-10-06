@@ -336,6 +336,8 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
       shaders in the form its GPU driver takes, and the full pipeline list of the PC item above built at
       install time or at first boot, never during play
 - [ ] Performance on the console
+- No 60 fps on the Switch (user, 2026-10-06): `--fh1_fps60` is for the PC version only; the Switch port keeps
+  the game's 30
 
 ## Other projects to borrow from
 
@@ -447,3 +449,4 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           double-size scene) first, then the processor side (40-50 fps with `--fh1_native_ssaa=false`, which
           the user finds too rough to use)
     - [ ] Only if the user asks: the option in the installed copy (a second launcher or a setting)
+    - User, 2026-10-06: the PC version will have the 60 fps patch; the Switch port will not

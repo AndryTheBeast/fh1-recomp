@@ -6,7 +6,7 @@ Where we are: `--fh1_fps60` exists and is off by default (2026-10-06). It makes 
 right (the log's `[fps60]` line says 1.000 game seconds per real second). On my Legion Go it gives 50-58 fps
 in the opening cutscene and 32-40 while driving, because the graphics chip needs about 20 ms per frame and
 60 needs 16.7. Without the smooth edges it reaches 40-50, and I said that picture looks bad: smooth edges
-stay on.
+stay on. My decision of 2026-10-06: the PC version will have the 60 fps patch, the Switch port will not.
 
 Start by asking me what I saw when I drove with it (I start it with `run_fh1.bat --fh1_fps60=true`):
 speedometer and race timer against a stopwatch, the festival's crowd and people, traffic, particles, buying a
