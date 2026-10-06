@@ -359,5 +359,17 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   later, `fh1_native_read_one_off_wait_texels`: a measured limit, see the status document).
 - Before fixing a native-only fault in something the game reads back, look for the same fault in the emulated
   GPU's history (its log lines and SDK comments): the photos had been fixed there five days earlier.
+- 2026-10-06, eighth session: the offline pipeline list for the PC, steps 1 and 2 of 5 (the status document's
+  "Offline pipeline list" has the plan, the numbers and what is left). The list ships as
+  `fh1/data/fh1_pipelines.nfpl` and grows by merging what the user plays (`tools/fh1_pipelines.py merge`); an
+  unknown pipeline is compiled off the ring (`fh1_native_pipelines_background`).
+- A "fresh install" test must set the graphics driver's own cache aside too (`tools/fresh_pc_test.ps1`): with only
+  our cache file moved away, 401 "new" pipelines took 0.6 ms each and the run proved nothing.
+- Before saying the game is closed, print an explicit word for both cases: an empty `Get-Process` line was read as
+  "closed" once while the user was playing (a guard in the build command caught it).
+- The unattended route depends on where the user's save starts: after the user plays, look at a shot before
+  comparing pictures (on 2026-10-06 the save moved from the festival at night to a highway by day).
+- The first pre-release is a Windows GUI installer with a pre-built fh1.exe (the user's decision, 2026-10-06), not
+  source-only: ROADMAP.md, "Maybe later".
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.

@@ -1,6 +1,7 @@
 # Native renderer: where it stands and what to fix next
 
-Read this after CLAUDE.md. It is the starting point for the next session. **State as of 2026-10-06, seventh
+Read this after CLAUDE.md. It is the starting point for the next session. **Eighth session (2026-10-06): the
+offline pipeline list for the PC, steps 1 and 2 of 5: see "Offline pipeline list" just below.** State as of 2026-10-06, seventh
 session: the photos of a saved car are right** (item 0b, see "What was fixed on 2026-10-06" below). **The user's
 plan changed that night: the other fixes of this list wait; next is the offline shader library for the PC
 (ROADMAP.md, Stage 3: tell the plan before building it), then the first pre-release.** State before that,
@@ -10,6 +11,67 @@ plan changed that night: the other fixes of this list wait; next is the offline 
 (58 s: 5/16/41/91/122 on both renderers; 100 s: 5/12/40/99/170 native, 5/12/40/98/176 emulated; 30 fps, real GPU
 per Swap 21.0-21.2 ms). The user saw the body fix and the first tyre fix in screenshots ("the tyre seems a little
 too upwards, even going inside the rim": fixed after that); nobody has driven this build yet.
+
+## Offline pipeline list (eighth session, 2026-10-06)
+
+The goal (user): nothing is compiled while playing, on a fresh install too, and never again a frozen loading
+screen. The shaders were already translated offline (`fh1_shaders.nfsp`); what was built while playing is the
+pipeline of each shader pair with its state. The plan the user agreed to has five steps:
+
+1. **Done: a list shipped with the port.** `fh1/data/fh1_pipelines.nfpl` (796 pipelines, 337 KB: state keys and
+   the fingerprints of the Xbox shader code, no game data, no driver cache) is copied next to fh1.exe by the
+   build; `LoadListPipelines` adds its records to this PC's list and the existing prewarm threads build them
+   during the logo videos. `tools/fh1_pipelines.py info|merge` reads and merges lists (a PC's
+   `cache\fh1_native_pipelines.bin` or a `.nfpl`). The list cannot be worked out from the shaders alone (the state
+   is chosen by the game's code): it grows by playing. After the user plays: `python tools/fh1_pipelines.py merge
+   fh1\data\fh1_pipelines.nfpl <a copy of the old one> fh1\out\win-release\cache\fh1_native_pipelines.bin`, build,
+   commit. The record sizes (80 and 424 bytes) are asserted in the renderer; a change means recording again.
+2. **Done: the background compiler** (`fh1_native_pipelines_background`, on by default; `DeferToBackground`). A
+   pipeline no list knows is compiled by up to 4 helper threads and its draw is left out until it is ready, but
+   only in passes drawn again every frame (scene with depth, shadows, reflection). Full-screen rectangles and
+   everything else (depth-less or small targets: liveries, car photos, the booth's light probe) are still
+   compiled on the ring, because a draw left out there would not heal. Log line `C6 background pipelines`.
+3. To do: a progress display, and holding the game before the title screen when the list is not finished (today
+   it only fits because the logo videos last about 35 s). The game must not simply be made to wait: a frame of
+   3.2 s freezes it for good.
+4. To do: the full list. The user's tour: roads of every area by day and by night, one race of each kind, the
+   garage, the paint shop, the upgrade shop, buying a car, the map, first-person view, a crash. One 20-minute
+   session of the user added 200 pipelines (596 to 796), so it is far from complete.
+5. To do: the hand check on a fresh cache, then the Switch (the list, the tool and the background compiler are
+   reused as they are; the first boot there compiles everything once).
+
+**How a fresh PC is imitated:** moving our cache file away is not enough, the AMD driver keeps its own cache
+(`%LOCALAPPDATA%\AMD\VkCache`, 384 MB) and answers in 0.3-0.6 ms per pipeline. `tools/fresh_pc_test.ps1` sets both
+aside for one unattended run and puts both back (the user agreed to it on 2026-10-06; the driver's folders made by
+the tests are kept as `VkCache.test-<stamp>`, never deleted).
+
+Numbers (Legion Go, unattended route; logs `build_logs\test-m0*`, `test-s1*`, `test-s2*`):
+
+| Run | Known at start | Built before the title | Built in a frame | Longest frame after boot |
+| --- | --- | --- | --- | --- |
+| Before, the user's own play logs of 2026-10-05 | 472-562 | 0.2 s (driver cache) | 62-224 new at 40-104 ms each | 2.9-6.5 s |
+| Step 1, fresh PC (list of 596) | 596 | 15.7 s, 563 compiled, 163 ms each on 6 threads | 0 new | 217 ms (loading) |
+| Step 1, the user's drive to the outpost and a race | 596 | 0.2 s | 146 new at 46 ms each | 1.0 s |
+| Step 2, fresh PC (list of 796) | 796 | 22.5 s, 749 compiled | 0 new | 114 ms |
+| Step 2, fresh PC, shipped list hidden (stress test) | 0 | nothing | 206 off the ring (44 s of compiling), the rest on it | 1.8 s, no freeze, picture complete after |
+
+Open points: in the stress test the frames of 1.0-1.8 s are the pipelines still compiled on the ring (rectangles
+and one-off targets) while loading; 18 background jobs were never asked for again and so never reached the list;
+the user's save now starts on a highway in daylight (not the festival at night), so the unattended route's X at
+60 s and A at 74 s no longer reach the paint shop: ask the user to park at the festival before the next picture
+check of the booth, or pass only the boot keys. Picture at the new start, 53 s: 13/51/110/139/214 native,
+14/47/107/136/212 emulated.
+
+**Faults the user met while recording (for after the first pre-release, ROADMAP Stage 3):** ground not drawn at
+the Montano Plains outpost and on the road east of it; in a mountain race, hillside patches showing an
+upside-down scene (the look of the mirrored reflection picture). Screenshots in `build_logs\reference\user-*-20261006*`.
+They were seen on the step 1 build, before the background compiler existed.
+
+**The first pre-release (user, 2026-10-06): not source-only.** A simple Windows GUI installer, like StevensND's
+installer page for nfsmw-nx: it downloads the pre-built fh1.exe (the user's decision), lets the user choose their
+ISO and a folder, extracts the disc and builds the shader library there. Open: the synth vertex shaders
+(`build_logs\shaders\synth*`) come from the running game, not the disc; unsigned programs are blocked by Smart App
+Control.
 
 - **0. Paint booth: DONE in the sixth session** (see "What was fixed on 2026-10-05, sixth session" below). Left
   of it: **car damage has not been looked at** (same undeclared streams; ask the user to hit something).

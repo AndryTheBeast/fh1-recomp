@@ -83,6 +83,7 @@ static const uint32_t kSpirvGlowSoft[1] = {0};
 #include <set>
 #include <string>
 #include <system_error>  // the bind thread
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <deque>
@@ -512,6 +513,12 @@ REXCVAR_DEFINE_BOOL(fh1_native_diag_reuse, true, "FH1",
 REXCVAR_DEFINE_INT32(fh1_native_prewarm_threads, -1, "FH1",
                      "Native renderer: threads that walk the pipeline prewarm list at once before the ordered walk "
                      "(-1 = half the logical cores, at most 6; 0 = the single ordered walk, as before)");
+REXCVAR_DEFINE_BOOL(fh1_native_pipelines_background, true, "FH1",
+                    "Native renderer: a pipeline no list knows is compiled by helper threads and its draw is "
+                    "left out until it is ready (the object appears a few frames late) instead of stopping "
+                    "the frame for 40-160 ms. Only in the passes drawn again every frame (scene, shadows, "
+                    "reflection); full-screen rectangles and one-off targets are compiled on the ring as "
+                    "before. false = everything on the ring, as before.");
 REXCVAR_DEFINE_BOOL(fh1_native_pipelines_prewarm, true, "FH1",
                     "Native renderer (26/09, build 186): at startup, a lowest-priority thread re-creates in the "
                     "Vulkan cache the pipelines the ring created in earlier sessions (their list is in "
@@ -12746,6 +12753,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       Notify(50, "pipeline fingerprint collision");
       return VK_NULL_HANDLE;
     }
+    if (DeferToBackground(fingerprint, key, entry, p)) {
+      return VK_NULL_HANDLE;  // FH1: being compiled off the ring; this draw waits for it
+    }
     const VkShaderModule vs = ModuleOf(*p.vs);
     VkShaderModule ps = VK_NULL_HANDLE;
     if (key.ps && (key.specialization & kSpecGlowNatural)) {
@@ -13139,6 +13149,284 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     ++ring_a_list_;
   }
 
+  // --- Pipelines created off the ring (the prewarm threads and the background compiler) ----------
+  // One thread's own shader modules and render passes: the same SPIR-V, variants and fallbacks PipelineDe
+  // chooses on the ring, so what is compiled here is what the ring then finds in the Vulkan cache.
+  struct ToolsOffRing {
+    explicit ToolsOffRing(DrawsVulkanImpl& owner) : self(owner) {}
+    DrawsVulkanImpl& self;
+    std::unordered_map<uint64_t, VkShaderModule> modules;  // (variant << 32) | number
+    std::unordered_map<uint64_t, VkRenderPass> passes;     // by formats
+
+    VkShaderModule Create(const uint32_t* spirv, size_t bytes) {
+      VkShaderModuleCreateInfo info{};
+      info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+      info.codeSize = bytes;
+      info.pCode = spirv;
+      VkShaderModule module_handle = VK_NULL_HANDLE;
+      if (self.dfn_.vkCreateShaderModule(self.device_, &info, nullptr, &module_handle) != VK_SUCCESS) {
+        module_handle = VK_NULL_HANDLE;
+      }
+      return module_handle;
+    }
+    // ModuleOf: the library's SPIR-V as is.
+    VkShaderModule Normal(const EntryShader& e) {
+      auto it = modules.find(e.number);
+      if (it == modules.end()) {
+        it = modules.emplace(e.number, Create(e.shader->spirv.data(), e.shader->spirv.size() * sizeof(uint32_t))).first;
+      }
+      return it->second;
+    }
+    // The pixel shader PipelineDe would choose, in the same order: the bright pass variants (ModuleVariant),
+    // without color writes (ModuleOnlyAlpha) and with early tests (ModuleZEarly); the latter two with the same
+    // fallback: if it cannot be pruned or patched, the normal one.
+    VkShaderModule Pixel(const KeyPipeline& key, const EntryShader& e) {
+      const uint32_t spec = key.specialization;
+      const uint32_t variant = (spec & kSpecGlowNatural) ? 1
+                                : (spec & kSpecGlowSoft) ? 2
+                                : (spec & kSpecOnlyAlpha) ? 3
+                                : (spec & kSpecZEarly)    ? 4
+                                                          : 0;
+      if (variant == 0) {
+        return Normal(e);
+      }
+      const uint64_t key_module = (uint64_t(variant) << 32) | (variant <= 2 ? 0xFFFFFFFFull : uint64_t(e.number));
+      auto it = modules.find(key_module);
+      if (it == modules.end()) {
+        VkShaderModule module_handle = VK_NULL_HANDLE;
+        if (variant == 1) {
+          module_handle = Create(kSpirvGlowEnergy, sizeof(kSpirvGlowEnergy));
+        } else if (variant == 2) {
+          module_handle = Create(kSpirvGlowSoft, sizeof(kSpirvGlowSoft));
+        } else if (variant == 3) {
+          uint32_t removed = 0;
+          const std::vector<uint32_t> pruned = PruneWritesOfColor(e.shader->spirv, removed);
+          if (!pruned.empty()) {
+            module_handle = Create(pruned.data(), pruned.size() * sizeof(uint32_t));
+          }
+        } else {
+          const char* reason = "";
+          const std::vector<uint32_t> patched = WithTestsEarly(e.shader->spirv, reason);
+          if (!patched.empty()) {
+            module_handle = Create(patched.data(), patched.size() * sizeof(uint32_t));
+          }
+        }
+        it = modules.emplace(key_module, module_handle).first;
+      }
+      if (it->second != VK_NULL_HANDLE || variant <= 2) {
+        return it->second;
+      }
+      return Normal(e);
+    }
+    VkRenderPass Pass(const KeyPipeline& key) {
+      const uint64_t key_pass = XXH3_64bits(key.formats, sizeof(key.formats));
+      auto it = passes.find(key_pass);
+      if (it == passes.end()) {
+        it = passes.emplace(key_pass, self.CreatePass(key.formats, kLoadRead)).first;
+      }
+      return it->second;
+    }
+    void Destroy() {
+      for (const auto& [key, module_handle] : modules) {
+        if (module_handle != VK_NULL_HANDLE) {
+          self.dfn_.vkDestroyShaderModule(self.device_, module_handle, nullptr);
+        }
+      }
+      for (const auto& [key, pass] : passes) {
+        if (pass != VK_NULL_HANDLE) {
+          self.dfn_.vkDestroyRenderPass(self.device_, pass, nullptr);
+        }
+      }
+      modules.clear();
+      passes.clear();
+    }
+  };
+
+  // One record, created as the ring would and destroyed at once (the Vulkan cache keeps what was compiled).
+  // Returns its kList* state; ns = how long the driver took. Any thread, with that thread's own tools.
+  uint8_t CreateOffRing(ToolsOffRing& tools, const ShadersNative& library, const RegisterPipeline& r, uint32_t eds,
+                        uint64_t& ns) {
+    ns = 0;
+    const EntryShader* vs = r.key.vs ? library.ByNumber(r.key.vs - 1) : nullptr;
+    const EntryShader* ps = r.key.ps ? library.ByNumber(r.key.ps - 1) : nullptr;
+    if (!vs || !vs->vertices || !vs->shader || vs->shader->fingerprint != r.fingerprint_vs ||
+        (r.key.ps && (!ps || ps->vertices || !ps->shader || ps->shader->fingerprint != r.fingerprint_ps))) {
+      return kListWithoutShader;
+    }
+    if (r.key.fill2 != eds) {
+      return kListOtherMode;
+    }
+    const VkShaderModule module_vs = tools.Normal(*vs);
+    const VkShaderModule module_ps = r.key.ps ? tools.Pixel(r.key, *ps) : VK_NULL_HANDLE;
+    const VkRenderPass pass = tools.Pass(r.key);
+    if (module_vs == VK_NULL_HANDLE || (r.key.ps && module_ps == VK_NULL_HANDLE) || pass == VK_NULL_HANDLE) {
+      return kListFailed;
+    }
+    EntryVertices entry;
+    for (uint32_t k = 0; k < r.n_attributes; ++k) {
+      const AttributeRegister& a = r.attributes[k];
+      entry.attributes.push_back({a.location, a.binding, VkFormat(a.format), a.offset});
+    }
+    for (uint32_t k = 0; k < r.n_bindings; ++k) {
+      entry.bindings.push_back({0, r.strides[k]});
+    }
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    uint32_t n_colors = 0;
+    const auto t0 = std::chrono::steady_clock::now();
+    const VkResult result = CreatePipelineVulkan(r.key, entry, module_vs, module_ps, pass, false, pipeline, n_colors);
+    ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count());
+    if (result != VK_SUCCESS || pipeline == VK_NULL_HANDLE) {
+      return kListFailed;
+    }
+    dfn_.vkDestroyPipeline(device_, pipeline, nullptr);
+    return kListPrewarm;
+  }
+
+  // The record of a pipeline as the ring asks for it (what goes in the list). False if it does not fit.
+  static bool RecordOf(const KeyPipeline& key, const EntryVertices& entry, const RequestDraw& p, RegisterPipeline& r) {
+    if (!p.vs || !p.vs->shader || (key.ps && (!p.ps || !p.ps->shader)) ||
+        entry.attributes.size() > RegisterPipeline::kMaxAttributes ||
+        entry.bindings.size() > RegisterPipeline::kMaxBindings) {
+      return false;
+    }
+    r.key = key;
+    r.fingerprint_vs = p.vs->shader->fingerprint;
+    r.fingerprint_ps = key.ps ? p.ps->shader->fingerprint : 0;
+    r.n_attributes = uint32_t(entry.attributes.size());
+    for (uint32_t k = 0; k < r.n_attributes; ++k) {
+      const AttributeVertices& a = entry.attributes[k];
+      r.attributes[k] = {a.location, a.binding, uint32_t(a.format), a.offset};
+    }
+    r.n_bindings = uint32_t(entry.bindings.size());
+    for (uint32_t k = 0; k < r.n_bindings; ++k) {
+      r.strides[k] = entry.bindings[k].stride;
+    }
+    return true;
+  }
+
+  /*
+   * FH1: the background compiler (fh1_native_pipelines_background). A pipeline that neither this PC's list nor
+   * the shipped one knows is compiled by the driver when the ring first asks for it: 40-160 ms each in the
+   * middle of a frame, and on a new road dozens arrive together (224 in one session of 2026-10-05, a frame of
+   * 6.5 s; after one frame of about 3.2 s the game stops sending commands for good). Here such a pipeline is
+   * compiled by helper threads instead, with CreateOffRing, and the ring leaves the draw out until it is ready
+   * (a few frames: the object appears late); then the ring creates it as usual and finds it in the Vulkan cache.
+   *
+   * Only where a missing draw heals by itself: the passes drawn again every frame (the scene with depth, the
+   * shadow maps, the reflection). Everything else is created on the ring as before: full-screen rectangles
+   * (a frame without its composite is a black flash) and the small or depth-less targets, where the game draws
+   * things once and keeps them (liveries, car photos, the booth's light probe).
+   */
+  struct JobBackground {
+    RegisterPipeline r;
+    std::atomic<bool> done{false};
+  };
+
+  // Ring only (PipelineDe, on a pipeline it does not have yet). True = leave this draw out for now.
+  bool DeferToBackground(uint64_t fingerprint, const KeyPipeline& key, const EntryVertices& entry,
+                         const RequestDraw& p) {
+    if ((key.fill & 1) || cache_pipelines_ == VK_NULL_HANDLE ||
+        !(category_pass_ == kGpuScene || category_pass_ == kGpuShadows || category_pass_ == kGpuReflection) ||
+        !REXCVAR_GET(fh1_native_pipelines_background)) {
+      return false;
+    }
+    // Already prewarmed from the list: the driver has it, creating it here is 0-2 ms.
+    if (const auto it = index_list_.find(fingerprint); it != index_list_.end()) {
+      const size_t j = it->second;
+      if (j < list_file_.size() && j < prewarm_until_.load(std::memory_order_acquire) &&
+          state_list_[j] == kListPrewarm) {
+        return false;
+      }
+    }
+    if (const auto it = background_.find(fingerprint); it != background_.end()) {
+      if (it->second->done.load(std::memory_order_acquire)) {
+        background_.erase(it);
+        ++background_ready_;
+        return false;  // compiled (or it could not be): the ring creates it now
+      }
+      ++background_left_out_;
+      return true;
+    }
+    const ShadersNative* library = LibraryActive();
+    auto job = std::make_shared<JobBackground>();
+    if (!library || !library->loaded() || layout_pipeline_ == VK_NULL_HANDLE || !RecordOf(key, entry, p, job->r)) {
+      return false;
+    }
+    {
+      std::lock_guard<std::mutex> lock(background_mutex_);
+      if (background_threads_.empty()) {
+        const uint32_t n = std::min<uint32_t>(4, std::max<uint32_t>(std::thread::hardware_concurrency(), 2) / 2);
+        try {
+          for (uint32_t t = 0; t < n; ++t) {
+            background_threads_.emplace_back([this] { LoopBackground(); });
+          }
+        } catch (const std::system_error&) {
+          // with the threads that did start; none = created on the ring as before
+        }
+        if (background_threads_.empty()) {
+          return false;
+        }
+      }
+      background_queue_.push_back(job);
+    }
+    background_wake_.notify_one();
+    background_.emplace(fingerprint, std::move(job));
+    ++background_started_;
+    ++background_left_out_;
+    return true;
+  }
+
+  void LoopBackground() {
+    rex::thread::set_current_thread_name("FH1 pipeline background");
+    ToolsOffRing tools(*this);
+    for (;;) {
+      std::shared_ptr<JobBackground> job;
+      {
+        std::unique_lock<std::mutex> lock(background_mutex_);
+        background_wake_.wait(lock, [this] { return background_stop_ || !background_queue_.empty(); });
+        if (background_stop_) {
+          break;
+        }
+        job = std::move(background_queue_.front());
+        background_queue_.pop_front();
+      }
+      uint64_t ns = 0;
+      if (const ShadersNative* library = LibraryActive(); library && library->loaded()) {
+        CreateOffRing(tools, *library, job->r, job->r.key.fill2, ns);
+      }
+      background_ns_.fetch_add(ns, std::memory_order_relaxed);
+      job->done.store(true, std::memory_order_release);
+    }
+    tools.Destroy();
+  }
+
+  void StopBackground() {
+    {
+      std::lock_guard<std::mutex> lock(background_mutex_);
+      background_stop_ = true;
+    }
+    background_wake_.notify_all();
+    for (std::thread& thread : background_threads_) {
+      if (thread.joinable()) {
+        thread.join();  // at most, as long as the pipeline being compiled takes
+      }
+    }
+    background_threads_.clear();
+  }
+
+  // Ring only, from ReportPrewarm (every 10 s): one line when the background compiler did anything.
+  void ReportBackground() {
+    if (background_started_ == background_reported_) {
+      return;
+    }
+    background_reported_ = background_started_;
+    REXLOG_INFO("[native] C6 background pipelines: {} met that no list knew, {} ready ({:.0f} ms of compiling off "
+                "the ring), {} still building; {} draws left out while they were built",
+                background_started_, background_ready_,
+                double(background_ns_.load(std::memory_order_relaxed)) / 1e6, background_.size(),
+                background_left_out_);
+  }
+
   // Ring only, on each submission: starts the thread once, as soon as the library is loaded.
   void TryPrewarm() {
     if (prewarm_decided_) {
@@ -13205,68 +13493,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     std::atomic<uint32_t> compiled_parallel{0};
     std::atomic<uint64_t> ns_compiled_parallel{0};
     const auto walk = [&](const bool parallel) {
-    std::unordered_map<uint64_t, VkShaderModule> modules;  // (variant << 32) | number
-    std::unordered_map<uint64_t, VkRenderPass> passes;       // by formats
-    const auto create = [&](const uint32_t* spirv, size_t bytes) {
-      VkShaderModuleCreateInfo info{};
-      info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-      info.codeSize = bytes;
-      info.pCode = spirv;
-      VkShaderModule module_handle = VK_NULL_HANDLE;
-      if (dfn_.vkCreateShaderModule(device_, &info, nullptr, &module_handle) != VK_SUCCESS) {
-        module_handle = VK_NULL_HANDLE;
-      }
-      return module_handle;
-    };
-    // ModuleOf: the library's SPIR-V as is.
-    const auto normal = [&](const EntryShader& e) {
-      auto it = modules.find(e.number);
-      if (it == modules.end()) {
-        it = modules.emplace(e.number, create(e.shader->spirv.data(), e.shader->spirv.size() * sizeof(uint32_t))).first;
-      }
-      return it->second;
-    };
-    // The pixel shader PipelineOf would choose, in the same order: the bright pass variants
-    // (ModuleVariant), without color writes (ModuleOnlyAlpha) and with early tests (ModuleZEarly); the
-    // latter two with the same fallback: if it cannot be pruned or patched, the normal one.
-    const auto pixel = [&](const KeyPipeline& key, const EntryShader& e) {
-      const uint32_t spec = key.specialization;
-      const uint32_t variant = (spec & kSpecGlowNatural) ? 1
-                                : (spec & kSpecGlowSoft) ? 2
-                                : (spec & kSpecOnlyAlpha)        ? 3
-                                : (spec & kSpecZEarly)       ? 4
-                                                                : 0;
-      if (variant == 0) {
-        return normal(e);
-      }
-      const uint64_t key_module = (uint64_t(variant) << 32) | (variant <= 2 ? 0xFFFFFFFFull : uint64_t(e.number));
-      auto it = modules.find(key_module);
-      if (it == modules.end()) {
-        VkShaderModule module_handle = VK_NULL_HANDLE;
-        if (variant == 1) {
-          module_handle = create(kSpirvGlowEnergy, sizeof(kSpirvGlowEnergy));
-        } else if (variant == 2) {
-          module_handle = create(kSpirvGlowSoft, sizeof(kSpirvGlowSoft));
-        } else if (variant == 3) {
-          uint32_t removed = 0;
-          const std::vector<uint32_t> pruned = PruneWritesOfColor(e.shader->spirv, removed);
-          if (!pruned.empty()) {
-            module_handle = create(pruned.data(), pruned.size() * sizeof(uint32_t));
-          }
-        } else {
-          const char* reason = "";
-          const std::vector<uint32_t> patched = WithTestsEarly(e.shader->spirv, reason);
-          if (!patched.empty()) {
-            module_handle = create(patched.data(), patched.size() * sizeof(uint32_t));
-          }
-        }
-        it = modules.emplace(key_module, module_handle).first;
-      }
-      if (it->second != VK_NULL_HANDLE || variant <= 2) {
-        return it->second;
-      }
-      return normal(e);
-    };
+    ToolsOffRing tools(*this);
     uint32_t done = 0, compiled = 0, sin_shader = 0, other_mode = 0, failed = 0;
     uint64_t ns_compiled = 0;
     const size_t n = list_file_.size();
@@ -13279,55 +13506,20 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         break;
       }
       const RegisterPipeline& r = list_file_[i];
-      uint8_t state = kListFailed;
-      const EntryShader* vs = r.key.vs ? library.ByNumber(r.key.vs - 1) : nullptr;
-      const EntryShader* ps = r.key.ps ? library.ByNumber(r.key.ps - 1) : nullptr;
-      if (!vs || !vs->vertices || !vs->shader || vs->shader->fingerprint != r.fingerprint_vs ||
-          (r.key.ps && (!ps || ps->vertices || !ps->shader || ps->shader->fingerprint != r.fingerprint_ps))) {
-        state = kListWithoutShader;
+      uint64_t ns = 0;
+      const uint8_t state = CreateOffRing(tools, library, r, prewarm_eds_, ns);
+      if (state == kListPrewarm) {
+        ++done;
+        if (ns >= kNsCompiled) {
+          ++compiled;
+          ns_compiled += ns;
+        }
+      } else if (state == kListWithoutShader) {
         ++sin_shader;
-      } else if (r.key.fill2 != prewarm_eds_) {
-        state = kListOtherMode;
+      } else if (state == kListOtherMode) {
         ++other_mode;
       } else {
-        const VkShaderModule module_vs = normal(*vs);
-        const VkShaderModule module_ps = r.key.ps ? pixel(r.key, *ps) : VK_NULL_HANDLE;
-        const uint64_t key_pass = XXH3_64bits(r.key.formats, sizeof(r.key.formats));
-        auto it_pass = passes.find(key_pass);
-        if (it_pass == passes.end()) {
-          it_pass = passes.emplace(key_pass, CreatePass(r.key.formats, kLoadRead)).first;
-        }
-        EntryVertices entry;
-        for (uint32_t k = 0; k < r.n_attributes; ++k) {
-          const AttributeRegister& a = r.attributes[k];
-          entry.attributes.push_back({a.location, a.binding, VkFormat(a.format), a.offset});
-        }
-        for (uint32_t k = 0; k < r.n_bindings; ++k) {
-          entry.bindings.push_back({0, r.strides[k]});
-        }
-        if (module_vs != VK_NULL_HANDLE && (!r.key.ps || module_ps != VK_NULL_HANDLE) &&
-            it_pass->second != VK_NULL_HANDLE) {
-          VkPipeline pipeline = VK_NULL_HANDLE;
-          uint32_t n_colors = 0;
-          const auto t0 = std::chrono::steady_clock::now();
-          const VkResult result =
-              CreatePipelineVulkan(r.key, entry, module_vs, module_ps, it_pass->second, false, pipeline, n_colors);
-          const uint64_t ns = uint64_t(
-              std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count());
-          if (result == VK_SUCCESS && pipeline != VK_NULL_HANDLE) {
-            dfn_.vkDestroyPipeline(device_, pipeline, nullptr);
-            state = kListPrewarm;
-            ++done;
-            if (ns >= kNsCompiled) {
-              ++compiled;
-              ns_compiled += ns;
-            }
-          } else {
-            ++failed;
-          }
-        } else {
-          ++failed;
-        }
+        ++failed;
       }
       if (parallel) {
         continue;
@@ -13342,16 +13534,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       prewarm_failed_.store(failed, std::memory_order_relaxed);
       prewarm_until_.store(i + 1, std::memory_order_release);
     }
-    for (const auto& [key, module_handle] : modules) {
-      if (module_handle != VK_NULL_HANDLE) {
-        dfn_.vkDestroyShaderModule(device_, module_handle, nullptr);
-      }
-    }
-    for (const auto& [key, pass] : passes) {
-      if (pass != VK_NULL_HANDLE) {
-        dfn_.vkDestroyRenderPass(device_, pass, nullptr);
-      }
-    }
+    tools.Destroy();
     if (parallel) {
       compiled_parallel.fetch_add(compiled, std::memory_order_relaxed);
       ns_compiled_parallel.fetch_add(ns_compiled, std::memory_order_relaxed);
@@ -13398,6 +13581,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       return;
     }
     prewarm_report_ = now;
+    ReportBackground();
     if (!prewarm_difference_ && ring_prewarmed_ >= 8 &&
         ring_prewarmed_slow_ * 2 >= ring_prewarmed_) {
       prewarm_difference_ = true;
@@ -13437,6 +13621,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   }
 
   void StopPrewarm() {
+    StopBackground();
     prewarm_stop_.store(true, std::memory_order_relaxed);
     if (prewarm_thread_.joinable()) {
       prewarm_thread_.join();  // at most, as long as the pipeline being compiled takes
@@ -14440,6 +14625,16 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   std::vector<RegisterPipeline> list_session_;          // this session's new ones
   uint32_t list_without_save_ = 0;
   std::vector<uint8_t> writer_list_;                 // under writer_mutex_
+  // The background compiler (DeferToBackground). background_ and the counters are the ring's.
+  std::unordered_map<uint64_t, std::shared_ptr<JobBackground>> background_;  // XXH3 of the key
+  std::mutex background_mutex_;
+  std::condition_variable background_wake_;
+  std::deque<std::shared_ptr<JobBackground>> background_queue_;  // under background_mutex_
+  std::vector<std::thread> background_threads_;
+  bool background_stop_ = false;                                 // under background_mutex_
+  std::atomic<uint64_t> background_ns_{0};
+  uint64_t background_started_ = 0, background_ready_ = 0, background_left_out_ = 0;
+  uint64_t background_reported_ = 0;
   std::thread prewarm_thread_;
   const ShadersNative* library_prewarm_ = nullptr;
   uint32_t prewarm_eds_ = 0;

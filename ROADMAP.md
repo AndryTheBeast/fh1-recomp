@@ -217,6 +217,12 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         3.2 s freezes the game). To do: record every pipeline a play-through needs (festival, roads, day and
         night, races, garage, paint shop, menus) into a list shipped next to the library, build all of them before
         the title screen with a progress display, and keep the driver's pipeline cache on disk between runs
+    - [x] A list shipped with the port (`fh1/data/fh1_pipelines.nfpl`, 796 pipelines; `tools/fh1_pipelines.py`):
+          a fresh PC builds it in 22.5 s during the logo videos and then meets 0 new ones on the recorded route
+    - [x] A pipeline no list knows is compiled off the ring and its draw waits (scene, shadows, reflection only)
+    - [ ] Progress display, and holding the game before the title screen when the list is not finished
+    - [ ] The full list: the user's tour (every area by day and night, each kind of race, garage, shops, map)
+    - [ ] Hand check on a fresh cache (`tools/fresh_pc_test.ps1` sets our file and the AMD driver's cache aside)
   - [ ] **After the first pre-release (user, 2026-10-06): the ground is not drawn at the Horizon Outpost of Montano
         Plains** (native renderer, at night, step 1 build of the shipped pipeline list, so before the background
         compiler existed): the road and the gravel in front of the stage are there, the ground under the tents and
@@ -292,7 +298,12 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
 
 ## Maybe later
 
-- [ ] Source-only pre-release (tag + install guide + known issues; users build from their own disc). **User,
+- [ ] **First pre-release as a Windows installer app (user, 2026-10-06; replaces "source-only")**: a simple GUI
+      like StevensND's installer page for nfsmw-nx: downloads the pre-built fh1.exe (the user's decision), the
+      user chooses their ISO and a folder, it extracts the disc and builds the shader library there. To solve:
+      the synth vertex shaders are not on the disc, unsigned programs and Smart App Control, install guide, known
+      issues, which renderer is the default, a tag
+- [ ] (old wording) Source-only pre-release (tag + install guide + known issues; users build from their own disc). **User,
       2026-10-06: this is the focus now**, after the offline shader library for the PC; the other native renderer
       fixes (night colors, races / garage / damage, Carbon clean-up, F3 viewer) wait
 - [ ] 60 fps unlock (needs a much faster renderer, and checking the game's timing at 60)
