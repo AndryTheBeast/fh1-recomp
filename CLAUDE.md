@@ -387,5 +387,11 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   and the binaries hold no path of the build PC (`-ffile-prefix-map` in fh1/CMakeLists.txt: source names in logs
   now start at `fh1-recomp/`). Test folder: `C:\Users\andre\Desktop\FH1-install-test` (+ `-saves` next to it for
   `--user_data_root`); never test an installed game on the user's real saves.
+  Steps 3 and 4 too: `installer\make_package.ps1` gathers `installer\out\package` (port + shader tools; it warns
+  when a file names this PC's user folder), Install copies it and builds the library (`ShaderLibrary.cs`, the
+  C# form of the Python scripts). `FH1Installer.exe --install ISO FOLDER` does all of it without the window.
+  A zip's entry count has 16 bits: `media\tracks\colorado\bin.zip` holds 230,057 files (the count says 33,449),
+  so a zip reader must walk the whole central directory. When several test windows open, say for each one
+  whose saves it uses (the user took a picture test on the real save for the empty-saves test).
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.

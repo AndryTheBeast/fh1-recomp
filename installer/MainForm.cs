@@ -221,9 +221,18 @@ public sealed class MainForm : Form {
     Cancel();
   }
 
-  // On the worker thread.
+  // From the worker thread: where the bar stands (0 to 1) and what is being done.
+  void Report(double fraction, string what) {
+    BeginInvoke((MethodInvoker)delegate {
+      progress_.Value = (int)Math.Max(0, Math.Min(1000, fraction * 1000));
+      if (!cancel_) stage_.Text = what;
+    });
+  }
+
+  // On the worker thread. The bar: the disc copy is its first quarter, the shaders the rest.
   void Work(string iso, string folder) {
     string error = null;
+    string summary = null;
     bool finished = false;
     try {
       Installation.WriteMarker(folder);
@@ -235,22 +244,45 @@ public sealed class MainForm : Form {
           DateTime now = DateTime.UtcNow;
           if (done < total && (now - shown).TotalMilliseconds < 100) return;
           shown = now;
-          BeginInvoke((MethodInvoker)delegate {
-            progress_.Value = (int)Math.Min(1000, done * 1000 / total);
-            if (!cancel_) {
-              stage_.Text = "Copying the game's files: " + Checks.Size(done) + " of " + Checks.Size(total) +
-                            (name.Length > 0 ? "  (" + name + ")" : "");
-            }
-          });
+          Report(0.25 * done / total, "Copying the game's files: " + Checks.Size(done) + " of " + Checks.Size(total) +
+                                          (name.Length > 0 ? "  (" + name + ")" : ""));
         }, delegate { return cancel_; });
+      }
+      if (finished) {
+        Report(0.25, "Getting the port...");
+        string package = Installation.PackageFolder();
+        if (package == null) {
+          throw new InvalidOperationException("The folder 'package' is not next to the installer (this test version " +
+                                              "does not download yet).");
+        }
+        Installation.CopyPackage(package, folder);
+        string tools = Path.Combine(folder, "tools");
+        if (Installation.LibraryIsCurrent(folder, tools)) {
+          summary = "The shader library was already there.";
+        } else {
+          DateTime shown = DateTime.MinValue;
+          LibraryResult library = Installation.BuildLibrary(folder, tools, delegate(string stage, int done, int total) {
+            DateTime now = DateTime.UtcNow;
+            if (done < total && (now - shown).TotalMilliseconds < 100) return;
+            shown = now;
+            bool shaders = stage == "Preparing shaders";
+            Report(shaders ? 0.3 + 0.7 * done / Math.Max(1, total) : (total > 0 ? 0.25 + 0.05 * done / total : 0.25),
+                   stage + (total > 0 ? ": " + done + " of " + total : "..."));
+          }, delegate { return cancel_; });
+          finished = library != null;
+          if (finished) {
+            Installation.WriteLibraryStamp(folder, tools);
+            summary = library.Compiled + " shaders prepared.";
+          }
+        }
       }
     } catch (Exception e) {
       error = e.Message;
     }
-    BeginInvoke((MethodInvoker)delegate { Stopped(finished, error); });
+    BeginInvoke((MethodInvoker)delegate { Stopped(finished, error, summary); });
   }
 
-  void Stopped(bool finished, string error) {
+  void Stopped(bool finished, string error, string summary) {
     worker_ = null;
     if (closeWhenStopped_) {
       Close();
@@ -265,10 +297,12 @@ public sealed class MainForm : Form {
       stage_.Text = "Stopped: " + error;
     } else if (!finished) {
       stage_.ForeColor = SystemColors.GrayText;
-      stage_.Text = "Cancelled. What was copied stays in the folder: Install goes on from there.";
+      stage_.Text = "Cancelled. What was done stays in the folder: Install goes on from there.";
     } else {
+      progress_.Value = 1000;
       stage_.ForeColor = Good;
-      stage_.Text = "The game's files are copied (this test version stops here: no download and no shaders yet).";
+      stage_.Text = "Installed. " + summary + " Start the game with fh1.exe in the folder (this test version makes " +
+                    "no shortcut yet).";
     }
     CheckFolder();
   }

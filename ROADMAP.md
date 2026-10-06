@@ -330,7 +330,12 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
     - [x] The installer, step 2: Install copies the disc's files into `<folder>\game` with a progress bar and
           Cancel (a cancelled copy goes on where it stopped; `fh1_install.txt` marks the folder). The user's ISO:
           2432 files, 7.32 GB in 11 s, every file identical to game_root (SHA-1) - 2026-10-06
-    - [ ] The installer: download, library build, update button
+    - [x] The installer, steps 3 and 4: Install also puts the port and the shader tools into the folder (from
+          the folder `package` next to the installer for now, made by `installer\make_package.ps1`: 151 MB) and
+          builds the shader library there (`installer/ShaderLibrary.cs`): 3,849 shaders found, 3,816 compiled,
+          the same as the disc part of the user's own library; a fresh installation takes 194 s on the Legion Go
+          (11 s disc copy), a second run on the same folder nothing - 2026-10-06; the user tries the window
+    - [ ] The installer: download instead of the `package` folder, update button
     - [ ] Launchers (user, 2026-10-06): the main FH1.exe runs the emulated Direct3D 12 and gets a desktop
           shortcut; two .bat files in the game folder, one for the emulated Vulkan (`--gpu_backend=vulkan`) and
           one for the native renderer (`--fh1_renderer=native`). For that fh1.exe must find the game's files in
