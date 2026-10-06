@@ -7,26 +7,39 @@ Paste this to start the session after 2026-10-06 (pre-release 1 is published).
 Read fh1-recomp/CLAUDE.md, then ROADMAP.md (Stage 3: the items marked "After the first pre-release") and
 fh1-recomp/docs/native-renderer-status.md ("Pre-release 1 is published"). The first pre-release is out
 (v0.1.0-pre1, https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1). This session we fix the
-native renderer's faults and answer what players reported.
+native renderer's bugs, starting with the ground textures that are not drawn.
 
 Do it in this order:
-1. Look at the GitHub issues of the repository (gh issue list) and tell me what players reported, in plain
+1. **The first bug: some ground textures are not drawn** (native renderer only). My screenshot is
+   build_logs\reference\user-ground-flat-newgame-20261006-native.webp: the new game's first drive, 1.7 miles from
+   the festival, by day; the strip of ground between the road and the leaves is one flat brown color with
+   straight edges. The emulated picture of the same stretch (ground-newgame-1.7mi-20261006-emulated.png) has
+   gravel and grass there. The spot is on the new-game route, so you can reach it without me: empty saves
+   (--user_data_root=<empty folder>), Start / A every few seconds, the drive begins at about 140 s. Capture both
+   renderers there with RenderDoc and compare the ground's draws pass by pass (textures, then constants) before
+   reading any shader. The screenshot is from a copy installed from the release
+   (%USERPROFILE%\Downloads\Forza Horizon; its log is build_logs\reference\user-ground-flat-newgame-20261006-native.log:
+   30 shaders made on the PC, none failed, 206 draws rejected with cause 317). So check first whether the
+   developer's build (its own shader library) shows the flat ground at that spot too: if only the installed copy
+   does, a shader made on the PC, or cause 317, is the suspect. Tell me the plan in plain words before you start. It is probably the same fault as the
+   missing ground at the Montano Plains outpost: check that spot once this one is fixed (I drive there).
+2. Look at the GitHub issues of the repository (gh issue list) and tell me what players reported, in plain
    words. Do not answer or close an issue without asking me.
-2. Ask me whether I have driven more. If yes: merge my cache file into the shipped pipeline list
+3. Ask me whether I have driven more. If yes: merge my cache file into the shipped pipeline list
    (python tools\fh1_pipelines.py info fh1\data\fh1_pipelines.nfpl <my cache file>; then merge, build, commit).
    My installed copy is in %USERPROFILE%\Downloads\FH1 (its list: cache\fh1_native_pipelines.bin).
-3. The faults, one at a time, each checked against the emulated GPU at the same spot before any guess (RenderDoc
-   on both renderers, pass by pass):
-   - the ground missing at the Montano Plains outpost and the dark patch east of it;
+4. The other faults, one at a time, each checked against the emulated GPU at the same spot before any guess
+   (RenderDoc on both renderers, pass by pass):
+   - the ground missing at the Montano Plains outpost and the dark patch east of it (if step 1 did not fix it);
    - upside-down scenery patches in a mountain race;
    - the car's dashboard that never lights up (ask me first whether it lights up with the emulated launcher; a
      lead, not checked: the log line "texture format not supported yet: an empty one is used (cause 422)");
    - a car's thumbnail that is sometimes wrong (timing: start at fh1_native_read_one_off_wait_texels);
    - then night colors, garage / car damage, the Carbon clean-up.
-4. Objects that show late in a first run: the shaders that are not on the disc are made one at a time, about a
+5. Objects that show late in a first run: the shaders that are not on the disc are made one at a time, about a
    second each (fh1_extra_shaders.cpp, one worker thread). Make several at once and measure it on an installed
    test copy with the driver's cache set aside.
-5. When a fix is worth giving to players: tell me, and only with my yes make the next pre-release (v0.1.0-pre2:
+6. When a fix is worth giving to players: tell me, and only with my yes make the next pre-release (v0.1.0-pre2:
    Program.Version in the installer, a new release text, installer\build_installer.ps1,
    installer\make_package.ps1, the complete test, then gh release create).
 

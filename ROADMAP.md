@@ -238,6 +238,18 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         road should be, with sharp straight edges (`user-ground-missing-2-20261006-dusk.webp`, `-map.webp`). Two
         spots close together, day and night: one cause is likely (a ground material of that area). Not looked at:
         check the same spots on the emulated GPU first
+  - [ ] **FIRST for the next session (user, 2026-10-06, after the pre-release): some ground textures are not
+        drawn** (native renderer). Screenshot `build_logs\reference\user-ground-flat-newgame-20261006-native.webp`:
+        the new game's first drive, 1.7 mi from the festival, by day; the strip between the road and the leaves
+        is one flat brown color with straight edges, and the ground further right has its texture. The same
+        stretch on the emulated GPU has gravel and grass there
+        (`ground-newgame-1.7mi-20261006-emulated.png`, a few metres further on). Likely the same fault as the
+        Montano Plains item above (a flat patch with straight edges beside the road). **It can be reached without
+        the user**: the new-game route with empty saves (Start / A every few seconds, the drive from about 140 s)
+        passes there, so both renderers can be captured with RenderDoc at that spot. The screenshot is
+        from a copy installed from the release (log: `user-ground-flat-newgame-20261006-native.log`, 30 shaders
+        made on the PC, none failed, 206 draws rejected with cause 317): check first whether the developer's
+        build shows it too
   - [ ] **After the first pre-release (user, 2026-10-06): textures do not load in races** (native renderer, same
         session and build as the item above). Screenshot `build_logs\reference\user-race-scenery-wrong-20261006.webp`
         (a mountain road race by day, red Mustang, 46 % progress): the hillside at the left is dark and almost
