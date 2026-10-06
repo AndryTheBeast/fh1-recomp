@@ -16,6 +16,8 @@ public sealed class MainForm : Form {
   readonly Button installButton_ = new Button();
   readonly Button isoButton_ = new Button();
   readonly Button folderButton_ = new Button();
+  readonly Button runtimeButton_ = new Button();
+  readonly Label needsStatus_ = new Label();
   Thread worker_;
   volatile bool cancel_;
   bool closeWhenStopped_;
@@ -27,6 +29,7 @@ public sealed class MainForm : Form {
 
   static readonly Color Good = Color.FromArgb(0, 120, 40);
   static readonly Color Bad = Color.FromArgb(180, 30, 30);
+  static readonly Color Warn = Color.FromArgb(170, 95, 0);
 
   // Pixels at 100 % scaling -> pixels on this screen (the fonts, in points, scale by themselves).
   static float scale_ = 1f;
@@ -40,7 +43,7 @@ public sealed class MainForm : Form {
     StartPosition = FormStartPosition.CenterScreen;
     FormBorderStyle = FormBorderStyle.FixedSingle;
     MaximizeBox = false;
-    ClientSize = new Size(S(760), S(500));
+    ClientSize = new Size(S(760), S(630));
 
     TableLayoutPanel table = new TableLayoutPanel();
     table.Dock = DockStyle.Fill;
@@ -59,10 +62,21 @@ public sealed class MainForm : Form {
     AddRow(table, Note("An unofficial port. It needs your own disc image of the game: nothing of the game " +
                        "comes with this program, and nothing leaves your computer."));
 
+    AddRow(table, Heading("Needed on this PC"));
+    runtimeButton_.Text = "Install runtime";
+    runtimeButton_.Click += delegate { InstallRuntime(); };
+    Status(needsStatus_, "");
+    needsStatus_.MaximumSize = new Size(S(560), 0);
+    AddRow(table, needsStatus_, Sized(runtimeButton_));
+    ShowNeeds();
+
     AddRow(table, Heading("1. Your disc image (.iso)"));
     isoButton_.Text = "Choose ISO...";
     isoButton_.Click += delegate { ChooseIso(); };
     AddRow(table, ReadOnly(isoBox_), Sized(isoButton_));
+    Label usaOnly = Note("Only the USA version of the game (NTSC-U) works right now.");
+    usaOnly.ForeColor = Warn;
+    AddRow(table, usaOnly);
     AddRow(table, Status(isoStatus_, "Choose the .iso of your own Forza Horizon disc."));
 
     AddRow(table, Heading("2. Where to install"));
@@ -80,8 +94,8 @@ public sealed class MainForm : Form {
     progress_.Dock = DockStyle.Fill;
     progress_.Margin = new Padding(S(3), S(6), S(12), S(6));
     AddRow(table, progress_, Sized(installButton_));
-    AddRow(table, Status(stage_, "Downloads the port (about 50 MB), copies the game's files from your disc image " +
-                                 "and prepares the shaders (about 10 minutes)."));
+    AddRow(table, Status(stage_, "Copies the game's files from your disc image, downloads the port (about 50 MB) " +
+                                 "and prepares the shaders (3 to 10 minutes, the PC is busy meanwhile)."));
 
     Label credits = Note("Installer modelled on StevensND's installer for nfsmw-nx. Port built with ReXGlue; " +
                          "native renderer started from GoatHonks' nfsc-recomp. Not affiliated with Microsoft, " +
@@ -91,6 +105,33 @@ public sealed class MainForm : Form {
     table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
     table.Controls.Add(credits);
     table.SetColumnSpan(credits, 2);
+  }
+
+  // What the game needs from Windows; the button shows only while the Visual C++ runtime is missing.
+  void ShowNeeds() {
+    bool runtime = Needs.HasRuntime();
+    needsStatus_.Text = Needs.Describe();
+    needsStatus_.ForeColor = runtime && Needs.HasDirect3D12() ? Good : Bad;
+    runtimeButton_.Visible = !runtime;
+    installButton_.Enabled = worker_ == null && isoOk_ && folderOk_ && runtime;
+  }
+
+  // Microsoft's own installer of the runtime, downloaded from Microsoft and started here.
+  void InstallRuntime() {
+    runtimeButton_.Enabled = false;
+    ThreadPool.QueueUserWorkItem(delegate {
+      string error = Needs.InstallRuntime(delegate(string what) {
+        BeginInvoke((MethodInvoker)delegate {
+          needsStatus_.ForeColor = SystemColors.ControlText;
+          needsStatus_.Text = what;
+        });
+      });
+      BeginInvoke((MethodInvoker)delegate {
+        runtimeButton_.Enabled = true;
+        ShowNeeds();
+        if (error != null) needsStatus_.Text = "The runtime was not installed: " + error + " " + needsStatus_.Text;
+      });
+    });
   }
 
   static void AddRow(TableLayoutPanel table, Control one) {
@@ -147,8 +188,8 @@ public sealed class MainForm : Form {
 
   void Show(Label label, CheckResult result) {
     label.Text = result.Text;
-    label.ForeColor = result.Ok ? Good : Bad;
-    installButton_.Enabled = isoOk_ && folderOk_;
+    label.ForeColor = !result.Ok ? Bad : result.Warning ? Warn : Good;
+    installButton_.Enabled = isoOk_ && folderOk_ && Needs.HasRuntime();
   }
 
   void ChooseIso() {
@@ -191,6 +232,13 @@ public sealed class MainForm : Form {
     CheckResult result = Checks.Folder(folderBox_.Text, gameBytes_ > 0 ? gameBytes_ : 7320L * 1000 * 1000);
     folderOk_ = result.Ok;
     Show(folderStatus_, result);
+    // A folder that holds an installation is brought up to date: the same steps, each skipped when done.
+    bool again = false;
+    try {
+      again = File.Exists(Path.Combine(folderBox_.Text, Checks.MarkerName));
+    } catch (ArgumentException) {
+    }
+    if (worker_ == null) installButton_.Text = again ? "Update" : "Install";
   }
 
   void Install() {
@@ -250,12 +298,8 @@ public sealed class MainForm : Form {
       }
       if (finished) {
         Report(0.25, "Getting the port...");
-        string package = Installation.PackageFolder();
-        if (package == null) {
-          throw new InvalidOperationException("The folder 'package' is not next to the installer (this test version " +
-                                              "does not download yet).");
-        }
-        Installation.CopyPackage(package, folder);
+        Source.Get(folder, delegate(double fraction, string what) { Report(0.25 + 0.03 * fraction, what); },
+                   delegate { return cancel_; });
         string tools = Path.Combine(folder, "tools");
         if (Installation.LibraryIsCurrent(folder, tools)) {
           summary = "The shader library was already there.";
@@ -266,7 +310,7 @@ public sealed class MainForm : Form {
             if (done < total && (now - shown).TotalMilliseconds < 100) return;
             shown = now;
             bool shaders = stage == "Preparing shaders";
-            Report(shaders ? 0.3 + 0.7 * done / Math.Max(1, total) : (total > 0 ? 0.25 + 0.05 * done / total : 0.25),
+            Report(shaders ? 0.3 + 0.7 * done / Math.Max(1, total) : (total > 0 ? 0.28 + 0.02 * done / total : 0.28),
                    stage + (total > 0 ? ": " + done + " of " + total : "..."));
           }, delegate { return cancel_; });
           finished = library != null;
@@ -275,7 +319,16 @@ public sealed class MainForm : Form {
             summary = library.Compiled + " shaders prepared.";
           }
         }
+        if (finished) {
+          summary += Launchers.Write(folder) != null
+                         ? " Start the game with the \"Forza Horizon\" shortcut on your desktop, or " + Launchers.Exe +
+                               " in the folder; the two .bat files there start it on Vulkan."
+                         : " Start the game with " + Launchers.Exe + " in the folder (the desktop shortcut could " +
+                               "not be made); the two .bat files there start it on Vulkan.";
+        }
       }
+    } catch (OperationCanceledException) {
+      finished = false;
     } catch (Exception e) {
       error = e.Message;
     }
@@ -301,8 +354,7 @@ public sealed class MainForm : Form {
     } else {
       progress_.Value = 1000;
       stage_.ForeColor = Good;
-      stage_.Text = "Installed. " + summary + " Start the game with fh1.exe in the folder (this test version makes " +
-                    "no shortcut yet).";
+      stage_.Text = "Installed. " + summary;
     }
     CheckFolder();
   }

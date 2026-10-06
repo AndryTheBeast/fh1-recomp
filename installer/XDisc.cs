@@ -180,6 +180,7 @@ public sealed class XDisc : IDisposable {
 // What a .xex says about itself in its (unencrypted) header.
 public sealed class XexInfo {
   public uint TitleId;
+  public uint MediaId;  // differs between the discs of one game (regions, re-releases)
   public uint Version;  // major 4 bits, minor 4 bits, build 16 bits, revision 8 bits
 
   public string VersionText {
@@ -203,6 +204,7 @@ public sealed class XexInfo {
       int o = (int)Be32(head, entry + 4);
       if (o < 0 || o + 16 > head.Length) return null;
       XexInfo info = new XexInfo();
+      info.MediaId = Be32(head, o);
       info.Version = Be32(head, o + 4);
       info.TitleId = Be32(head, o + 12);
       return info;

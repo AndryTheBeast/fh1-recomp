@@ -33,5 +33,17 @@ foreach ($file in Get-ChildItem $Package -Recurse -File) {
     }
   }
 }
+# The files of a release: the two zips the installer downloads, the installer itself and their checksums.
+# (Nothing is uploaded from here: publishing a release is done by hand, with the user's yes.)
+$Release = Join-Path $PSScriptRoot "out\release"
+if (Test-Path $Release) { Remove-Item -Recurse -Force $Release }
+New-Item -ItemType Directory -Force $Release | Out-Null
+Compress-Archive -Path (Join-Path $Port "*") -DestinationPath (Join-Path $Release "fh1-win64.zip") -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $Tools "*") -DestinationPath (Join-Path $Release "fh1-shader-tools.zip") -CompressionLevel Optimal
+$Installer = Join-Path $PSScriptRoot "out\FH1Installer.exe"
+if (Test-Path $Installer) { Copy-Item $Installer $Release }
+Get-ChildItem $Release -File | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+  Set-Content -Encoding ascii (Join-Path $Release "SHA256SUMS.txt")
+Get-ChildItem $Release -File | ForEach-Object { "{0,12:N0}  release\{1}" -f $_.Length, $_.Name }
 Get-ChildItem $Package -Recurse -File | ForEach-Object { "{0,12:N0}  {1}" -f $_.Length, $_.FullName.Substring($Package.Length + 1) }
 "{0:N1} MB in all" -f ((Get-ChildItem $Package -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)

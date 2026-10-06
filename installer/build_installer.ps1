@@ -12,6 +12,7 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Exe = Join-Path $Out "FH1Installer.exe"
 $Sources = Get-ChildItem (Join-Path $Here "*.cs") | ForEach-Object { $_.FullName }
 & $Csc /nologo /target:winexe /platform:x64 /optimize+ /warn:4 "/out:$Exe" `
-  /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll $Sources
+  /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll `
+  /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll $Sources
 if ($LASTEXITCODE -ne 0) { throw "the C# compiler failed" }
 Write-Host ("Built: {0} ({1:N0} bytes)" -f $Exe, (Get-Item $Exe).Length)

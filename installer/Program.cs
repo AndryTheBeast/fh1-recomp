@@ -6,6 +6,8 @@
 //   FH1Installer.exe                          the window
 //   FH1Installer.exe --check ISO FOLDER       prints both checks and exits (for tests; no window)
 //   FH1Installer.exe --extract ISO FOLDER     both checks, then copies the disc's files (for tests; no window)
+//   FH1Installer.exe --install ISO FOLDER     the whole installation without the window (for tests)
+//   --source ADDRESS (before the rest)        where the two zips are, instead of the release (for tests)
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -27,6 +29,12 @@ public static class Program {
     // A shader tool that stops on a container it cannot read must not open a Windows error box (the tools
     // started from here inherit this): SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX.
     SetErrorMode(0x0001 | 0x0002);
+    if (args.Length >= 2 && args[0] == "--source") {
+      Source.Base = args[1];
+      string[] rest = new string[args.Length - 2];
+      Array.Copy(args, 2, rest, 0, rest.Length);
+      args = rest;
+    }
     if (args.Length == 3 && (args[0] == "--check" || args[0] == "--extract")) {
       CheckResult disc = Checks.Disc(args[1]);
       Console.WriteLine("disc: " + (disc.Ok ? "ok" : "REFUSED") + " - " + disc.Text);
@@ -56,12 +64,9 @@ public static class Program {
         image.Extract(Path.Combine(args[2], Checks.GameFolder), delegate { }, delegate { return false; });
       }
       Console.WriteLine((DateTime.UtcNow - start).TotalSeconds.ToString("0") + " s: the game's files are copied");
-      string package = Installation.PackageFolder();
-      if (package == null) {
-        Console.WriteLine("no folder 'package' next to the installer");
-        return 1;
-      }
-      Installation.CopyPackage(package, args[2]);
+      Console.WriteLine("needs: " + Needs.Describe());
+      Console.WriteLine("the port comes from: " + (Source.LocalPackage() ?? Source.Base));
+      Source.Get(args[2], delegate { }, delegate { return false; });
       string tools = Path.Combine(args[2], "tools");
       if (Installation.LibraryIsCurrent(args[2], tools)) {
         Console.WriteLine("the shader library was already there");
@@ -70,6 +75,7 @@ public static class Program {
         Installation.WriteLibraryStamp(args[2], tools);
         Console.WriteLine("library: " + r.Compiled + " of " + r.Containers + " shaders, " + r.Bytes + " bytes");
       }
+      Console.WriteLine("desktop shortcut: " + (Launchers.Write(args[2]) ?? "NOT made"));
       Console.WriteLine("installed in " + (DateTime.UtcNow - start).TotalSeconds.ToString("0") + " s");
       return 0;
     }
@@ -101,26 +107,6 @@ public static class Installation {
     File.WriteAllText(Path.Combine(folder, Checks.MarkerName),
                       "Forza Horizon recomp, installer " + Program.Version + "\r\n" +
                       "This file tells the installer that this folder is one of its installations.\r\n");
-  }
-
-  // Until the installer downloads the port: the folder "package" next to FH1Installer.exe (made by
-  // installer\make_package.ps1) holds "port" (fh1.exe, its DLLs, the pipeline list) and "tools" (the shader
-  // tools). Null when it is not there.
-  public static string PackageFolder() {
-    string package = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location),
-                                  "package");
-    return File.Exists(Path.Combine(package, "port", "fh1.exe")) ? package : null;
-  }
-
-  public static void CopyPackage(string package, string folder) {
-    foreach (string file in Directory.GetFiles(Path.Combine(package, "port"))) {
-      File.Copy(file, Path.Combine(folder, Path.GetFileName(file)), true);
-    }
-    string tools = Path.Combine(folder, "tools");
-    Directory.CreateDirectory(tools);
-    foreach (string file in Directory.GetFiles(Path.Combine(package, "tools"))) {
-      File.Copy(file, Path.Combine(tools, Path.GetFileName(file)), true);
-    }
   }
 
   // The library is built again only when the shader tools changed (an update of the port): a small file next to
@@ -160,12 +146,14 @@ public static class Installation {
       string image = Path.Combine(imageFolder, "image.bin");
       string game = Path.Combine(folder, Checks.GameFolder);
       // Its own empty user folder: this run never looks at the saves.
-      int code = ShaderLibrary.Run(Path.Combine(folder, "fh1.exe"),
+      int code = ShaderLibrary.Run(Path.Combine(folder, Launchers.Exe),
                                    "\"--game_data_root=" + game + "\" \"--user_data_root=" +
                                        Path.Combine(imageFolder, "user") + "\" \"--fh1_unpack_image=" + image + "\"",
                                    180);
       if (code != 0 || !File.Exists(image)) {
-        throw new InvalidOperationException("fh1.exe could not read the game program (code " + code + ").");
+        throw new InvalidOperationException(
+            Needs.HasRuntime() ? "FH1.exe could not read the game program (code " + code + ")."
+                               : "FH1.exe could not start: the Microsoft Visual C++ runtime is missing.");
       }
       return ShaderLibrary.Build(game, toolsFolder, image, work, Path.Combine(folder, ShaderLibrary.LibraryName),
                                  progress, cancelled);

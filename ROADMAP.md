@@ -340,8 +340,17 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           builds the shader library there (`installer/ShaderLibrary.cs`): 3,849 shaders found, 3,816 compiled,
           the same as the disc part of the user's own library; a fresh installation takes 194 s on the Legion Go
           (11 s disc copy), a second run on the same folder nothing - 2026-10-06; the user tries the window
-    - [ ] The installer: download instead of the `package` folder, update button
-    - [ ] Launchers (user, 2026-10-06): the main FH1.exe runs the emulated Direct3D 12 and gets a desktop
+    - [x] The installer, step 6 (`installer/Setup.cs`): "Needed on this PC" (Visual C++ runtime with a button
+          that fetches and starts Microsoft's own installer, Direct3D 12, Vulkan); the two zips are downloaded
+          from the release when no `package` folder is next to the installer (`--source` for tests); the
+          program is installed as `FH1.exe` with a desktop shortcut and two .bat files (emulated Vulkan, native
+          Vulkan); a folder that holds an installation shows "Update"; a standing note and a warning that only
+          the USA disc works (media ID 2DC7007B). The installer alone, zips from a local folder: 200 s -
+          2026-10-06. Not tried: a real download from GitHub (no release yet), the runtime button on a PC
+          without the runtime
+    - [x] `installer\make_package.ps1` also makes `installer\out\release` (fh1-win64.zip 38.1 MB,
+          fh1-shader-tools.zip 10.7 MB, FH1Installer.exe 47 KB, SHA256SUMS.txt); nothing is uploaded
+    - [x] Launchers (user, 2026-10-06; done the same day, see step 6): the main FH1.exe runs the emulated Direct3D 12 and gets a desktop
           shortcut; two .bat files in the game folder, one for the emulated Vulkan (`--gpu_backend=vulkan`) and
           one for the native renderer (`--fh1_renderer=native`). For that fh1.exe must find the game's files in
           a folder next to itself when `--game_data_root` is not given (today: an error box)

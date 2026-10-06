@@ -6,6 +6,7 @@ namespace Fh1Installer {
 
 public sealed class CheckResult {
   public bool Ok;
+  public bool Warning;  // accepted, but the text is a warning
   public string Text;
   public long Bytes;  // disc check: the size of the game's files
 
@@ -24,6 +25,7 @@ public sealed class CheckResult {
 
 public static class Checks {
   public const uint TitleId = 0x4D5309C9;        // Forza Horizon
+  public const uint UsaMediaId = 0x2DC7007B;  // the USA disc (NTSC-U)
   public const string TestedVersionText = "0.0.0.10";  // the USA disc's default.xex, the one the port was made from
   // Next to the game's files: the port (about 135 MB), the shader library (about 170 MB) and, while it is being
   // built, the translated and compiled shaders (about 400 MB).
@@ -50,12 +52,16 @@ public static class Checks {
           return CheckResult.Bad("This is another game (title ID " + info.TitleId.ToString("X8") +
                                  "). Forza Horizon is 4D5309C9.");
         }
+        bool usa = info.MediaId == UsaMediaId && info.VersionText == TestedVersionText;
         string text = "Forza Horizon found: " + disc.Files.Count + " files, " + Size(disc.TotalBytes) +
-                      " (title ID " + info.TitleId.ToString("X8") + ", version " + info.VersionText + ").";
-        if (info.VersionText != TestedVersionText) {
-          text += " The port was made from version " + TestedVersionText + " (the USA disc): this one may not work.";
+                      " (title ID " + info.TitleId.ToString("X8") + ", version " + info.VersionText + ", disc " +
+                      info.MediaId.ToString("X8") + (usa ? ": the USA version)." : ").");
+        if (!usa) {
+          text = "WARNING: this is not the USA version of the game. Only the USA version (NTSC-U) works right " +
+                 "now: with this disc the game will probably not start. " + text;
         }
         CheckResult r = CheckResult.Good(text);
+        r.Warning = !usa;
         r.Bytes = disc.TotalBytes;
         return r;
       }
