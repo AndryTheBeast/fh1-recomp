@@ -65,13 +65,14 @@ Numbers (Legion Go, unattended route; logs `build_logs\test-m0*`, `test-s1*`, `t
 
 **User, 2026-10-06, after playing the step 2 build:** with the list, objects appear at once; when the pipelines
 were not known, objects appeared a moment late instead of the game stopping; nothing stays missing that was not
-missing before ("everything looks right to me").
+missing before ("everything looks right to me"). **Later the same day, on the build with the list built
+before the game starts: the paint booth and a saved car's photos are right** (the user's own check, save
+parked at the festival).
 
 Open points: in the stress test the frames of 1.0-1.8 s are the pipelines still compiled on the ring (rectangles
 and one-off targets) while loading; 18 background jobs were never asked for again and so never reached the list;
-the user's save now starts on a highway in daylight (not the festival at night), so the unattended route's X at
-60 s and A at 74 s no longer reach the paint shop: ask the user to park at the festival before the next picture
-check of the booth, or pass only the boot keys. Picture at the new start, 53 s: 13/51/110/139/214 native,
+the unattended route's X at 60 s and A at 74 s only reach the paint shop when the user's save is parked at the
+festival (on 2026-10-06 it moved to a highway by day, then back to the festival): look at a shot first. Picture at the new start, 53 s: 13/51/110/139/214 native,
 14/47/107/136/212 emulated.
 
 **Faults the user met while recording (for after the first pre-release, ROADMAP Stage 3):** ground not drawn at

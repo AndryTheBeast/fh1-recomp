@@ -1,13 +1,13 @@
-# Prompt for the next session (written 2026-10-06, at the end of the eighth session; the paint booth check first)
+# Prompt for the next session (written 2026-10-06, at the end of the eighth session; the pre-release installer)
 
 Paste the block below as the first message of a new Claude session opened in `C:\Users\andre\Desktop\FH1-recomp`.
 
 ```
 Read fh1-recomp/CLAUDE.md, then ROADMAP.md ("Maybe later", the first pre-release as a Windows installer app, and
 Stage 3, "Offline shader library for the PC") and the section "Offline pipeline list" at the top of
-fh1-recomp/docs/native-renderer-status.md. This session starts with one check that was left open (the paint
-booth on the newest build), then it is about the first pre-release of the port. The offline pipeline list works
-(I checked it by hand on 2026-10-06). The other native
+fh1-recomp/docs/native-renderer-status.md. This session is about the first pre-release of the port. The offline pipeline
+list works and I checked the last build by hand on 2026-10-06 (new roads, the paint booth, a saved car's
+photos: all fine). The other native
 renderer fixes (night colors, garage / car damage, Carbon clean-up, the F3 fps viewer, and the three faults I
 found on 2026-10-06: missing ground at the Montano Plains outpost and east of it, upside-down scenery patches in
 a mountain race) are for after the pre-release: do not start them.
@@ -19,24 +19,11 @@ which still stop the frame; the list is built before the game's code starts, wit
 screen when it lasts more than half a second (20.3 s on a fresh PC, 0.3 s and no screen on a normal start).
 
 Do it in this order:
-1. First the paint booth check that was left open. I saved the game parked at the festival for it. The last two
-   builds (the background compiler, then the list built before the game starts) were only checked in free roam.
-   - Look at a shot of the boot first, to see that my save really starts at the festival.
-   - Run the unattended route on the native renderer and on the emulated GPU at the same seconds (the festival,
-     the paint shop with X at 60 s, the design creator with A at 74 s) and compare with tools\fh1_pic_stats.py.
-     In the booth the car's lower body turns black when something goes wrong with what is written to the game's
-     memory: say what you see.
-   - Do it once more as a fresh PC (tools\fresh_pc_test.ps1): there the "Preparing shaders" screen takes about
-     20 s first, so every second of the route moves by that much (boot keys at 56-61 s instead of 33-38 s; add
-     the same to the X and the A). This is the run where the booth's draw-once pictures meet pipelines the
-     driver does not have yet.
-   - Tell me the result in plain words. If something is wrong, find out which of the two builds did it
-     (--fh1_native_pipelines_background=false turns the background compiler off) before fixing anything.
-2. Then merge what I have driven since (I drive more to add pipelines): tell me how many new ones my cache file
+1. First merge what I have driven since (I drive more to add pipelines): tell me how many new ones my cache file
    has (python tools\fh1_pipelines.py info fh1\data\fh1_pipelines.nfpl
    fh1\out\win-release\cache\fh1_native_pipelines.bin), merge them into the shipped list, build, commit. Do the
    same again whenever I say I have driven more.
-3. The pre-release. I want a simple Windows GUI app like StevensND's installer page for nfsmw-nx: it downloads the
+2. The pre-release. I want a simple Windows GUI app like StevensND's installer page for nfsmw-nx: it downloads the
    pre-built fh1.exe (my decision, do not ask again), lets me choose my ISO and a folder, extracts the needed
    files there and builds the shader library there. Tell me the plan in plain words first and wait for my yes:
    - what the window looks like and what each step does, and what language you write it in;
@@ -48,9 +35,9 @@ Do it in this order:
    - what to do about Smart App Control and the SmartScreen warning for an unsigned program;
    - which renderer is the default, the install guide, the known issues (include the three faults above), the
      tag and the version name.
-4. Build it one step at a time. Test each step on my PC with my ISO into a new empty folder (never into
+3. Build it one step at a time. Test each step on my PC with my ISO into a new empty folder (never into
    game_root or over my saves), and tell me exactly what to click to check it by hand.
-5. Do not publish anything (no release, no tag, no upload) without my yes at that moment.
+4. Do not publish anything (no release, no tag, no upload) without my yes at that moment.
 
 Left for later, only if I ask: a nicer look for the "Preparing shaders" screen (it uses the overlay's default
 small text).
