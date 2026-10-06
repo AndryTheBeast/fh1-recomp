@@ -1,7 +1,7 @@
 # Native renderer: where it stands and what to fix next
 
 Read this after CLAUDE.md. It is the starting point for the next session. **Eighth session (2026-10-06): the
-offline pipeline list for the PC, steps 1 and 2 of 5: see "Offline pipeline list" just below.** State as of 2026-10-06, seventh
+offline pipeline list for the PC, steps 1 to 3 of 5: see "Offline pipeline list" just below.** State as of 2026-10-06, seventh
 session: the photos of a saved car are right** (item 0b, see "What was fixed on 2026-10-06" below). **The user's
 plan changed that night: the other fixes of this list wait; next is the offline shader library for the PC
 (ROADMAP.md, Stage 3: tell the plan before building it), then the first pre-release.** State before that,
@@ -31,9 +31,15 @@ pipeline of each shader pair with its state. The plan the user agreed to has fiv
    only in passes drawn again every frame (scene with depth, shadows, reflection). Full-screen rectangles and
    everything else (depth-less or small targets: liveries, car photos, the booth's light probe) are still
    compiled on the ring, because a draw left out there would not heal. Log line `C6 background pipelines`.
-3. To do: a progress display, and holding the game before the title screen when the list is not finished (today
-   it only fits because the logo videos last about 35 s). The game must not simply be made to wait: a frame of
-   3.2 s freezes it for good.
+3. **Done: the list is built before the game's code starts, with a progress display.** `Fh1App::LaunchModule`
+   (fh1_app.h) calls `fh1::native::PrewarmBeforeLaunch` (targets and draws are created then, not at the ring's
+   first copy; `TryPrewarm(early)`), a thread watches `PrewarmProgress`, and the game is launched when the list
+   has ended (ten minutes at most). If it lasts more than half a second the window shows "Preparing shaders n /
+   total" (`fh1_prepare_screen.h`, an SDK ImGui dialog, removed before launching because a registered dialog
+   makes the SDK present through the UI thread). Nothing can freeze there: the game is not running yet, so the
+   length of the logo videos no longer matters. `--fh1_native_prepare_screen_min_s=N` keeps the screen up N
+   seconds to look at it. The screen uses the overlay's default look (small text, green frame): restyle it if
+   the user asks.
 4. To do: the full list. The user's tour: roads of every area by day and by night, one race of each kind, the
    garage, the paint shop, the upgrade shop, buying a car, the map, first-person view, a crash. One 20-minute
    session of the user added 200 pipelines (596 to 796), so it is far from complete.
@@ -54,6 +60,8 @@ Numbers (Legion Go, unattended route; logs `build_logs\test-m0*`, `test-s1*`, `t
 | Step 1, the user's drive to the outpost and a race | 596 | 0.2 s | 146 new at 46 ms each | 1.0 s |
 | Step 2, fresh PC (list of 796) | 796 | 22.5 s, 749 compiled | 0 new | 114 ms |
 | Step 2, fresh PC, shipped list hidden (stress test) | 0 | nothing | 206 off the ring (44 s of compiling), the rest on it | 1.8 s, no freeze, picture complete after |
+| Step 3, fresh PC (list of 796) | 796 | 20.3 s before the game starts, screen shown, 748 compiled | 3 new (2 of them off the ring) | 593 ms (loading) |
+| Step 3, normal start | 796 | 0.3 s, no screen | 1 new at 0.1 ms | 250 ms (loading) |
 
 **User, 2026-10-06, after playing the step 2 build:** with the list, objects appear at once; when the pipelines
 were not known, objects appeared a moment late instead of the game stopping; nothing stays missing that was not

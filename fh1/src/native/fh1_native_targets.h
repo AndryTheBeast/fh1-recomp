@@ -142,6 +142,14 @@ class TargetsNative {
   // {waits for the previous output, ns; work submissions, ns in the queue lock, ns in vkQueueSubmit;
   //  output submissions, ns in the lock, ns in vkQueueSubmit; RefreshGuestOutput, ns before the callback,
   //  ns inside it, ns after}.
+  // FH1: DrawsVulkan::StartPrewarmEarly and ProgressPrewarm (the pipeline list before the game runs).
+  virtual bool StartPrewarmEarly() { return false; }
+  virtual void ProgressPrewarm(uint32_t& done, uint32_t& total, bool& finished) const {
+    done = 0;
+    total = 0;
+    finished = true;
+  }
+
   virtual void CostPresent(uint64_t cost[12]) const = 0;
 };
 

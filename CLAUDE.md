@@ -359,7 +359,10 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   later, `fh1_native_read_one_off_wait_texels`: a measured limit, see the status document).
 - Before fixing a native-only fault in something the game reads back, look for the same fault in the emulated
   GPU's history (its log lines and SDK comments): the photos had been fixed there five days earlier.
-- 2026-10-06, eighth session: the offline pipeline list for the PC, steps 1 and 2 of 5 (the status document's
+- The native renderer now creates its targets and draws, and builds the pipeline list, before the game's code
+  starts (`Fh1App::LaunchModule`, "Preparing shaders" screen): with the unattended test on a fresh PC every
+  second of the route moves by that wait (about 20 s; the boot keys then go at 56-61 s instead of 33-38 s).
+- 2026-10-06, eighth session: the offline pipeline list for the PC, steps 1 to 3 of 5 (the status document's
   "Offline pipeline list" has the plan, the numbers and what is left). The list ships as
   `fh1/data/fh1_pipelines.nfpl` and grows by merging what the user plays (`tools/fh1_pipelines.py merge`); an
   unknown pipeline is compiled off the ring (`fh1_native_pipelines_background`).

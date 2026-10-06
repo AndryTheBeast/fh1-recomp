@@ -33,6 +33,14 @@ void NotifyProgressRing();
 // for most of the frame.
 uint64_t SwapsNative();
 
+// The pipeline list (this PC's and the one shipped with the port) is built before the game's code starts:
+// fh1_app.h calls this instead of launching, shows the progress and launches when it has ended. A pipeline
+// compiled while the game runs is a hitch, and one frame of about 3.2 s freezes the game for good; before
+// the game runs there is nothing to freeze. false = nothing to wait for (launch at once).
+bool PrewarmBeforeLaunch();
+// Pipelines walked, pipelines in the list, and whether it has ended. Any thread.
+void PrewarmProgress(uint32_t& done, uint32_t& total, bool& finished);
+
 // The native graphics system: the SDK presenter, a reserved MMIO range, the vblank
 // thread and the command ring sink.
 std::unique_ptr<rex::system::IGraphicsSystem> CreateSystemGraphics();

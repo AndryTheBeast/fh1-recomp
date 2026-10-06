@@ -220,7 +220,8 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
     - [x] A list shipped with the port (`fh1/data/fh1_pipelines.nfpl`, 796 pipelines; `tools/fh1_pipelines.py`):
           a fresh PC builds it in 22.5 s during the logo videos and then meets 0 new ones on the recorded route
     - [x] A pipeline no list knows is compiled off the ring and its draw waits (scene, shadows, reflection only)
-    - [ ] Progress display, and holding the game before the title screen when the list is not finished
+    - [x] The list is built before the game's code starts, with a "Preparing shaders n / total" screen when it
+          lasts more than half a second (20.3 s on a fresh PC, 0.3 s and no screen otherwise)
     - [ ] The full list: the user's tour (every area by day and night, each kind of race, garage, shops, map)
     - [ ] Hand check on a fresh cache (`tools/fresh_pc_test.ps1` sets our file and the AMD driver's cache aside)
   - [ ] **After the first pre-release (user, 2026-10-06): the ground is not drawn at the Horizon Outpost of Montano

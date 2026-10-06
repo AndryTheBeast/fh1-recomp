@@ -4634,6 +4634,17 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   // See fh1_native_targets.h. Only when a read-back of 32x32 texels or less is on its way: the 64x64 ones are the
   // exposure's, every frame, and the game takes those a frame late without harm; waiting for the GPU at every
   // interrupt would cost the frame rate.
+  bool StartPrewarmEarly() override { return draws_ && draws_->StartPrewarmEarly(); }
+  void ProgressPrewarm(uint32_t& done, uint32_t& total, bool& finished) const override {
+    if (draws_) {
+      draws_->ProgressPrewarm(done, total, finished);
+    } else {
+      done = 0;
+      total = 0;
+      finished = true;
+    }
+  }
+
   void FinishReads() override {
     if (!reads_urgent_) {
       return;

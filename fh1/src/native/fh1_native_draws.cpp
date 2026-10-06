@@ -5589,13 +5589,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // Dynamic state phases 1 and 2, once per command buffer: the whole buffer uses one mode, because a
     // pipeline with a fixed state invalidates the dynamic value of that state.
     {
-      uint32_t mode = 0;
-      if (eds12_available_ && !eds_off_ && REXCVAR_GET(fh1_native_dynamic_state)) {
-        mode |= kEds12;
-      }
-      if (eds3_available_ && !eds_off_ && REXCVAR_GET(fh1_native_dynamic_state3)) {
-        mode |= kEds3;
-      }
+      const uint32_t mode = ModeEdsWanted();
       if (mode != eds_mode_ || !eds_mode_noted_) {
         eds_mode_noted_ = true;
         REXLOG_INFO("[native] C6 dynamic state: {} (frame {})", NameModeEds(mode), frame_);
@@ -13428,12 +13422,42 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   }
 
   // Ring only, on each submission: starts the thread once, as soon as the library is loaded.
-  void TryPrewarm() {
-    if (prewarm_decided_) {
+  // FH1: also from the app's thread before the game runs (StartPrewarmEarly, early = true): whichever comes
+  // first starts it, under prewarm_mutex_.
+  uint32_t ModeEdsWanted() const {
+    uint32_t mode = 0;
+    if (eds12_available_ && !eds_off_ && REXCVAR_GET(fh1_native_dynamic_state)) {
+      mode |= kEds12;
+    }
+    if (eds3_available_ && !eds_off_ && REXCVAR_GET(fh1_native_dynamic_state3)) {
+      mode |= kEds3;
+    }
+    return mode;
+  }
+
+  bool StartPrewarmEarly() override {
+    TryPrewarm(true);
+    return prewarm_decided_.load(std::memory_order_acquire) && !prewarm_nothing_.load(std::memory_order_acquire);
+  }
+
+  void ProgressPrewarm(uint32_t& done, uint32_t& total, bool& finished) const override {
+    total = uint32_t(list_file_.size());  // fixed since Initialize
+    done = std::min<uint32_t>(total, std::max<uint32_t>(prewarm_progress_.load(std::memory_order_relaxed),
+                                                        uint32_t(prewarm_until_.load(std::memory_order_relaxed))));
+    finished = prewarm_finished_.load(std::memory_order_acquire) || prewarm_nothing_.load(std::memory_order_acquire);
+  }
+
+  void TryPrewarm(bool early = false) {
+    if (prewarm_decided_.load(std::memory_order_acquire)) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(prewarm_mutex_);
+    if (prewarm_decided_.load(std::memory_order_relaxed)) {
       return;
     }
     if (list_file_.empty() || cache_pipelines_ == VK_NULL_HANDLE ||
         !REXCVAR_GET(fh1_native_pipelines_prewarm)) {
+      prewarm_nothing_.store(true, std::memory_order_release);
       prewarm_decided_ = true;
       if (!list_file_.empty()) {
         REXLOG_INFO("[native] C6 prewarm (build 186): not prewarming ({})",
@@ -13446,9 +13470,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (!library || !library->loaded() || layout_pipeline_ == VK_NULL_HANDLE) {
       return;  // not yet: check again on the next submission
     }
-    prewarm_decided_ = true;
     library_prewarm_ = library;
-    prewarm_eds_ = eds_mode_;  // the ring would not request those of another dynamic state mode
+    // the ring would not request those of another dynamic state mode (before its first frame: the mode it
+    // will choose)
+    prewarm_eds_ = early ? ModeEdsWanted() : eds_mode_;
     prewarm_start_ = std::chrono::steady_clock::now();
     try {
       prewarm_thread_ = std::thread([this] { LoopPrewarm(); });
@@ -13456,7 +13481,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                   list_file_.size());
     } catch (const std::system_error& error) {
       REXLOG_WARN("[native] C6 prewarm (build 186): could not create the thread ({}); no prewarming", error.what());
+      prewarm_nothing_.store(true, std::memory_order_release);
     }
+    if (early) {
+      REXLOG_INFO("[native] C6 prewarm: started before the game runs (the app waits for it)");
+    }
+    prewarm_decided_.store(true, std::memory_order_release);
   }
 
   // The thread. It only reads list_file_, the library, the layout and the cache; it writes
@@ -13508,6 +13538,9 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       const RegisterPipeline& r = list_file_[i];
       uint64_t ns = 0;
       const uint8_t state = CreateOffRing(tools, library, r, prewarm_eds_, ns);
+      if (parallel) {
+        prewarm_progress_.fetch_add(1, std::memory_order_relaxed);  // the app's progress display
+      }
       if (state == kListPrewarm) {
         ++done;
         if (ns >= kNsCompiled) {
@@ -14638,7 +14671,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   std::thread prewarm_thread_;
   const ShadersNative* library_prewarm_ = nullptr;
   uint32_t prewarm_eds_ = 0;
-  bool prewarm_decided_ = false;
+  std::atomic<bool> prewarm_decided_{false};   // written under prewarm_mutex_
+  std::mutex prewarm_mutex_;                   // TryPrewarm: the ring or, earlier, the app's thread
+  std::atomic<bool> prewarm_nothing_{false};   // decided, and there is nothing to walk
+  std::atomic<uint32_t> prewarm_progress_{0};  // records done by the parallel walk
   bool prewarm_difference_ = false;
   std::chrono::steady_clock::time_point prewarm_start_{};
   std::chrono::steady_clock::time_point prewarm_report_{};

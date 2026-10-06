@@ -808,6 +808,29 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   rex::ui::GraphicsProvider* provider() const override { return provider_.get(); }
   rex::ui::Presenter* presenter() const override { return presenter_.get(); }
 
+  // FH1 (fh1_native_system.h): creates the targets and the draws now, as the ring's first copy would, and
+  // starts the pipeline list. Only once SetupGuestGpu has run (memory and shader library).
+  bool PrewarmBeforeLaunch() {
+    if (!active_.load(std::memory_order_acquire) || !memory_ || !provider_) {
+      return false;
+    }
+    if (!EnsureTargets()) {
+      return false;
+    }
+    std::lock_guard<std::mutex> lock(targets_mutex_);
+    return targets_->StartPrewarmEarly();
+  }
+  void PrewarmProgress(uint32_t& done, uint32_t& total, bool& finished) {
+    std::lock_guard<std::mutex> lock(targets_mutex_);
+    if (targets_) {
+      targets_->ProgressPrewarm(done, total, finished);
+    } else {
+      done = 0;
+      total = 0;
+      finished = true;
+    }
+  }
+
   void SetInterruptCallback(uint32_t callback, uint32_t user_data) override {
     callback_data_.store(user_data, std::memory_order_release);
     callback_.store(callback, std::memory_order_release);
@@ -2314,6 +2337,9 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
 
   // Step C2: a draw in copy mode is a resolve and/or a clear.
   bool EnsureTargets() {
+    // FH1: the lock is for PrewarmBeforeLaunch, which creates the targets from the app's thread before the
+    // game runs; after that only the ring comes here.
+    std::lock_guard<std::mutex> lock(targets_mutex_);
     if (!targets_ && !targets_failed_) {
       targets_ = TargetsNative::Create(provider_ ? provider_->vulkan_device() : nullptr, memory_);
       if (!targets_) {
@@ -4870,6 +4896,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   // Step C2: render targets, copies and presentation (ring thread only).
   std::unique_ptr<TargetsNative> targets_;
   bool targets_failed_ = false;
+  std::mutex targets_mutex_;  // creating targets_ (EnsureTargets) and the two Prewarm calls of the app
   // Step C5a: identified shaders (ring thread only).
   ShadersNative shaders_;
   const EntryShader* vs_actual_ = nullptr;
@@ -5194,8 +5221,27 @@ bool Active() {
   return renderer == "native";
 }
 
+// The one native system, for the app's calls below. It lives until the app ends.
+static std::atomic<SystemGraphicsNative*> g_system_native{nullptr};
+
+bool PrewarmBeforeLaunch() {
+  SystemGraphicsNative* system = g_system_native.load(std::memory_order_acquire);
+  return system && system->PrewarmBeforeLaunch();
+}
+
+void PrewarmProgress(uint32_t& done, uint32_t& total, bool& finished) {
+  done = 0;
+  total = 0;
+  finished = true;
+  if (SystemGraphicsNative* system = g_system_native.load(std::memory_order_acquire)) {
+    system->PrewarmProgress(done, total, finished);
+  }
+}
+
 std::unique_ptr<rex::system::IGraphicsSystem> CreateSystemGraphics() {
-  return std::make_unique<SystemGraphicsNative>();
+  auto system = std::make_unique<SystemGraphicsNative>();
+  g_system_native.store(system.get(), std::memory_order_release);
+  return system;
 }
 
 }  // namespace fh1::native

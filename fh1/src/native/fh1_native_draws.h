@@ -362,6 +362,16 @@ class DrawsVulkan {
   virtual size_t CopiesPending() const { return 0; }
   // With a game occlusion query open, each span of draws inside a pass is counted with a host query
   // (ContextTargets::BeginQueryOcclusion), which closes with the pass or when the game query closes.
+  // FH1: the pipeline list (this PC's and the shipped one) starts being built now, from any thread, before the
+  // game's code runs and so before the ring's first submission would start it (fh1_app.h, LaunchModule).
+  // false = nothing to wait for (no list, no cache, no library, or switched off).
+  virtual bool StartPrewarmEarly() { return false; }
+  // How far that is, from any thread: pipelines walked, pipelines in the list, and whether it has ended.
+  virtual void ProgressPrewarm(uint32_t& done, uint32_t& total, bool& finished) const {
+    done = 0;
+    total = 0;
+    finished = true;
+  }
   virtual void OcclusionOpen(bool open) = 0;
 };
 

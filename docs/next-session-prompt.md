@@ -14,7 +14,9 @@ a mountain race) are for after the pre-release: do not start them.
 Done already (check it in the code before you trust it): a list of pipelines ships with the port
 (fh1/data/fh1_pipelines.nfpl, 796 of them) and is built during the logo videos (22.5 s on a fresh PC); a pipeline
 that no list knows is compiled by helper threads and its object appears a moment late
-(fh1_native_pipelines_background), except full-screen passes and things drawn once, which still stop the frame.
+(fh1_native_pipelines_background), except full-screen passes and things drawn once, which still stop the frame;
+the list is built before the game's code starts, with a "Preparing shaders n / total" screen when it lasts more
+than half a second (20.3 s on a fresh PC).
 
 Do it in this order:
 1. First merge what I have driven since (I drive more to add pipelines): tell me how many new ones my cache file
@@ -37,10 +39,9 @@ Do it in this order:
    game_root or over my saves), and tell me exactly what to click to check it by hand.
 4. Do not publish anything (no release, no tag, no upload) without my yes at that moment.
 
-Left for later, only if I ask: the progress display before the title screen ("Preparing shaders 412 / 1500") and
-holding the game there when the list takes longer than the logo videos (today 22.5 s of about 35 s; the game must
-never be made to wait in the middle, one frame of about 3.2 s freezes it for good), and the paint booth check on
-the build with the background compiler (my save must be parked at the festival for it).
+Left for later, only if I ask: a nicer look for the "Preparing shaders" screen (it uses the overlay's default
+small text), and the paint booth check on the build with the background compiler (my save must be parked at
+the festival for it).
 
 Rules:
 - Explain things to me in plain words: I am not a programmer. Say exactly what to run and when.
