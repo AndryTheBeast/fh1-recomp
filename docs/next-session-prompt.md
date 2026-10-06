@@ -19,7 +19,9 @@ long fast drive. Then, depending on my answer:
 
 1. If something runs fast or looks wrong with it on: find it (pinyon-shift's hook file and its
    CHANGELOG list what they had to fix at high frame rates) and fix it behind the option.
-2. If I say it is good: making the frame faster so the Legion Go gets nearer 60. The status document has the
+2. If I say it is good: making the frame faster so the Legion Go gets nearer 60 (GoatHonks' updated
+   nfsc-recomp in `..\repos` has two things to read first for that: his vertex cache kept across frames and
+   his reflection cube drawn a few faces per frame; ROADMAP.md, "Other projects to borrow from"). The status document has the
    numbers: the scene's copies take 12-16 ms of the 20 with the double-size scene. Tell me the plan before
    changing code, and measure before and after at the same spot.
 3. Only if I ask: a new release (named "Alpha - <version>", tag `alpha-<version>`) with what was fixed.

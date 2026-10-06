@@ -347,9 +347,27 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
   user on 2026-10-05: the Switch side of his Carbon port (devkitA64 / libnx toolchain file, the Mesa / NVK
   driver patch and build notes, the Switch documents; it takes the PC port in as a git submodule). **The
   reference for our first Switch build**: read its README, ROADMAP and `docs/` before starting ours
-- pinyon-shift (https://github.com/arcanite24/pinyon-shift), added by the user on 2026-10-05: a source for
-  things we may want later, such as its trainer, its fps unlock and some of its fixes. Not looked at yet: read
-  it before starting the 60 fps unlock or any cheat / trainer feature
+- pinyon-shift (https://github.com/arcanite24/pinyon-shift, BSD 3-Clause), added by the user on 2026-10-05:
+  another recompilation of the same game file. Its fps unlock was read and used for `--fh1_fps60` on 2026-10-06
+  (credited in THIRD_PARTY_NOTICES.md); still a source for a trainer and for more fixes at high frame rates
+- nfsuc-sw (https://github.com/antoxa2584x/nfsuc-sw, by antoxa2584x), added by the user on 2026-10-06; local
+  copy `..\repos\nfsuc-sw-main`: Need for Speed: Carbon running on the Nintendo Switch (and Linux), with a
+  Vulkan (NVK) and an OpenGL renderer. **Not the same kind of port as ours**: it is the original Xbox version
+  (x86 code) lifted to C with xboxrecomp (https://github.com/sp00nznet/xboxrecomp, MIT), not an Xbox 360 game
+  through ReXGlue, so none of its game or GPU code fits FH1. What it is a source for: what Horizon (the
+  Switch's system) refuses or does differently, found on real hardware (a second view of a memory mapping is
+  refused, applet mode has too little memory so the game needs title takeover, a frame-flip counter read
+  outside its lock gave 3.7 fps for good), its `switch/build.sh` and `src/switch_nx.c` (libnx NRO, pads,
+  settings file on the SD card), and its way of finding hot leaf functions and replacing them with native
+  ones under a compare switch. The repository itself has no license file: read it and take ideas, credit it
+  by name and link, do not copy its code unless its author says so. Its CLAUDE.md is the place to start
+- GoatHonks' two repositories were updated by the user on 2026-10-06 (the local copies above). New on his
+  side since the copy FH1's renderer started from (2026-10-04), not taken yet: a vertex cache kept across
+  frames (`nfsc_native_vertex_cache.h`), the car's reflection cube drawn N of 6 faces per frame
+  (`nfsc_native_cube_faces.h`), the render thread's busy wait on the game's command queue removed, a native
+  audio filter, direct calls / LTO / function ordering for the Switch build, his Switch console run log and
+  performance history (`nfsc-nx-main\docs`). **The first two are candidates for the faster frame the 60 fps
+  option needs** (his port holds 60 on a Z1 Extreme handheld)
 
 ## Maybe later
 

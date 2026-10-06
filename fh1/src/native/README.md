@@ -19,6 +19,7 @@ nfsc-recomp stays a source of fixes, ported by hand when they work for FH1. To c
 | His repo as of | What |
 | --- | --- |
 | 2026-10-04 13:42 (local copy in `..\repos\nfsc-recomp-main`) | everything: this is the base |
+| 2026-10-06 20:14 (the user updated the local copy) | nothing taken yet. New files on his side: `nfsc_native_vertex_cache.h` (vertices kept across frames), `nfsc_native_cube_faces.h` (the reflection cube, N of 6 faces per frame); both are candidates for a faster frame |
 
 ## FH1 changes on top of that base (keep this list current)
 
