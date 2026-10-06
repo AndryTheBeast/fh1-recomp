@@ -47,13 +47,14 @@ Do it in this order:
    near 3 seconds.
 4. Compare the picture with the option off at the same spot (tools\fh1_pic_stats.py), and tell me what to
    drive to judge it myself. I decide whether it stays.
-5. Only if I ask afterwards: give players what is on main and not published yet (several shaders made at once,
-   the pipeline list at 1067), and the 60 fps option once I call it good.
+5. Only if I ask afterwards: give players the 60 fps option once I call it good (the files of v0.1.0-pre1 were
+   replaced a third time on 2026-10-06 with several shaders made at once and the pipeline list at 1067, so
+   nothing else is waiting to be published).
 
 Waiting, not for this session unless I ask (ROADMAP.md has them): the rare black window at the start (SDK
 presenter "paint mode -> none"), the dark dashboard of the Volkswagen, the grey thumbnail, the pink triangles
-on the upgrade menu's tyre icons, the Montano Plains ground, the upside-down scenery, night colors, garage /
-car damage, the Carbon clean-up. If a GitHub issue has come in (gh issue list), tell me what it says first; do
+on the upgrade menu's tyre icons, night colors, garage / car damage, the Carbon clean-up. (The festival's crowd,
+the Montano Plains ground and the upside-down scenery are fine: I said so on 2026-10-06.) If a GitHub issue has come in (gh issue list), tell me what it says first; do
 not answer or close one without asking me.
 
 Rules:

@@ -14,9 +14,11 @@ too upwards, even going inside the rim": fixed after that); nobody has driven th
 
 ## Twelfth session (2026-10-06): several shaders at once, the list at 1067, a black window
 
-Not in a release yet (the files of `v0.1.0-pre1` are those of the eleventh session). The user's answers at the
-start: the people at the diner and the festival are solid and whole, the game never stood still, the crowd was
-not looked at. No issue on GitHub.
+**Published the same day with the user's yes: the files of `v0.1.0-pre1` were replaced a third time** (same tag
+and version; items 1, 2 and 4 below; release text and docs/install.md updated). The user's answers: the people
+at the diner and the festival are solid and whole, the game never stood still, and at the end of the session
+the festival's crowd, the Montano Plains ground and the upside-down scenery of the mountain race are fine (no
+capture was made of the last two, so which fix did it is not known). No issue on GitHub.
 
 1. **Shaders made on the PC, several at once** (`fh1_native_extra_shaders_threads`, -1 = a quarter of the
    processor's threads, 1 to 4; `fh1_extra_shaders.cpp`). Each job has its own work folder and the tools are

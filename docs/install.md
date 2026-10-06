@@ -82,9 +82,6 @@ Everywhere:
 
 The default, the native renderer (`FH1.exe`). The two "emulated" launchers do not have these faults:
 
-- **The ground is missing at the Horizon Outpost of Montano Plains** (a dark hole under the tents and the stage),
-  and a large flat dark patch lies beside the road just east of it.
-- **In a mountain road race, patches of the hillside show an upside-down picture** of sky, mountains and trees.
 - At night the colors are warmer and greyer than they should be.
 - The garage and car damage have not been checked.
 - **The first run is rough**: the first time the game shows something new it stutters, and some objects appear a

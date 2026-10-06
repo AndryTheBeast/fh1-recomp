@@ -229,7 +229,8 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
           lasts more than half a second (20.3 s on a fresh PC, 0.3 s and no screen otherwise)
     - [ ] The full list: the user's tour (every area by day and night, each kind of race, garage, shops, map)
     - [ ] Hand check on a fresh cache (`tools/fresh_pc_test.ps1` sets our file and the AMD driver's cache aside)
-  - [ ] **After the first pre-release (user, 2026-10-06): the ground is not drawn at the Horizon Outpost of Montano
+  - [x] **User, 2026-10-06, end of the twelfth session: fine now** (with the crowd of the festival; no capture was
+        made, so which fix did it is not known). The item as it was written: the ground is not drawn at the Horizon Outpost of Montano
         Plains** (native renderer, at night, step 1 build of the shipped pipeline list, so before the background
         compiler existed): the road and the gravel in front of the stage are there, the ground under the tents and
         the stage is a dark hole. Screenshots: `build_logs\reference\user-outpost-ground-missing-20261006-night.webp`
@@ -255,7 +256,7 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         from a copy installed from the release (log: `user-ground-flat-newgame-20261006-native.log`, 30 shaders
         made on the PC, none failed, 206 draws rejected with cause 317): check first whether the developer's
         build shows it too
-  - [ ] **After the first pre-release (user, 2026-10-06): textures do not load in races** (native renderer, same
+  - [x] **User, 2026-10-06, end of the twelfth session: fine now.** The item as it was written: textures do not load in races** (native renderer, same
         session and build as the item above). Screenshot `build_logs\reference\user-race-scenery-wrong-20261006.webp`
         (a mountain road race by day, red Mustang, 46 % progress): the hillside at the left is dark and almost
         without texture, and a slab of forest hangs in the sky above the road, upside down and stretched, as if

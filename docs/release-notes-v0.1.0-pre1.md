@@ -24,6 +24,10 @@ default native renderer:
   game).
 - **Fewer long stutters on a first run**: shaders the game meets for the first time are prepared in the
   background again, so an object can show a moment late the first time instead of the game standing still.
+- **Objects show sooner on a first run** (third update, the same day): shaders the game meets for the first
+  time are prepared several at once, and everything that waited for one is prepared the moment it is ready.
+- **More is ready before you play**: the list of what the installer's first start prepares grew from 887 to
+  1067 entries (more roads, the garage, painting, upgrades, the autoshow).
 
 **If you installed before this update:** start `FH1Installer.exe` again and choose the same `.iso` and the same
 folder. It replaces the port and prepares the shaders again; your saves are not touched.
@@ -60,9 +64,7 @@ will be removed at some point.
 - On a first run, scenery can look wrong for a moment while its shaders are prepared (a piece of hillside
   hanging over the road, a blurry car): it heals by itself and is gone the next time.
 - Only the USA disc. No Xbox Live, Kinect or downloadable content.
-- The default native renderer: no ground at the Horizon Outpost of Montano Plains and a dark patch beside the
-  road east of it; upside-down scenery patches in a mountain race; night colors too warm; garage and car damage
-  not checked; a car's small picture (thumbnail) is sometimes wrong; a car's
+- The default native renderer: night colors too warm; garage and car damage not checked; a car's small picture (thumbnail) is sometimes wrong; a car's
   dashboard can stay dark; stutters and late objects the first time
   something is shown (see "The first run is rough" above); tried on AMD graphics only. The emulated launchers do not have these
   faults.
