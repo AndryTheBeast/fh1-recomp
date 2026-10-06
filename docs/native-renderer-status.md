@@ -55,6 +55,10 @@ Numbers (Legion Go, unattended route; logs `build_logs\test-m0*`, `test-s1*`, `t
 | Step 2, fresh PC (list of 796) | 796 | 22.5 s, 749 compiled | 0 new | 114 ms |
 | Step 2, fresh PC, shipped list hidden (stress test) | 0 | nothing | 206 off the ring (44 s of compiling), the rest on it | 1.8 s, no freeze, picture complete after |
 
+**User, 2026-10-06, after playing the step 2 build:** with the list, objects appear at once; when the pipelines
+were not known, objects appeared a moment late instead of the game stopping; nothing stays missing that was not
+missing before ("everything looks right to me").
+
 Open points: in the stress test the frames of 1.0-1.8 s are the pipelines still compiled on the ring (rectangles
 and one-off targets) while loading; 18 background jobs were never asked for again and so never reached the list;
 the user's save now starts on a highway in daylight (not the festival at night), so the unattended route's X at
