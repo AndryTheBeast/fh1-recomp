@@ -17,8 +17,8 @@ using System.Windows.Forms;
 namespace Fh1Installer {
 
 public static class Program {
-  // The release's tag is "v" + Version; its name on GitHub and in the window is Name (the user's naming,
-  // 2026-10-06: "Alpha - 0.1.0" is the release whose tag stays v0.1.0-pre1, "Alpha - 0.1.1" this one).
+  // The release's tag is "alpha-" + Version (a tag cannot hold spaces); its name on GitHub and in the window is
+  // Name (the user's naming, 2026-10-06: "Alpha - 0.1.0" for the first release, "Alpha - 0.1.1" for this one).
   public const string Version = "0.1.1";
   public const string Name = "Alpha - " + Version;
 

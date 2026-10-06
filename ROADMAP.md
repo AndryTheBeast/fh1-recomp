@@ -448,8 +448,9 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
     - [ ] Reaching 60 on the Legion Go needs a faster frame: the scene's copies (12-16 ms of the 20 with the
           double-size scene) first, then the processor side (40-50 fps with `--fh1_native_ssaa=false`, which
           the user finds too rough to use)
-    - [ ] **Release "Alpha - 0.1.1" (tag `v0.1.1`) with the option in the installer (user, 2026-10-06; the first
-          release is named "Alpha - 0.1.0" since that day, tag `v0.1.0-pre1` kept): started, not built or
+    - [ ] **Release "Alpha - 0.1.1" (tag `alpha-0.1.1`) with the option in the installer (user, 2026-10-06; the
+          first release is named "Alpha - 0.1.0" since that day; its tag is to become `alpha-0.1.0`, prepared in
+          `build_logs\release-alpha-0.1.0`, not done: docs/next-session-prompt.md): started, not built or
           published.** The installer has the checkbox (it writes `fh1_fps60 = true` into `fh1.toml`) and
           version `0.1.1`; left: package, test on the installed test copy, release texts, the upload
           with the user's yes (docs/next-session-prompt.md has the list)

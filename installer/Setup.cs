@@ -94,7 +94,7 @@ public static class Web {
 // (a developer's build), otherwise the two zips of the release.
 public static class Source {
   // Set by --source (tests): another address or folder that holds the two zips.
-  public static string Base = "https://github.com/AndryTheBeast/fh1-recomp/releases/download/v" + Program.Version + "/";
+  public static string Base = "https://github.com/AndryTheBeast/fh1-recomp/releases/download/alpha-" + Program.Version + "/";
   public const string PortZip = "fh1-win64.zip";
   public const string ToolsZip = "fh1-shader-tools.zip";
 
