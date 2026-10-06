@@ -86,6 +86,48 @@ ISO and a folder, extracts the disc and builds the shader library there. Open: t
 (`build_logs\shaders\synth*`) come from the running game, not the disc; unsigned programs are blocked by Smart App
 Control.
 
+**The plan the user agreed to (ninth session, 2026-10-06; nothing of the installer is built yet):**
+
+- The app: `FH1Installer.exe`, C# Windows Forms (.NET Framework 4.8 is part of Windows 10 / 11 and so is its
+  compiler, `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`). One window: choose the ISO (checked by its
+  title ID), choose a folder (space needed and free), Install (download, extract, shader library, launchers), and
+  an Update button. StevensND's installer page is the model: credit him in the window and in the README.
+- The shader library is built on the user's PC by the C++ helpers we have (`fh1_hlsl.exe`, `fh1_lzx_decode.exe`,
+  `fh1_pack_library.exe`) and DXC (`dxc.exe` + `dxcompiler.dll`); the Python scripts are rewritten inside the app.
+  Time on the Legion Go: translation about 6 minutes, DXC 3.8-4.8 minutes (97 shaders measured, 16 or 6 at a
+  time): about 10 minutes.
+- The ~480 engine shaders are inside default.xex (encrypted, compressed): fh1.exe gets a mode that writes the
+  loaded image and exits without a window (today `--fh1_dump_image` writes it while the game runs).
+- **The synth shaders cannot be made from the disc by an installer.** Measured: of the 42 (40 vertex shaders),
+  5 are a disc shader with only its vertex fetch words changed; for the others most ALU instructions are found in
+  one disc container in one piece but the shader is shorter (v_55208EEE227B7058, 609 words: 172 of its 180 ALU
+  instructions sit together in a track's 641-word vertex shader). So they are disc shaders that the console's
+  Direct3D rewrites when it binds them to a vertex declaration, and the disc does not say which declaration goes
+  with which shader. Plan: fh1.exe builds them when the game first uploads one (the container from the microcode
+  as `tools/fh1_synth_containers.py` does, then the translator and DXC next to fh1.exe, on a helper thread, saved
+  in a small extra library). The Switch cannot do that (no compiler there): it needs another answer.
+- The release holds three files: `FH1Installer.exe`, `fh1-win64.zip` (fh1.exe, rexruntime.dll, rexgpu-xenos.dll,
+  the two Facade DLLs, fh1_pipelines.nfpl: 133 MB, 38 MB zipped) and `fh1-shader-tools.zip` (25 MB, 11 MB zipped).
+  No library, no driver cache, no game data, no .pdb. To fix first: fh1.exe holds one build path with the user's
+  Windows name; it needs the VC++ runtime (MSVCP140, VCRUNTIME140).
+- Unsigned: Smart App Control blocks the installer and fh1.exe, and Windows cannot turn it back on without a
+  reset (the guide says so first); SmartScreen asks once for the installer. Checksums on the release page.
+- The emulated GPU is the default (user: "for now at least"); the native renderer is a second launcher.
+- Tag `v0.1.0-pre1`. Nothing is published without the user's yes at that moment.
+- Tests of the installer go into a new empty folder with `--user_data_root=<another empty folder>`, so the
+  user's saves are never touched.
+
+**Same session: the mouse pointer and F3.** The Windows pointer hides over the game after a second without
+moving (`--fh1_hide_cursor`, the SDK's auto-hide mode, both renderers; not checked by the user yet). F3 on the
+native renderer opens GoatHonks' monitor (`fh1/src/fh1_perf_overlay.cpp`: renderer, FPS, frame time, 1 % low,
+worst, a graph from 15 to 30 FPS); with it open the festival stays at 30.0 fps. The same monitor opens on the
+emulated GPU's Vulkan backend (the app copies the plugin's frame times into `rex::GetFrameStats()`; 30.0 fps; its
+title is the backend's own name, "Vulkan - FBO - HEAVILY INCOMPLETE, early development"). On the emulated
+Direct3D 12 it cost 4 fps (25.6 against 30.0, two runs: a dialog makes that backend present through the UI
+thread), so there F3 keeps the SDK's monitor (the user's decision). Picture at the festival, 59 s:
+5/25/83/157/246 native, 5/22/81/160/246 emulated. `auto_test.ps1`: an option given twice (`--log_level=debug`
+in -ExtraArgs) makes the game drop every option ("--game_data_root was not provided").
+
 - **0. Paint booth: DONE in the sixth session** (see "What was fixed on 2026-10-05, sixth session" below). Left
   of it: **car damage has not been looked at** (same undeclared streams; ask the user to hit something).
 - **0b. DONE 2026-10-06 (seventh session; the notes below are from before the fix): the photos of a car after

@@ -374,5 +374,12 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   comparing pictures (on 2026-10-06 the save moved from the festival at night to a highway by day).
 - The first pre-release is a Windows GUI installer with a pre-built fh1.exe (the user's decision, 2026-10-06), not
   source-only: ROADMAP.md, "Maybe later".
+- 2026-10-06, ninth session: the pre-release plan is agreed (status document, "The plan the user agreed to");
+  the mouse pointer hides (`--fh1_hide_cursor`) and F3 opens GoatHonks' monitor on the native renderer
+  (`fh1/src/fh1_perf_overlay.cpp`). Adding a source file to fh1/CMakeLists.txt gave the long build (rexglue.exe
+  relinked, code generator run: 14 minutes).
+- A game option given twice on the command line makes fh1.exe drop all of them ("--game_data_root was not
+  provided"): never repeat in `auto_test.ps1 -ExtraArgs` what the script already passes, and `-ExtraArgs ""`
+  fails too (use `--fh1_renderer=xenos` for a plain emulated run).
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.

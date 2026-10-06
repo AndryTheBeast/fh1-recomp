@@ -206,7 +206,12 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] Frame time while driving (185-230 ms frames were seen; render-target copies rejected)
   - [ ] Remove the Carbon / Most Wanted special cases left in the draw code, one at a time (user's item 5; the
         first one found by a fault: `fh1_shadows_without_vegetation`)
-  - [ ] Carbon's fps counter and frame time viewer on F3 for the native renderer (user's item 6)
+  - [x] Carbon's fps counter and frame time viewer on F3 for the native renderer (user's item 6): GoatHonks'
+        monitor (`fh1/src/fh1_perf_overlay.cpp`; graph from 15 to 30 FPS; `--fh1_perf_overlay=true` opens it at
+        the start); 30.0 fps with it open. Also on the emulated GPU's Vulkan backend (30.0 fps); the emulated
+        Direct3D 12 keeps the SDK's monitor on F3 (user: his monitor cost it 4 fps, 25.6 against 30) - 2026-10-06
+  - [x] The Windows mouse pointer hides over the game after a second without moving (`--fh1_hide_cursor`, both
+        renderers; the user checks it by hand) - 2026-10-06
   - [ ] 13 shaders still on an old translation (loop constants i0 / i16 not declared: DXC rejects the new HLSL)
   - [ ] The game stops sending commands after one frame of about 3.2 s (new pipelines compiled in the ring: seen
         again on 2026-10-05 with a new option's first run)
@@ -304,6 +309,18 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
       user chooses their ISO and a folder, it extracts the disc and builds the shader library there. To solve:
       the synth vertex shaders are not on the disc, unsigned programs and Smart App Control, install guide, known
       issues, which renderer is the default, a tag
+      **Plan agreed by the user on 2026-10-06** (details: docs/native-renderer-status.md, "The first
+      pre-release"): a C# Windows Forms app `FH1Installer.exe`; it downloads `fh1-win64.zip` (fh1.exe, its DLLs,
+      the pipeline list: 133 MB, 38 MB zipped) and `fh1-shader-tools.zip` (translator, unpacker, packer, DXC:
+      11 MB zipped), extracts the ISO, builds the shader library (about 10 minutes); the emulated GPU is the
+      default and the native renderer a second launcher; unsigned (the guide says Smart App Control must be
+      off); tag `v0.1.0-pre1`
+    - [ ] fh1.exe: an "unpack only" mode that writes default.xex's image for the installer (no window)
+    - [ ] fh1.exe: the vertex shaders Direct3D rewrites at run time (the 42 of `build_logs\shaders\synth*`) are
+          translated and compiled on the user's PC when first uploaded, and saved
+    - [ ] fh1.exe without the build path that holds the user's name; the VC++ runtime check
+    - [ ] The installer: window, ISO check and extraction, download, library build, launchers, update button
+    - [ ] Install guide, known issues, release text; the release itself only with the user's yes
 - [ ] (old wording) Source-only pre-release (tag + install guide + known issues; users build from their own disc). **User,
       2026-10-06: this is the focus now**, after the offline shader library for the PC; the other native renderer
       fixes (night colors, races / garage / damage, Carbon clean-up, F3 viewer) wait

@@ -5,17 +5,22 @@
 #pragma once
 
 #include <rex/cvar.h>
+#include <rex/frame_stats.h>
 #include <rex/input/device_assignment.h>
 #include <rex/input/input_system.h>
 #include <rex/logging.h>
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
+#include <rex/system/interfaces/graphics.h>
+#include <rex/ui/keybinds.h>
 
 #include "fh1_autoplay.h"
 #include "fh1_crash_report.h"
 #include "fh1_native_system.h"
+#include "fh1_perf_overlay.h"
 #include "fh1_prepare_screen.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -40,6 +45,17 @@ REXCVAR_DEFINE_STRING(fh1_autoplay, "", "FH1",
 // seconds, to look at it on a PC whose driver already has every pipeline.
 REXCVAR_DEFINE_INT32(fh1_native_prepare_screen_min_s, 0, "FH1",
                      "Native renderer: keep the 'Preparing shaders' screen for at least this many seconds (test)");
+
+// The Windows mouse pointer over the game window: hidden after a second without moving, back as soon as the
+// mouse moves (the SDK's auto-hide mode), so the F4 settings window can still be clicked.
+REXCVAR_DEFINE_BOOL(fh1_hide_cursor, true, "FH1",
+                    "Hide the mouse pointer over the game window while the mouse is not moving");
+
+// F3: the FPS / frame time monitor taken from nfsc-recomp (fh1_perf_overlay.h), on the native renderer and the
+// emulated GPU's Vulkan backend (the emulated Direct3D 12 keeps the SDK's monitor, --show_frame_monitor).
+REXCVAR_DEFINE_BOOL(fh1_perf_overlay, false, "FH1",
+                    "Native renderer and emulated Vulkan: show the FPS / frame time monitor from the start (F3 "
+                    "toggles it in game)");
 
 class Fh1App : public rex::ReXApp {
  public:
@@ -141,21 +157,74 @@ class Fh1App : public rex::ReXApp {
       });
     });
   }
+  // The window exists from here on (OnPostSetup runs before it is created).
+  void OnPreLaunchModule() override {
+    if (window() && REXCVAR_GET(fh1_hide_cursor)) {
+      window()->SetCursorAutoHideDelayMs(1000);
+      window()->SetCursorVisibility(rex::ui::Window::CursorVisibility::kAutoHidden);
+    }
+  }
+  // Runs right after the SDK has bound its own keys: F3 opens the monitor taken from nfsc-recomp instead of
+  // the SDK's small one, on the native renderer and on the emulated GPU's Vulkan backend. The emulated
+  // Direct3D 12 keeps the SDK's (user, 2026-10-06): an ImGui window makes that backend present through the UI
+  // thread, and the festival fell from 30 to about 25.6 fps with this monitor open.
+  void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
+    if (!drawer) return;
+    if (!fh1::native::Active() && rex::cvar::GetFlagByName("gpu_backend") != "vulkan") return;
+    rex::ui::UnregisterBind("bind_debug_overlay");
+    rex::ui::RegisterBind("bind_fh1_perf", "F3", "Toggle the FPS / frame time monitor", [this] {
+      if (perf_overlay_) perf_overlay_.reset();
+      else OpenPerfOverlay();
+    });
+    if (REXCVAR_GET(fh1_perf_overlay)) OpenPerfOverlay();
+  }
   void OnShutdown() override {
+    rex::ui::UnregisterBind("bind_fh1_perf");
+    perf_overlay_.reset();
     prepare_stop_.store(true, std::memory_order_release);
     if (prepare_thread_.joinable()) {
       prepare_thread_.join();
     }
     prepare_screen_.reset();
   }
-  // void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {}
   // std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;
   // std::unique_ptr<rex::ui::AchievementNotificationDialog>
   // CreateAchievementNotificationDialog() override;
   // void OnConfigurePaths(rex::PathConfig& paths) override {}
 
  private:
+  // The native renderer records its presented frames in rex::GetFrameStats() itself. The emulated GPU keeps its
+  // frame times inside its plugin (the SDK's frame monitor): the frames presented since the last look are
+  // copied over, at most the 120 the plugin hands out.
+  void OpenPerfOverlay() {
+    if (!imgui_drawer()) return;
+    if (fh1::native::Active()) {
+      perf_overlay_ = std::make_unique<fh1::PerfOverlay>(imgui_drawer());
+      return;
+    }
+    perf_frames_seen_ = 0;
+    perf_overlay_ = std::make_unique<fh1::PerfOverlay>(imgui_drawer(), [this] {
+      auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
+      rex::system::FrameMonitorStats stats;
+      if (!graphics || !graphics->GetFrameMonitorStats(stats)) return;
+      constexpr uint64_t kHistory = rex::system::FrameMonitorStats::kHistory;
+      if (perf_frames_seen_ == 0) {
+        rex::SetRendererName(stats.renderer);
+        // The first look: only what the plugin has really measured (the first swap has no frame time).
+        perf_frames_seen_ = stats.total_frames > kHistory ? stats.total_frames - kHistory : 1;
+      }
+      if (stats.total_frames <= perf_frames_seen_) return;
+      const uint64_t fresh = std::min(stats.total_frames - perf_frames_seen_, kHistory);
+      for (uint64_t i = kHistory - fresh; i < kHistory; ++i) {
+        rex::RecordPresentedFrame(double(stats.history_ms[i]));
+      }
+      perf_frames_seen_ = stats.total_frames;
+    });
+  }
+
+  uint64_t perf_frames_seen_ = 0;  // UI thread only
   std::thread prepare_thread_;
   std::atomic<bool> prepare_stop_{false};
   std::unique_ptr<Fh1PrepareScreen> prepare_screen_;  // UI thread only
+  std::unique_ptr<fh1::PerfOverlay> perf_overlay_;  // UI thread only
 };

@@ -23,6 +23,7 @@ set(FH1_SOURCES
     src/main.cpp
     src/fh1_crash_report.cpp
     src/fh1_autoplay.cpp
+    src/fh1_perf_overlay.cpp
     src/fh1_trace_load.cpp
     src/fh1_nan_trap.cpp
     src/fh1_trace_epa.cpp
