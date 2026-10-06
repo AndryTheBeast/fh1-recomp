@@ -406,9 +406,9 @@ std::vector<Shader> LoadSaved() {
   if (!REXCVAR_GET(fh1_native_extra_shaders)) return shaders;
   std::error_code ec;
   // The shaders of this folder were made by the translator of one version of the port, and the renderer must
-  // agree with it on how each fetch is read (2 = the bones of the characters with a skeleton, 2026-10-06): the
-  // files of another version are deleted and made again while the game runs.
-  static constexpr char kVersion[] = "2";
+  // agree with it on how each fetch is read (2 = the bones of the characters with a skeleton, 3 = bones read in
+  // a loop, both 2026-10-06): the files of another version are deleted and made again while the game runs.
+  static constexpr char kVersion[] = "3";
   {
     const fs::path stamp = Folder() / "version.txt";
     std::vector<uint8_t> text;

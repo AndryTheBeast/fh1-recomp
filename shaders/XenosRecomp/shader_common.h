@@ -126,6 +126,12 @@ struct Fh1BlockShared { float4 v[64]; };  // FH1: 256 words (g_PosScale 252; boo
 // NFSMW: where each component of the vertex input at that location comes from
 // (D3D patches the fetch swizzle according to the declaration). 0xFFF = as is.
 #define g_InputRemap(LOC)          (NFSMW_UBO ? FH1_SHARED_UINT(296 + (LOC) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 296 + (LOC) * 4))
+// FH1: the live loop constants (registers SHADER_CONSTANT_LOOP_00-31, shared words 122-153): count in bits 0-7,
+// start in 8-15, step in 16-23. A shader's own container gives them as literals; a container rebuilt from the
+// microcode alone (a shader made on the PC) has none, and its loops did not compile ("undeclared identifier
+// i15": the people of the diner, 2026-10-06).
+#define g_LoopConstant(N)          (NFSMW_UBO ? FH1_SHARED_UINT(488 + (N) * 4) : vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 488 + (N) * 4))
+#define FH1_LOOP_CONSTANT(N)       int4(int(g_LoopConstant(N) & 0xFFu), int((g_LoopConstant(N) >> 8) & 0xFFu), int(g_LoopConstant(N) << 8) >> 24, int(g_LoopConstant(N)) >> 24)
 
 [[vk::constant_id(0)]] const uint g_SpecConstants = 0;
 

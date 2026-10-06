@@ -437,6 +437,11 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   and the renderer's (`ComputeEntry`) must change together, and `kVersion` in `fh1_extra_shaders.cpp` goes up
   with them (saved shaders of another version are deleted). The unattended new-game route reaches the opening
   at about 100 s once Windows has the files cached (not 140 s): take shots from 96 s.
+  A shader that "could not be translated and compiled" on the PC: get its microcode with
+  `--fh1_dump_ring_shaders=<folder>` on the developer's build (no tools there, so every unknown shader is
+  written), then `tools/fh1_synth_containers.py`, `shadersh1_hlsl.exe` and DXC by hand show the compiler's
+  message. Vertex fetch rules shared by translator and renderer so far: index register not r0, r0's component
+  written by an earlier declared fetch, or the fetch runs inside a loop = read from memory (`fh1FetchRanked`).
   **Never make the ring wait** (for a shader, a pipeline, anything) without testing on an installed copy with
   the driver cache set aside: a frame of about 3.2 s stops the game for good, and on the developer's PC the
   driver cache hides it (a wait for PC-made shaders froze the first drive twice that day; unknown pipelines go

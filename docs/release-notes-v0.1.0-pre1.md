@@ -18,8 +18,8 @@ download; the installer reads your disc image on your computer.
 The downloads below were replaced with fixed ones (same version, same installer). What changed, all in the
 default native renderer:
 
-- **Characters are drawn**: the deer and the presenter of the opening, the driver in the car and the people of
-  the festival were missing, or came out scrambled.
+- **Characters are drawn**: the deer of the opening, the driver in the car, the presenter and the people at
+  the diner were missing, see-through or scrambled.
 - **The ground beside the road is no longer one flat color on a first run** (seen on the first drive of a new
   game).
 - **Fewer long stutters on a first run**: shaders the game meets for the first time are prepared in the
@@ -57,6 +57,8 @@ will be removed at some point.
 
 ## Known issues
 
+- On a first run, scenery can look wrong for a moment while its shaders are prepared (a piece of hillside
+  hanging over the road, a blurry car): it heals by itself and is gone the next time.
 - Only the USA disc. No Xbox Live, Kinect or downloadable content.
 - The default native renderer: no ground at the Horizon Outpost of Montano Plains and a dark patch beside the
   road east of it; upside-down scenery patches in a mountain race; night colors too warm; garage and car damage

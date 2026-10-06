@@ -60,7 +60,28 @@ is kept in `build_logs\release-v0.1.0-pre1-first-upload`).
    repacked. Result on the new-game route: 0 draws rejected (was 206-213), the driver sits in the car, the birds
    fly, and the deer of the opening has the emulated GPU's shape (`build_logs\test-deerN-20261006-112911-108s.png`
    against `test-deerE-20261006-113111-105s.png`). The presenter and the festival's people: the user checks.
-3. **Shaders saved by another version are thrown away**: `shaders_extra\version.txt` ("2"); a folder without it
+3. **The people of the diner (the presenter, the walkers) were see-through after that fix, and missing before
+   it** (the user, on the updated installed copy). Their vertex shader is one Direct3D rewrites
+   (`v_39E8051E5F332A24`, 294 words; the disc's originals are `v_39cc8d941ebecf8b`, `v_47edf5db846abfa3`,
+   `v_b6d18b5105e9a620`, `v_bb2c4ea472949a92`), and it reads its four bones **in a loop**: each turn picks a
+   bone number into r0.z with ALU instructions and fetches the bone there. Two faults. (a) It never compiled on
+   a PC: the loop's count is integer constant i15, which a container rebuilt from the microcode does not define
+   ("undeclared identifier i15"). The translator now declares every loop constant the container lacks from the
+   live registers the renderer already writes (`FH1_LOOP_CONSTANT`, shared words 122-153); the installer's
+   library went from 3,816 to 3,829 shaders, because 13 shaders of the disc failed the same way. (b) Compiled,
+   its bones would have been read as vertex attributes: **a full fetch that runs inside a loop is a computed
+   index too** (`fullFetchInLoop` in the translator, `InstructionsInLoops` in `ComputeEntry`: the exec blocks
+   between control-flow opcodes 7 and 8). Billboards (r0.y worked out by ALU outside any loop) are untouched.
+   Found with `--fh1_dump_ring_shaders` on an unattended run to the diner (about 260-275 s on the new-game
+   route; `tools/fh1_synth_containers.py`, then `fh1_hlsl.exe` and DXC by hand gave the compiler's message).
+   Result: the people are solid and whole on the developer's build with the tools
+   (`build_logs	est-diner2N-20261006-130525-273s.png`) and on a fresh-PC run of the installed copy (48 shaders
+   made, none failed, longest frame 0.7 s, `test-installed5-20261006-132126-*`).
+   **Seen on the user's first run after the update and gone at the second start: a slab of hillside hanging
+   over the road 0.5 mi before the festival** (upside-down trees under it), and perhaps a smeared car front at
+   the diner (not confirmed either way). First-run effects of objects that show late; not reproduced with the
+   shaders already made.
+4. **Shaders saved by another version are thrown away**: `shaders_extra\version.txt` ("2"); a folder without it
    or with another number loses its `.bin` / `.spv` files at the start and they are made again. Needed because a
    copy installed from pre-release 1 holds shaders of the old translator.
 

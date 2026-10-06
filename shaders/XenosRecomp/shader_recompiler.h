@@ -44,6 +44,9 @@ struct ShaderRecompiler : StringBuffer
     bool haveFullFetch = false;
     bool fullFetchR0Fetched = false;
     uint32_t r0FetchWritten = 0;
+    uint32_t loopConstantDefined = 0;
+    uint32_t fetchLoopDepth = 0;
+    bool fullFetchInLoop = false;
     uint32_t fullFetchConst = 0, fullFetchSrc = 0, fullFetchSwizzle = 0, fullFetchStride = 0, fullFetchAddress = 0;
     bool fullFetchRounded = false;
 #endif

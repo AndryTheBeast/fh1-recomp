@@ -9191,6 +9191,47 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     return key ? key : 1;
   }
 
+  // FH1: which instructions run inside a loop: the exec blocks between a loop start (control-flow opcode 7) and
+  // its end (8), in control-flow order. A fetch there is indexed by a number the loop works out, not by the
+  // vertex number (the people of the diner read their four bones in a loop). The translator applies the same
+  // rule (shader_recompiler.cpp, fullFetchInLoop).
+  static void InstructionsInLoops(std::span<const uint32_t> code, std::vector<uint8_t>& in_loop) {
+    const size_t instructions = code.size() / 3;
+    in_loop.assign(instructions, 0);
+    size_t end_flow = instructions;
+    uint32_t depth = 0;
+    for (size_t i = 0; i < end_flow; ++i) {
+      const uint32_t w0 = code[i * 3], w1 = code[i * 3 + 1], w2 = code[i * 3 + 2];
+      const uint64_t flow[2] = {uint64_t(w0) | (uint64_t(w1 & 0xFFFF) << 32),
+                                uint64_t(w1 >> 16) | (uint64_t(w2) << 16)};
+      for (const uint64_t c : flow) {
+        const uint32_t opcode = uint32_t(c >> 44) & 0xF;
+        if (opcode == 7) {
+          ++depth;
+          continue;
+        }
+        if (opcode == 8) {
+          depth -= depth ? 1 : 0;
+          continue;
+        }
+        if (!((opcode >= 1 && opcode <= 6) || opcode == 13 || opcode == 14)) {
+          continue;  // not an exec block
+        }
+        const uint32_t address = uint32_t(c) & 0xFFF;
+        const uint32_t count = uint32_t(c >> 12) & 0x7;
+        if (count && address < end_flow) {
+          end_flow = address;
+        }
+        for (uint32_t j = 0; depth && j < count; ++j) {
+          if (size_t(address) + j < instructions) {
+            in_loop[size_t(address) + j] = 1;
+          }
+        }
+      }
+    }
+  }
+  std::vector<uint8_t> in_loop_;  // ComputeEntry's scratch
+
   // FH1: the vertex fetch instructions of a shader that are not in its declaration and take their stream from
   // fetch constants 24-31 (the translator turns them into fh1Fetch). The microcode starts with its control flow,
   // two 48-bit instructions per three words, up to the first executed address; each exec block names its
@@ -9253,6 +9294,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       return nullptr;
     }
     RawFetchSlots(vs, patched, entry_.fetches_raw);
+    InstructionsInLoops(patched, in_loop_);
     uint32_t locations_used = 0;
     for (const ElementVertex& element : vs.elements) {
       const uint32_t reg_entry = (vs.microcode[size_t(element.instruction) * 3] >> 12) & 0x3F;
@@ -9318,7 +9360,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           r0_fetched |= MaskWritten(patched[i + 1] & 0xFFF);
         }
       }
-      if (((d0_full >> 5) & 0x3F) != 0 || ((r0_fetched >> ((d0_full >> 30) & 0x3)) & 0x1)) {
+      if (((d0_full >> 5) & 0x3F) != 0 || ((r0_fetched >> ((d0_full >> 30) & 0x3)) & 0x1) ||
+          (at_full / 3 < in_loop_.size() && in_loop_[at_full / 3])) {
         // Indexed by a computed register: read from memory by the shader, not a vertex attribute.
         uint32_t rank = 0;
         for (const ElementVertex& other_value : vs.elements) {

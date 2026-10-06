@@ -200,6 +200,10 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
         fullFetchIndexVar.clear();
         // FH1: r0 is the vertex index only until a declared fetch writes it (see r0FetchWritten below).
         fullFetchR0Fetched = instr.srcRegister == 0 && ((r0FetchWritten >> (instr.srcSwizzle & 3)) & 1) != 0;
+        // FH1: a fetch that runs inside a loop is not indexed by the vertex number either: the people of the diner
+        // read their four bones in a loop, each at a bone number the loop picks into r0.z (v_39E8051E5F332A24).
+        // The renderer applies the same rule (InstructionsInLoops).
+        fullFetchInLoop = fetchLoopDepth > 0;
     }
 #endif
 
@@ -239,7 +243,7 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
     // r0 itself is a computed index once a declared fetch has written the component used: the characters with a
     // skeleton fetch their four bone numbers into r0, then four bones at r0.x, r0.y, r0.z and r0.w. The renderer
     // applies the same rule (ComputeEntry, r0_fetched).
-    const bool computedIndex = haveFullFetch && (fullFetchSrc != 0 || fullFetchR0Fetched);
+    const bool computedIndex = haveFullFetch && (fullFetchSrc != 0 || fullFetchR0Fetched || fullFetchInLoop);
     if (findResult != vertexElements.end() && instr.dstRegister == 0)
     {
         for (uint32_t i = 0; i < 4; i++)
@@ -1827,6 +1831,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
                 println("\tint4 i{} = int4({}, {}, {}, {});",
                     (definition->registerIndex - 8992) / 4 + i, u.b.x, u.b.y, u.b.z, u.b.w);
+#ifdef NFSMW_RECOMP
+                const uint32_t loopId = (definition->registerIndex - 8992) / 4 + i;
+                if (loopId < 32)
+                    loopConstantDefined |= 1u << loopId;
+#endif
             }
             definitions += 2;
             definitions += definition->count;
@@ -1834,6 +1843,18 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
 
         out += "\n";
     }
+
+#ifdef NFSMW_RECOMP
+    // FH1: a loop constant the container does not define is the live register, which the renderer writes in the
+    // shared block (FH1_LOOP_CONSTANT in shader_common.h). A container rebuilt from the microcode alone defines
+    // none: the shaders of the people at the diner have a loop on i15 and did not compile. Unused ones cost nothing.
+    for (uint32_t loopId = 0; loopId < 32; loopId++)
+    {
+        if (!((loopConstantDefined >> loopId) & 1))
+            println("\tint4 i{0} = FH1_LOOP_CONSTANT({0});", loopId);
+    }
+    out += "\n";
+#endif
 
     bool printedRegisters[32]{};
 
@@ -2142,6 +2163,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 break;
 
             case ControlFlowOpcode::LoopStart:
+#ifdef NFSMW_RECOMP
+                ++fetchLoopDepth;  // FH1: a fetch inside a loop has a computed index (see fullFetchInLoop)
+#endif
                 if (simpleControlFlow)
                 {
                     indent();
@@ -2166,6 +2190,10 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                 break;
 
             case ControlFlowOpcode::LoopEnd:
+#ifdef NFSMW_RECOMP
+                if (fetchLoopDepth > 0)
+                    --fetchLoopDepth;
+#endif
                 if (simpleControlFlow)
                 {
                     --indentation;
