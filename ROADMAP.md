@@ -315,7 +315,9 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
 
 ## Maybe later
 
-- [ ] **First pre-release as a Windows installer app (user, 2026-10-06; replaces "source-only")**: a simple GUI
+- [x] **First pre-release as a Windows installer app (user, 2026-10-06; replaces "source-only")** - **published
+      on 2026-10-06 as `v0.1.0-pre1`** (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1;
+      the repository went public that day): a simple GUI
       like StevensND's installer page for nfsmw-nx: downloads the pre-built fh1.exe (the user's decision), the
       user chooses their ISO and a folder, it extracts the disc and builds the shader library there. To solve:
       the synth vertex shaders are not on the disc, unsigned programs and Smart App Control, install guide, known
@@ -343,7 +345,8 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           30 fps kept, containers byte-identical to the Python tool's), read back at the second start, picture
           equal to the own library's (59 s: 8/29/89/168/246 on both) - 2026-10-06. Not tried yet: first-person
           view and the paint booth with such a library (the user's check)
-    - [ ] The VC++ runtime check; a window title without the SDK's build name ("fh1 [rexglue-v0.10.0.0-dev...]")
+    - [ ] A window title without the SDK's build name ("fh1 [rexglue-v0.10.0.0-dev...]") (the VC++ runtime check
+          is in the installer, step 6); only if the user asks
     - [x] The installer, step 1: the window, the ISO check (title ID and version from the disc's default.xex) and
           the folder check (`installer/`, built by `installer\build_installer.ps1`, 19 KB) - 2026-10-06; the
           user checks it by hand
@@ -374,6 +377,18 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           (`.github/ISSUE_TEMPLATE/bug_report.yml`, a form with required fields since the repository went public), `Read me.txt` written into the game's folder - 2026-10-06
     - [x] Logging in the pre-releases (user, 2026-10-06): on by default (`logs\fh1_NNN.log` next to FH1.exe,
           info level, the newest 20); the crash report now goes to `logs\fh1.crash.txt` too - 2026-10-06
+    - [x] An installed copy uses the shipped pipeline list (it skipped all 813 records: shaders were named by
+          their numbers in the developer's library; now found by fingerprint) - 2026-10-06, the user's doubt
+    - [x] Shaders made on the PC carry a fingerprint (it was 0: their pipeline records never matched again, 133
+          shipped records skipped for good, about 39 pipelines rebuilt at every start) - 2026-10-06
+    - [x] A pipeline no list knows is compiled at once, with a stutter, instead of the object showing late
+          (user, 2026-10-06; `fh1_native_pipelines_ring_ms`, the helper threads only above 1 s in 3 s). Fresh
+          PC test of an installed copy: 19 at once, none deferred, longest frame 1.5 s
+    - [x] The installer says in plain words when a download fails; the issue form is a guided form
+          (`.github/ISSUE_TEMPLATE/bug_report.yml`) - 2026-10-06
+    - [ ] After the pre-release: make the shaders that are not on the disc several at a time (one worker thread
+          today, about 1 s each: the last cause of objects showing late in a first run); merge the user's played
+          cache into the shipped list (`tools/fh1_pipelines.py merge`) for the next release
     - [x] Icons for FH1.exe and the installer (`tools/fh1_make_icon.py`): the repository holds a drawn one
           (`fh1/res/fh1.ico`, `installer/fh1_installer.ico`); the user's builds use the user's own picture
           (`--image`, written as `*_local.ico`, ignored by git; the user's decision) - 2026-10-06

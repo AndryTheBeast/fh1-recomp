@@ -412,3 +412,21 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   the long build (rexglue.exe relinked, code generator run: about 14 minutes).
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.
+- **2026-10-06, tenth session: pre-release 1 is published** (`v0.1.0-pre1`, commit a8be17d; the repository is
+  public since that day: nothing in a tracked file may name the user's Windows folder or e-mail address, and
+  `tools/claude_settings.json` holds placeholders). docs/native-renderer-status.md, "Pre-release 1 is published",
+  has what was fixed that day and the numbers. Next: the native renderer's faults and the players' issues.
+- A release: `installer\build_installer.ps1`, `installer\make_package.ps1` (four files in
+  `installer\out\release`), then `gh release create <tag> --prerelease --notes-file <text> <the four files>`,
+  only with the user's yes. `installer\out\FH1Installer.exe` has the folder `package` next to it (no download);
+  the copy in `installer\out\release` downloads from the release of its own version (`Program.Version`).
+- A pipeline record names its shaders by number and by container fingerprint: only the fingerprint means the same
+  thing in another library (the developer's has the synth shaders, the installer's does not, and shaders made on
+  the PC are numbered differently at each start). When "the offline list" seems not to work on an installed
+  copy, read its log's `C6 prewarm` lines first ("N of M prewarmed, K skipped").
+- A test that only passes because the graphics driver's cache already knows everything proves little: for
+  anything about first runs, set `%LOCALAPPDATA%\AMD\VkCache` aside (as `tools\fresh_pc_test.ps1` does) and
+  clear the copy's `cache` and `shaders_extra`.
+- The installer test overwrites the desktop shortcut "Forza Horizon.lnk": copy the user's first and put it back.
+- Tests cannot use the user's saves (the safety system refused the scripted controller there, and the user moved
+  the save out of Documents on 2026-10-06): `--user_data_root=<empty folder>` and the new-game route.

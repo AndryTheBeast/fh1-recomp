@@ -12,6 +12,60 @@ plan changed that night: the other fixes of this list wait; next is the offline 
 per Swap 21.0-21.2 ms). The user saw the body fix and the first tyre fix in screenshots ("the tyre seems a little
 too upwards, even going inside the rim": fixed after that); nobody has driven this build yet.
 
+## Pre-release 1 is published (tenth session, 2026-10-06)
+
+**`v0.1.0-pre1` is on GitHub** (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1, commit
+a8be17d, marked as a pre-release; the repository is public since that day). Four files: `FH1Installer.exe`,
+`fh1-win64.zip`, `fh1-shader-tools.zip`, `SHA256SUMS.txt`. **Next: the native renderer's faults** (ROADMAP,
+Stage 3, the items marked "After the first pre-release") and whatever players report in the issues.
+
+Checked after publishing: the four files download without signing in and match `SHA256SUMS.txt`; the downloaded
+`FH1Installer.exe` alone (no `package` folder, no `--source`) fetched the two zips from the release and installed
+in 190 s; the installed game prepared 748 of 887 list records in 16.9 s and ran.
+
+Three things were found and fixed on the day of the release, all in how an installed copy uses the offline list:
+
+1. **The shipped pipeline list was not used at all by an installed copy** (the user's doubt, confirmed by the log:
+   "813 skipped because the library no longer has their shaders"). A record named its two shaders by their numbers
+   in the library that recorded it; the installer's library (the disc alone) numbers them differently from the
+   developer's (disc + synth vertex shaders). `LoadListPipelines` now sets the numbers from the containers'
+   fingerprints (`ShadersNative::ByContainerFingerprint`), which the records always carried.
+2. **Shaders made on the PC had fingerprint 0** (`fh1_extra_shaders.cpp` never set it) and are numbered in the
+   order they are made in one session and by file name in the next: records that used them never matched again
+   (133 shipped records skipped for good, about 39 pipelines rebuilt at every start). They now get the
+   container's XXH3 like the library's; a record with fingerprint 0 is left out (game and
+   `tools/fh1_pipelines.py`), and the tool tells two pipelines apart by fingerprints, not numbers, so the list of
+   an installed copy can be merged.
+3. **User: a stutter is better than an object that shows late.** `fh1_native_pipelines_ring_ms` (1000): a pipeline
+   no list knows is compiled on the ring at once while the ring has spent less than that on such pipelines in
+   the last 3 s; beyond that the helper threads take them as before (one frame of about 3.2 s stops the game for
+   good). The shaders made on the PC (about 1 s each, external tools) stay in the background: an idea for later
+   is to make several at once (the worker is one thread).
+
+Numbers (installed test copy, scripted new game into the first drive, empty saves):
+
+| Run | List records prepared before the game | Made / read back | Unknown pipelines | Longest frame |
+| --- | --- | --- | --- | --- |
+| Before the fixes, the user's installed copy | 0 of 813, then 747 of 929 with fix 1 only | 46 made, 46 read back | 40, then 39 again | 3.2 s |
+| Fixes 1 + 2, three starts | 747, 826, 830 of 880-886 | 26 made, then 0 | 11, 4, 3 (helper threads) | - |
+| All three, two starts | 748, 831 of 887 | 25 made, then 0 | 9, 2 on the ring at once, 0 deferred | 0.55 s, 0.20 s |
+| All three, driver cache set aside (fresh PC) | 748 of 887, 710 compiled in 16.5 s | 25 made | 19 on the ring, 0 deferred | 1.5 s |
+
+The records still skipped at a first start (139 of 887) wait for vertex shaders that are not on the disc: the PC
+makes them when the game first uses them, and the records match from the next start (133 became 56 after one
+drive). About 206 draws are rejected in every run of that route (cause 317), before and after the fixes: not
+looked at.
+
+**From the user's checks of the installed copy, for after the release** (ROADMAP has them): a car's thumbnail is
+sometimes wrong (timing?), the dashboard never lights up, "Preparing shaders" does not show on the emulated
+launchers. The "Preparing shaders" screen only shows when the preparing lasts more than half a second: on a PC
+whose driver cache knows the pipelines (this one) it never does.
+
+Tests that need a save cannot use the user's: the safety system refused the scripted controller on the real
+saves on 2026-10-06, and the user moved the save out of Documents that day (the game starts a new game). Use
+`--user_data_root=<empty folder>` and the new-game route (Start / A every few seconds reaches the first drive at
+about 140 s).
+
 ## Offline pipeline list (eighth session, 2026-10-06)
 
 The goal (user): nothing is compiled while playing, on a fresh install too, and never again a frozen loading
