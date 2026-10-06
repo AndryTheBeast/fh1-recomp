@@ -315,10 +315,15 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
       11 MB zipped), extracts the ISO, builds the shader library (about 10 minutes); the emulated GPU is the
       default and the native renderer a second launcher; unsigned (the guide says Smart App Control must be
       off); tag `v0.1.0-pre1`
-    - [ ] fh1.exe: an "unpack only" mode that writes default.xex's image for the installer (no window)
+    - [x] fh1.exe: an "unpack only" mode that writes default.xex's image for the installer
+          (`--fh1_unpack_image=<file>`, 1 s; the same 478 shaders as the image dumped from the running game; the
+          window shows for that second) - 2026-10-06
+    - [x] fh1.exe finds the disc's files in the folder `game` next to itself when `--game_data_root` is not
+          given (a double click works in an installed folder) - 2026-10-06
+    - [x] No path of the build PC in fh1.exe and its DLLs (`-ffile-prefix-map`, `/pdbaltpath`) - 2026-10-06
     - [ ] fh1.exe: the vertex shaders Direct3D rewrites at run time (the 42 of `build_logs\shaders\synth*`) are
           translated and compiled on the user's PC when first uploaded, and saved
-    - [ ] fh1.exe without the build path that holds the user's name; the VC++ runtime check
+    - [ ] The VC++ runtime check; a window title without the SDK's build name ("fh1 [rexglue-v0.10.0.0-dev...]")
     - [x] The installer, step 1: the window, the ISO check (title ID and version from the disc's default.xex) and
           the folder check (`installer/`, built by `installer\build_installer.ps1`, 19 KB) - 2026-10-06; the
           user checks it by hand

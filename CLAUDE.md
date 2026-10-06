@@ -381,5 +381,11 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
 - A game option given twice on the command line makes fh1.exe drop all of them ("--game_data_root was not
   provided"): never repeat in `auto_test.ps1 -ExtraArgs` what the script already passes, and `-ExtraArgs ""`
   fails too (use `--fh1_renderer=xenos` for a plain emulated run).
+- The installer (`installer/`, C# 5 for the compiler inside Windows, `installer\build_installer.ps1`): steps 1
+  and 2 done (window, ISO and folder checks, disc copy into `<folder>\game`). fh1.exe for it: the `game` folder
+  next to the exe is the default game folder, `--fh1_unpack_image=<file>` writes default.xex's image and exits,
+  and the binaries hold no path of the build PC (`-ffile-prefix-map` in fh1/CMakeLists.txt: source names in logs
+  now start at `fh1-recomp/`). Test folder: `C:\Users\andre\Desktop\FH1-install-test` (+ `-saves` next to it for
+  `--user_data_root`); never test an installed game on the user's real saves.
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.

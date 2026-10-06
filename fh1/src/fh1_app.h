@@ -23,9 +23,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
+#include <system_error>
 #include <thread>
 
 void Fh1StartProfiler();  // fh1_profiler.cpp
+void Fh1UnpackImageIfAsked(const uint8_t* image);  // fh1_unpack_image.cpp
 namespace fh1::census { void Start(); }  // fh1_d3d_census_report.cpp
 
 // Forza Horizon is single player. By default every controller drives player 1: tools like
@@ -95,7 +98,12 @@ class Fh1App : public rex::ReXApp {
     rex::cvar::SetFlagAppDefault("readback_resolve", "fast");
   }
   // void OnLoadXexImage(std::string& xex_image) override {}
-  // void OnPostLoadXexImage() override {}
+  // --fh1_unpack_image=<file> (the installer): the loaded image is written and the program ends here.
+  void OnPostLoadXexImage() override {
+    if (runtime() && runtime()->virtual_membase()) {
+      Fh1UnpackImageIfAsked(runtime()->virtual_membase() + 0x82000000u);
+    }
+  }
   void OnPostSetup() override {
     auto* input = dynamic_cast<rex::input::InputSystem*>(runtime()->input_system());
     if (!input) return;
@@ -190,7 +198,16 @@ class Fh1App : public rex::ReXApp {
   // std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;
   // std::unique_ptr<rex::ui::AchievementNotificationDialog>
   // CreateAchievementNotificationDialog() override;
-  // void OnConfigurePaths(rex::PathConfig& paths) override {}
+  // An installed game (the installer's layout): the disc's files are in the folder "game" next to fh1.exe, so
+  // a double click on fh1.exe starts the game. --game_data_root still wins.
+  void OnConfigurePaths(rex::PathConfig& paths) override {
+    if (!paths.game_data_root.empty()) return;
+    const std::filesystem::path game = paths.config_path.parent_path() / "game";
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(game / "default.xex", ec)) {
+      paths.game_data_root = game;
+    }
+  }
 
  private:
   // The native renderer records its presented frames in rex::GetFrameStats() itself. The emulated GPU keeps its

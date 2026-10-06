@@ -14,6 +14,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(WIN32)
     add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-gline-tables-only>)
     add_link_options(-g)
+    # The binaries are given to other people (the pre-release): no path of the PC that built them. Source
+    # names in log lines and crash reports start at "fh1-recomp", and each binary names its .pdb without a
+    # folder (the crash report finds it next to the binary).
+    get_filename_component(FH1_REPO "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+    add_compile_options(-ffile-prefix-map=${FH1_REPO}=fh1-recomp)
+    add_link_options(-Wl,/pdbaltpath:%_PDB%)
 endif()
 
 include(generated/rexglue.cmake)
@@ -23,6 +29,7 @@ set(FH1_SOURCES
     src/main.cpp
     src/fh1_crash_report.cpp
     src/fh1_autoplay.cpp
+    src/fh1_unpack_image.cpp
     src/fh1_perf_overlay.cpp
     src/fh1_trace_load.cpp
     src/fh1_nan_trap.cpp
