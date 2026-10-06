@@ -5,8 +5,9 @@ Paste the block below as the first message of a new Claude session opened in `C:
 ```
 Read fh1-recomp/CLAUDE.md, then ROADMAP.md ("Maybe later", the first pre-release as a Windows installer app, and
 Stage 3, "Offline shader library for the PC") and the section "Offline pipeline list" at the top of
-fh1-recomp/docs/native-renderer-status.md. This session is about the first pre-release of the port. The offline
-pipeline list works (I checked it by hand on 2026-10-06), so we jump to the pre-release now. The other native
+fh1-recomp/docs/native-renderer-status.md. This session starts with one check that was left open (the paint
+booth on the newest build), then it is about the first pre-release of the port. The offline pipeline list works
+(I checked it by hand on 2026-10-06). The other native
 renderer fixes (night colors, garage / car damage, Carbon clean-up, the F3 fps viewer, and the three faults I
 found on 2026-10-06: missing ground at the Montano Plains outpost and east of it, upside-down scenery patches in
 a mountain race) are for after the pre-release: do not start them.
