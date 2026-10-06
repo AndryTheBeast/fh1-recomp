@@ -39,6 +39,9 @@
 #include <rex/frame_stats.h>
 #include <rex/graphics/xenos.h>
 #include <rex/logging.h>
+#if REX_PLATFORM_SWITCH
+#include <rex/watchdog.h>
+#endif
 #include <rex/system/xmemory.h>
 #include <rex/ui/presenter.h>
 #include <rex/ui/vulkan/device.h>
@@ -2320,6 +2323,9 @@ class TargetsVulkan final : public TargetsNative, public ContextTargets {
   bool Present(rex::ui::Presenter* presenter_value, const TextureSwap& swap, uint32_t width,
                  uint32_t height) override {
     fh1::reflection_demand::NoteSwap();  // fh1_reflection_low_demand
+#if REX_PLATFORM_SWITCH
+    rex::watchdog::NoteProgress();  // freeze watchdog (sdk/src/core/watchdog.cpp): a frame was presented
+#endif
     ++presentations_stamp_;  // see StampMemory
     // The per-draw diagnostic window opens here, on the PM4 ring thread, which is the one that records the
     // draws. Inside the paint call it would be another thread and the window would catch an arbitrary piece

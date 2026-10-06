@@ -32,6 +32,15 @@ endif()
 
 include(generated/rexglue.cmake)
 
+# GCC (Switch): the function registration list is one function of about 4 MB of source that runs once at
+# start. GCC's optimizer had not finished it after 33 minutes (2026-10-06); unoptimized it compiles in seconds.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set_property(SOURCE generated/default/fh1_register.cpp
+                        generated/xmediafacade_default/fh1_register.cpp
+                        generated/speechfacade_default/fh1_register.cpp
+                 APPEND PROPERTY COMPILE_OPTIONS -O0)
+endif()
+
 # Sources
 set(FH1_SOURCES
     src/main.cpp
