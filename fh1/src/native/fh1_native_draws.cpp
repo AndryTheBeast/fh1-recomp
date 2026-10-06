@@ -13012,6 +13012,35 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         reason = "list of another version or damaged: starting from scratch";
       }
     }
+    // FH1: a record names its two shaders by their numbers in the library that recorded it. Another library
+    // (the installer's, built from the disc alone, against the developer's; or this PC's after an update)
+    // numbers them differently: every record of the shipped list was skipped on an installed copy (813 of 813,
+    // 2026-10-06). The numbers are set from the containers' fingerprints, which do not depend on the library.
+    const ShadersNative* library = LibraryActive();
+    size_t renumbered = 0;
+    const auto renumber = [&](RegisterPipeline& r) {
+      if (!library || !library->loaded()) {
+        return;
+      }
+      bool changed = false;
+      const auto one = [&](uint32_t& number, uint64_t fingerprint, bool vertices) {
+        if (!number) {
+          return;
+        }
+        const EntryShader* e = library->ByNumber(number - 1);
+        if (e && e->shader && e->vertices == vertices && e->shader->fingerprint == fingerprint) {
+          return;
+        }
+        e = library->ByContainerFingerprint(fingerprint, vertices);
+        if (e) {
+          number = e->number + 1;
+          changed = true;
+        }
+      };
+      one(r.key.vs, r.fingerprint_vs, true);
+      one(r.key.ps, r.fingerprint_ps, false);
+      renumbered += changed ? 1 : 0;
+    };
     if (!reason) {
       list_file_.reserve(header[3]);
       for (uint32_t i = 0; i < header[3]; ++i) {
@@ -13020,12 +13049,17 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         if (r.n_attributes > RegisterPipeline::kMaxAttributes || r.n_bindings > RegisterPipeline::kMaxBindings) {
           continue;
         }
+        renumber(r);
         if (index_list_.emplace(XXH3_64bits(&r.key, sizeof(r.key)), list_file_.size()).second) {
           list_file_.push_back(r);
         }
       }
       written_list_ = std::move(data);  // the writer thread rewrites it unchanged if only the cache changes
+      if (renumbered) {
+        list_without_save_ = 1;  // saved with their new numbers
+      }
     }
+    const size_t renumbered_local = renumbered;
     // FH1: the list shipped with the port (fh1_pipelines.nfpl next to fh1.exe, made by tools/fh1_pipelines.py
     // from recorded play; the same "NFPL" bytes). Its records this PC does not know yet are added after the
     // local ones, so a fresh install prewarms what other sessions already met. No game data, no driver cache.
@@ -13052,6 +13086,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           if (r.n_attributes > RegisterPipeline::kMaxAttributes || r.n_bindings > RegisterPipeline::kMaxBindings) {
             continue;
           }
+          renumber(r);
           if (index_list_.emplace(XXH3_64bits(&r.key, sizeof(r.key)), list_file_.size()).second) {
             list_file_.push_back(r);
           }
@@ -13066,6 +13101,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                 path.string(), reason ? ": " : "", reason ? reason : "");
     REXLOG_INFO("[native] C6 prewarm: shipped list {} has {} pipelines, {} of them new to this PC: {} to prewarm",
                 kFileListShipped, n_shipped, list_file_.size() - n_local, list_file_.size());
+    REXLOG_INFO("[native] C6 prewarm: shaders found by fingerprint under another number: {} records of this PC's "
+                "list, {} of the shipped list{}",
+                renumbered_local, renumbered - renumbered_local,
+                library && library->loaded() ? "" : " (no library yet: numbers kept)");
   }
 
   // Ring only (SaveCachePipelines): the file's list without the records the thread found missing their

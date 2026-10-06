@@ -97,6 +97,11 @@ class ShadersNative {
   // it to recreate the pipelines of the previous session.
   const EntryShader* ByNumber(uint32_t number) const;
 
+  // The entry whose container has that fingerprint (fh1::native::Shader::fingerprint), or nullptr. A shader's
+  // number depends on which other shaders its library holds (the developer's library and the one the installer
+  // builds differ); its container's fingerprint does not. The shipped pipeline list is matched with it.
+  const EntryShader* ByContainerFingerprint(uint64_t fingerprint, bool vertices) const;
+
   // Microcode already in host byte order. nullptr if it is not in the library.
   // Only the ring thread uses it.
   const EntryShader* Identify(bool vertices, std::span<const uint32_t> microcode);

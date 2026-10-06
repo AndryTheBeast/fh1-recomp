@@ -695,6 +695,20 @@ const EntryShader* ShadersNative::ByNumber(uint32_t number) const {
   return it != d.entries.end() && it->number == number ? &*it : nullptr;
 }
 
+const EntryShader* ShadersNative::ByContainerFingerprint(uint64_t fingerprint, bool vertices) const {
+  const Data& d = *data_;
+  if (!d.loaded) {
+    return nullptr;
+  }
+  std::shared_lock<std::shared_mutex> lock(d.mutex);
+  for (const EntryShader& e : d.entries) {
+    if (e.vertices == vertices && e.shader && e.shader->fingerprint == fingerprint) {
+      return &e;
+    }
+  }
+  return nullptr;
+}
+
 const char* NameUse(uint8_t use) {
   return kUses[use & 0xF];
 }
