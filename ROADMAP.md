@@ -319,7 +319,14 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
     - [ ] fh1.exe: the vertex shaders Direct3D rewrites at run time (the 42 of `build_logs\shaders\synth*`) are
           translated and compiled on the user's PC when first uploaded, and saved
     - [ ] fh1.exe without the build path that holds the user's name; the VC++ runtime check
-    - [ ] The installer: window, ISO check and extraction, download, library build, launchers, update button
+    - [x] The installer, step 1: the window, the ISO check (title ID and version from the disc's default.xex) and
+          the folder check (`installer/`, built by `installer\build_installer.ps1`, 19 KB) - 2026-10-06; the
+          user checks it by hand
+    - [ ] The installer: ISO extraction, download, library build, update button
+    - [ ] Launchers (user, 2026-10-06): the main FH1.exe runs the emulated Direct3D 12 and gets a desktop
+          shortcut; two .bat files in the game folder, one for the emulated Vulkan (`--gpu_backend=vulkan`) and
+          one for the native renderer (`--fh1_renderer=native`). For that fh1.exe must find the game's files in
+          a folder next to itself when `--game_data_root` is not given (today: an error box)
     - [ ] Install guide, known issues, release text; the release itself only with the user's yes
 - [ ] (old wording) Source-only pre-release (tag + install guide + known issues; users build from their own disc). **User,
       2026-10-06: this is the focus now**, after the offline shader library for the PC; the other native renderer

@@ -112,7 +112,16 @@ Control.
   Windows name; it needs the VC++ runtime (MSVCP140, VCRUNTIME140).
 - Unsigned: Smart App Control blocks the installer and fh1.exe, and Windows cannot turn it back on without a
   reset (the guide says so first); SmartScreen asks once for the installer. Checksums on the release page.
-- The emulated GPU is the default (user: "for now at least"); the native renderer is a second launcher.
+- The emulated GPU is the default (user: "for now at least"). Launchers (user, same day): the main FH1.exe runs
+  the emulated Direct3D 12 and gets a desktop shortcut; two .bat files in the game folder start the emulated
+  Vulkan and the native renderer. fh1.exe must therefore find the game's files next to itself without
+  `--game_data_root` (today it shows an error box).
+- **Built so far: the installer's first step** (`installer/`: `Program.cs`, `MainForm.cs`, `Checks.cs`,
+  `XDisc.cs`; `installer\build_installer.ps1` makes `installer\out\FH1Installer.exe`, 19 KB). The window, the ISO
+  check (XDVDFS file table, title ID 4D5309C9 and version 0.0.0.10 from default.xex's header; the user's ISO:
+  2432 files, 6.8 GB) and the folder check (empty or a previous installation, free space). Install only shows a
+  message. `FH1Installer.exe --check ISO FOLDER` prints both checks without a window. It is written for the
+  C# 5 compiler of Windows (no newer language features) and sizes its window by the screen's scaling itself.
 - Tag `v0.1.0-pre1`. Nothing is published without the user's yes at that moment.
 - Tests of the installer go into a new empty folder with `--user_data_root=<another empty folder>`, so the
   user's saves are never touched.
