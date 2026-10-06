@@ -487,3 +487,11 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   spaces). The first one was renamed from `v0.1.0-pre1` that day: older notes that say "pre-release 1" or
   `v0.1.0-pre1` mean "Alpha - 0.1.0". The installer downloads from `releases/download/alpha-<version>/`, so
   renaming a published tag means replacing its installer too.
+- **"Alpha - 0.1.1" is published (2026-10-06)**: the installer's checkbox "60 frames per second
+  (experimental)" writes `fh1_fps60 = true` into `fh1.toml` next to FH1.exe (the port's own settings file: one
+  `name = value` per line, read at every start; the installer touches only its line). A release:
+  `gh release create alpha-<version> --target main --title "Alpha - <version>" --notes-file <text>
+  --prerelease <the four files>`, with the user's yes. Test an installed copy with a copy of
+  `tools\auto_test.ps1` made by a Python script file (`build_logs\make_installed_test.py`): `sed` turned the
+  backslashes of the path into upper case. `SHA256SUMS.txt` has Windows line ends: `tr -d '\r'` before
+  `sha256sum -c`.

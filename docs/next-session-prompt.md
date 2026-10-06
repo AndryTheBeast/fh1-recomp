@@ -8,30 +8,11 @@ in the opening cutscene and 32-40 while driving, because the graphics chip needs
 60 needs 16.7. Without the smooth edges it reaches 40-50, and I said that picture looks bad: smooth edges
 stay on. My decision of 2026-10-06: the PC version will have the 60 fps patch, the Switch port will not.
 
-The first release is named "Alpha - 0.1.0" and its tag is `alpha-0.1.0` since 2026-10-06 (my naming; the old
-tag `v0.1.0-pre1` is deleted). Its installer was replaced by one that downloads from the new address (rebuilt
-from the released source, only the name and the address changed; the files are in
-`build_logs\release-alpha-0.1.0`, the earlier ones in `build_logs\release-v0.1.0-pre1-third-upload`). Not
-tried: a whole installation with that installer from GitHub (the addresses answer and the checksums match).
+"Alpha - 0.1.1" is published since 2026-10-06 (tag `alpha-0.1.1`): the installer has the checkbox "60 frames
+per second (experimental)". The first release is named "Alpha - 0.1.0" (tag `alpha-0.1.0`). The status document's
+first section has what was tested.
 
-**Unfinished, do this first: the release "Alpha - 0.1.1" with 60 fps as an option of the installer** (I asked for it on
-2026-10-06, then had to shut the PC down). Done and on main: the installer's sources (`Program.Version` =
-`0.1.1`, shown as "Alpha - 0.1.1", a checkbox "60 frames per second (experimental)" that writes `fh1_fps60 = true` into `fh1.toml`
-next to FH1.exe, `FH1Installer.exe --install ISO FOLDER --fps60` for tests). `installer\out\FH1Installer.exe`
-was built once from them; nothing else was built, tested or published. Left to do, in this order:
-1. `installer\build_installer.ps1` and `installer\make_package.ps1` (fh1.exe of the thirteenth session is built;
-   check it is still the one of main).
-2. Test on the installed test copy (`Desktop\FH1-install-test`, its own empty saves folder, never mine; put my
-   desktop shortcut back afterwards): install with `--fps60`, check `fh1.toml`, the log's `[fps60] on` line, a
-   shot; install again without it and check the line is gone and the game is back at 30. Look at the new
-   window once (the checkbox row, nothing cut off at the bottom: the window is 100 pixels taller).
-3. Texts: `docs/release-notes-alpha-0.1.1.md` (what is new: the 60 fps option, what it reaches on the Legion Go,
-   that it is experimental), `docs/install.md` (the 30 fps line), README, the issue form's version example.
-4. Publish tag `alpha-0.1.1`, named "Alpha - 0.1.1", marked as a pre-release, with the four files (my naming
-   of 2026-10-06; the installer downloads from `releases/download/alpha-<version>/`): I asked for this release, but tell me it is ready
-   and wait for my yes before the upload.
-
-After that: ask me what I saw when I drove with it (I start it with `run_fh1.bat --fh1_fps60=true`):
+Start by asking me what I saw when I drove with it (I start it with `run_fh1.bat --fh1_fps60=true`):
 speedometer and race timer against a stopwatch, the festival's crowd and people, traffic, particles, buying a
 car (the camera of that scene), the HUD (flashing?), night, far scenery, whether the road loads in time on a
 long fast drive. Then, depending on my answer:
@@ -41,7 +22,7 @@ long fast drive. Then, depending on my answer:
 2. If I say it is good: making the frame faster so the Legion Go gets nearer 60. The status document has the
    numbers: the scene's copies take 12-16 ms of the 20 with the double-size scene. Tell me the plan before
    changing code, and measure before and after at the same spot.
-3. Only if I ask: the option for players (a setting or a launcher in the installed copy) and a release.
+3. Only if I ask: a new release (named "Alpha - <version>", tag `alpha-<version>`) with what was fixed.
 
 Waiting, not for this session unless I ask (ROADMAP.md has them): the sharp rectangle of ground under the car
 in the opening cutscene (my picture, `build_logs\reference\user-rectangle-under-car-20261006.webp`: check it

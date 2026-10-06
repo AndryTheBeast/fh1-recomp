@@ -12,6 +12,30 @@ plan changed that night: the other fixes of this list wait; next is the offline 
 per Swap 21.0-21.2 ms). The user saw the body fix and the first tyre fix in screenshots ("the tyre seems a little
 too upwards, even going inside the rim": fixed after that); nobody has driven this build yet.
 
+## "Alpha - 0.1.1" is published (2026-10-06, evening): 60 fps as an option of the installer
+
+**Published with the user's yes: tag `alpha-0.1.1`, named "Alpha - 0.1.1"** (main at 23386c7; the files are kept
+in `build_logs\release-alpha-0.1.1`). The user's naming of that day: releases are "Alpha - <version>" with tag
+`alpha-<version>`; the first release was renamed to "Alpha - 0.1.0" / `alpha-0.1.0` (old tag `v0.1.0-pre1`
+deleted) and its installer replaced by one that downloads from the new address (rebuilt from the released
+source, commit a8be17d, only the name and the address changed).
+
+- **The installer** (`Program.Version` 0.1.1, `Program.Name` "Alpha - 0.1.1", download address
+  `releases/download/alpha-<version>/`): a step "3. Options" with the checkbox "60 frames per second
+  (experimental)". It writes or removes the line `fh1_fps60 = true` in `fh1.toml` next to FH1.exe (`Options` in
+  `installer/Setup.cs`; only that line is touched) and an update shows the folder's choice.
+  `FH1Installer.exe --install ISO FOLDER --fps60` for tests.
+- **Tested on `Desktop\FH1-install-test`, empty saves** (`build_logs\test-alpha011on-*`, `test-alpha011off-*`):
+  ticked = logo videos and intro video 60, opening 50-60, driving 36-42, game speed 1.000, picture right;
+  unticked by an update (a second) = 30.0 again. The window: `build_logs\alpha011-installer-window.png`.
+- **A real download after publishing**: the installer fetched from the release page (same checksum) updated the
+  test folder from GitHub; the installed FH1.exe is byte-identical to the built one; a second run found the
+  shader library there (5 s). The first such run rebuilt the library because that folder's tools had come from
+  the local package (other file times): a player who updates from 0.1.0 has the same tools zip, so theirs
+  should be kept, but that exact path (0.1.0 from GitHub, then 0.1.1) was not run.
+- fh1.exe of the release is the build of the thirteenth session (eb9afa0's sources); the pipeline list is the
+  1067 one.
+
 ## Thirteenth session (2026-10-06): the 60 fps option (`--fh1_fps60`, off by default)
 
 **Not in a release. The user decides whether it stays** (they have not driven it yet). No issue on GitHub.
