@@ -82,3 +82,48 @@ ConvertFiberToThread = 0x830EBD00
 CreateFiber = 0x830EBD50
 DeleteFiber = 0x830EBE30
 SwitchToFiber = 0x830ED910
+
+# ---------------------------------------------------------------------------
+#  60 fps while driving (--fh1_fps60, fh1/src/fh1_fps60.cpp)
+# ---------------------------------------------------------------------------
+# The places come from pinyon-shift (Pinyon Shift contributors, BSD 3-Clause,
+# https://github.com/arcanite24/pinyon-shift, config/rexglue/analysis/main-xex.toml): same default.xex.
+# Each function does nothing unless the option is on.
+
+# Direct3D's swap callback (sub_829EED78) compares how late the swap is (r7, percent of a refresh)
+# with its limit to choose the current or the next refresh; r8 = the previous swap's target
+# refresh, r10 = the refresh count now.
+[[midasm_hook]]
+address = 0x829EEE44
+name = "Fh1Fps60ReleaseLateSwap"
+registers = ["r7", "r8", "r10"]
+
+# The scripted menu camera's update (sub_82649960) has chosen its constant step (f1, 1/30 s).
+[[midasm_hook]]
+address = 0x826499C8
+name = "Fh1Fps60ScaleCameraStep"
+registers = ["r31", "f1"]
+
+# The trackside crowd's animation update (sub_82E08A00): r29 = the models object after the
+# prologue; at the two other places r10 = the step about to be added to one member's frame.
+[[midasm_hook]]
+address = 0x82E08A30
+name = "Fh1Fps60CrowdBegin"
+registers = ["r29"]
+
+[[midasm_hook]]
+address = 0x82E09144
+name = "Fh1Fps60CrowdStep"
+registers = ["r10"]
+
+[[midasm_hook]]
+address = 0x82E0945C
+name = "Fh1Fps60CrowdStep"
+registers = ["r10"]
+
+# The simulation loop (sub_823ED888) is about to store its time step (f31, seconds). Only read,
+# for the log's "[fps60]" line (game seconds per real second).
+[[midasm_hook]]
+address = 0x823EDB84
+name = "Fh1Fps60ObserveStep"
+registers = ["f31"]

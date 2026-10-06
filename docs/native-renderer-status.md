@@ -12,6 +12,63 @@ plan changed that night: the other fixes of this list wait; next is the offline 
 per Swap 21.0-21.2 ms). The user saw the body fix and the first tyre fix in screenshots ("the tyre seems a little
 too upwards, even going inside the rim": fixed after that); nobody has driven this build yet.
 
+## Thirteenth session (2026-10-06): the 60 fps option (`--fh1_fps60`, off by default)
+
+**Not in a release. The user decides whether it stays** (they have not driven it yet). No issue on GitHub.
+
+1. **Where the 30 comes from**: the present interval the game asks Direct3D for. The swap command of the 3D
+   world carries an interval of 2 refreshes (Direct3D's swap callback `sub_829EED78`: bits 8-11 of r3, added to
+   the previous swap's target refresh), and the simulation thread also steps once per two refreshes. At the
+   60 Hz refresh the port reports that is 30 pictures and 30 steps a second. It is not a time step in the
+   game's code: the game measures real milliseconds between steps.
+2. **What the option does** (`fh1/src/fh1_fps60.cpp`, six `[[midasm_hook]]` entries at the end of
+   `fh1/overrides.toml`, one line in `Fh1App::OnPreSetup`): the refresh the game counts runs at 120 Hz
+   (`video_mode_refresh_rate`, read by `LoopVblank`), so "two refreshes" is 16.7 ms for pictures and
+   simulation. With it: an interval of 1 (the logo videos) becomes 2, so they stay at 60 instead of 120; a
+   frame two or more refreshes late is shown at once (`fh1_fps60_late_swaps`); the crowd's animation and the
+   scripted menu cameras advance by real time instead of a constant step per frame (`fh1_fps60_fixed_steps`).
+   The method and the hook places are pinyon-shift's (BSD 3-Clause, same default.xex: THIRD_PARTY_NOTICES.md).
+   A new log line every 10 s, on or off: `[fps60] on: 60.0 simulation steps/s, 1.000 game s per real s, ...`.
+   `sub_829EED78` already had a hook (`fh1_d3d_census.cpp`): the interval change is called from there.
+3. **Measured on the Legion Go, new game on empty saves, native renderer** (`build_logs\test-fps60on-*`,
+   `test-fps60off-*`, `test-fps60noaa-*`, and `test-fps60a-*` = the first try with only
+   `--video_mode_refresh_rate=120`):
+
+   | | off | on | on, `--fh1_native_ssaa=false` |
+   | --- | --- | --- | --- |
+   | logo videos / intro video | 60 / 30 | 60 / 60 | 60 / 60 |
+   | opening cutscene | 30.0 | 50-58 | 51-57 |
+   | the first drive, accelerator held | 30.0 | 32-40 | 36-50 |
+   | simulation steps a second | 30.0 | 60.0 | 60.0 |
+   | game seconds per real second | 1.000 | 1.000 | 1.000 |
+   | real GPU time per frame while driving | 18.0 ms | 19-22 ms | 13-15 ms |
+   | longest frame of the run | 152 ms | 406 ms (at the start) | - |
+
+   **The Legion Go does not reach 60 while driving**: a frame needs 16.7 ms and the graphics chip alone takes
+   about 20. Without the double-size scene (smooth edges) the chip has room (13-15 ms) and the limit moves to
+   the processor side (40-50 fps); the user saw that picture and said it looks bad without the smoothing, so
+   the default stays.
+4. **Picture**: matching cutscene frames (the runs are about 6 s apart: on at 120 s = off at 114 s) give
+   23/80/125/188/249 against 26/78/122/197/250; far scenery (the mountain, the barns) is there at 93 and
+   124 mph, the road and its objects are loaded in time. Sheets:
+   `build_logs\reference\fps60-on-top-off-bottom-*-20261006.png`. No frame near 3 s, no black window in the
+   four runs.
+5. **The text the user was given, point by point**: (1) "menus and world paced separately, the world shows
+   every second refresh": true, as a present interval of 2, not as a 33.33 ms time step (the menus and the
+   intro video are at interval 2 as well; only the logo videos are at 1). (2) "physics already at 60,
+   picture interpolated; forcing 60 doubles the speed of animations": false for the physics (30 steps a
+   second, 60 with the option, by real time: the speed is right by itself), true for the two things that
+   count frames (crowd, scripted cameras). (3) "world loading budgeted for 33.3 ms": not seen (the road loads
+   in time at full speed in a 2-minute drive; a longer drive by the user will say more).
+6. **Not checked, the user's part**: the speedometer and a race timer against a stopwatch (the log says
+   1.000, a race was not reached), the festival's crowd and people, traffic, particles, a car purchase (the
+   scripted camera), the HUD (Xenia users report HUD flashing above 30 fps), night.
+7. **The old attempt** (2026-10-01, commit 0871b24, emulated GPU): `--vsync=false`, the guest refresh at
+   1 kHz, unpaced; the user saw broken distant rendering. This time the refresh is a steady 120 Hz and
+   the far scenery is right in every shot; why the old one broke is not known.
+8. The user's picture of that session: a sharp rectangle of ground under the car in the opening cutscene
+   (`build_logs\reference\user-rectangle-under-car-20261006.webp`): saved for later (ROADMAP).
+
 ## Twelfth session (2026-10-06): several shaders at once, the list at 1067, a black window
 
 **Published the same day with the user's yes: the files of `v0.1.0-pre1` were replaced a third time** (same tag

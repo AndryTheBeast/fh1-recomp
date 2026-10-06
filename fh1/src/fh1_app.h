@@ -29,6 +29,7 @@
 
 void Fh1StartProfiler();  // fh1_profiler.cpp
 void Fh1UnpackImageIfAsked(const uint8_t* image);  // fh1_unpack_image.cpp
+void Fh1Fps60Apply();  // fh1_fps60.cpp
 namespace fh1::census { void Start(); }  // fh1_d3d_census_report.cpp
 
 // Forza Horizon is single player. By default every controller drives player 1: tools like
@@ -82,6 +83,7 @@ class Fh1App : public rex::ReXApp {
   void OnPreSetup(rex::RuntimeConfig& config) override {
     // --fh1_renderer=native: FH1's native Vulkan renderer (src/native, docs/native-renderer-fh1.md) goes in
     // config.graphics, and ReXApp then does not load the GPU plugin.
+    Fh1Fps60Apply();  // --fh1_fps60: before the graphics system reads the video mode
     if (fh1::native::Active()) {
       config.graphics = fh1::native::CreateSystemGraphics();
     }

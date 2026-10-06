@@ -290,6 +290,10 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] User, 2026-10-06 (developer's build, second drive): the Volkswagen's dashboard is dark with dim dials
         while the Subaru's is lit (so not every dashboard: add to the dashboard item above); the pink triangles
         on the tyre icons of the upgrade menu (check against the emulated picture first)
+  - [ ] User, 2026-10-06 (opening cutscene of a new game, frame 9255 of the first 60 fps test): a sharp
+        rectangle of ground under and around the car, with a texture unlike the blurred road next to it
+        (`build_logs\reference\user-rectangle-under-car-20261006.webp`). Saved for later; not checked against
+        the emulated picture or with the 60 fps setting off
   - [x] The native renderer is the default (user, 2026-10-06, for the first pre-release, with its known faults
         listed in docs/install.md); the emulated GPU is `--fh1_renderer=xenos`
 
@@ -309,7 +313,8 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
 ## Tried and dropped
 
 - Single-pass drawing inside the EDRAM emulation (one strip instead of three): broke the picture
-- 60 fps unlock with vsync off: broke distant rendering
+- 60 fps unlock with vsync off (2026-10-01, emulated GPU, guest refresh at 1 kHz): broke distant rendering.
+  Replaced on 2026-10-06 by `--fh1_fps60` (a steady 120 Hz guest refresh, "Maybe later")
 - Forcing 1x MSAA on the emulated GPU: surfaces overlap (glowing garbage on the car)
 - Skipping the MSAA-switch transfers: shadows vanish
 - Editing the game's data files: the game verifies them (change settings in memory only)
@@ -430,4 +435,15 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
 - [ ] (old wording) Source-only pre-release (tag + install guide + known issues; users build from their own disc). **User,
       2026-10-06: this is the focus now**, after the offline shader library for the PC; the other native renderer
       fixes (night colors, races / garage / damage, Carbon clean-up, F3 viewer) wait
-- [ ] 60 fps unlock (needs a much faster renderer, and checking the game's timing at 60)
+- [ ] **60 fps while driving: `--fh1_fps60`, off by default (2026-10-06; the user decides whether it stays)**.
+      The game shows each picture of the world for two refreshes and steps its simulation once per two: the
+      option runs the refresh the game counts at 120 Hz (pinyon-shift's method, credited in
+      THIRD_PARTY_NOTICES.md). Legion Go, new game: cutscene 50-58 fps, driving 32-40 (the graphics chip needs
+      about 20 ms a frame; 60 needs 16.7), game speed 1.000, picture and far scenery right. Details: status
+      document, "Thirteenth session"
+    - [ ] The user's drive with it: speedometer / race timer against a stopwatch, crowd, people, traffic,
+          particles, a car purchase, the HUD, night
+    - [ ] Reaching 60 on the Legion Go needs a faster frame: the scene's copies (12-16 ms of the 20 with the
+          double-size scene) first, then the processor side (40-50 fps with `--fh1_native_ssaa=false`, which
+          the user finds too rough to use)
+    - [ ] Only if the user asks: the option in the installed copy (a second launcher or a setting)

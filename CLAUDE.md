@@ -32,7 +32,8 @@ Earlier machines: Intel HD 630 and Iris Plus G7 (~7 fps). Since 2026-10-01 a Len
 
 User's decisions: game working with the GPU emulation first (done), then the native renderer on
 PC (Vulkan, Stage 3); the Switch port later in a separate repo. 60 fps unlock and in-emulation
-single-pass drawing were tried and dropped (they broke the picture).
+single-pass drawing were tried and dropped (they broke the picture); 60 fps came back on 2026-10-06 as the
+option `--fh1_fps60` (below).
 
 ## Legal rule (never break it)
 
@@ -462,3 +463,22 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   patches a copy of `tools\auto_test.ps1` (its `$Exe`, no `--game_data_root`), sets `%LOCALAPPDATA%\AMD\VkCache`
   aside and empties the copy's `cache` and `shaders_extra`; with the driver cache aside the boot keys go from
   40 s (Start every 4 s to 64 s, A every 4 s to 150 s) and the accelerator from 156 s.
+- **2026-10-06, thirteenth session: `--fh1_fps60`** (off by default; status document, "Thirteenth session").
+  The 30 is the present interval of 2 refreshes the game gives Direct3D, plus a simulation step per two
+  refreshes: the option runs the guest refresh at 120 Hz (`fh1/src/fh1_fps60.cpp`; method and hook places from
+  pinyon-shift, same default.xex, BSD 3-Clause, credited in THIRD_PARTY_NOTICES.md). The log's `[fps60]` line
+  (every 10 s, on or off) gives simulation steps a second and game seconds per real second. The Legion Go
+  reaches 32-40 fps driving with it (GPU about 20 ms a frame).
+- Code in the middle of a game function: `[[midasm_hook]]` at the end of `fh1/overrides.toml` (address, name,
+  registers), the function `void Name(PPCRegister& r7, ...)` in the app with C++ linkage; it needs the code
+  generator (the long build). A game function takes one `REX_HOOK_RAW` only, and `fh1_d3d_census.cpp` already
+  hooks 2070 of Direct3D's: search it before adding a hook (a duplicate fails at the link step, after 14
+  minutes).
+- pinyon-shift is another recompilation of the same game file: its `config/rexglue/analysis/main-xex.toml` and
+  `src/pinyon_shift_runtime_hooks.cpp` name many game functions (simulation loop `sub_823ED888`, render loop
+  `sub_8259F3E8`, crowd `sub_82E08A00`, cameras, vehicle pose, credits). Read single files with
+  `gh api repos/arcanite24/pinyon-shift/contents/<path> -H "Accept: application/vnd.github.raw"`.
+- The new-game route as one string: `build_logs\fps60-autoplay.txt` (Start every 4 s from 30 to 62 s, A every
+  4 s from 66 to 150 s, accelerator from 156 s); the opening cutscene runs from about 110 s, the drive from
+  about 150 s. Two runs are a few seconds apart: match cutscene frames by eye on a sheet before comparing
+  numbers.

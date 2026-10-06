@@ -1417,7 +1417,18 @@ FH1_CENSUS(829EEB80, 1130)
 FH1_CENSUS(829EEB98, 1131)
 FH1_CENSUS(829EEBD0, 1132)
 FH1_CENSUS(829EEC48, 1133)
-FH1_CENSUS(829EED78, 1134)
+// Direct3D's swap callback: also the place where --fh1_fps60 changes the present interval (fh1_fps60.cpp).
+void Fh1Fps60SwapCallback(uint32_t& r3);
+REX_EXTERN(__imp__sub_829EED78);
+REX_HOOK_RAW(sub_829EED78) {
+  if (fh1::census::g_on.load(std::memory_order_relaxed)) {
+    fh1::census::Count(1134, ctx);
+  }
+  uint32_t r3 = ctx.r3.u32;
+  Fh1Fps60SwapCallback(r3);
+  ctx.r3.u64 = r3;
+  __imp__sub_829EED78(ctx, base);
+}
 FH1_CENSUS(829EEF28, 1135)
 FH1_CENSUS(829EEFD0, 1136)
 FH1_CENSUS(829EF650, 1137)

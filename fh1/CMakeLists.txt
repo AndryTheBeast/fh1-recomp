@@ -38,6 +38,7 @@ set(FH1_SOURCES
     src/fh1_d3d_census.cpp
     src/fh1_d3d_census_report.cpp
     src/fh1_perf_hooks.cpp
+    src/fh1_fps60.cpp
     src/fh1_shader_dump.cpp
     # FH1's native renderer (--fh1_renderer=native). Started from nfsc-recomp's (GoatHonks), itself nfsmw-nx's
     # (StevensND), GPL-3.0: see src/native/README.md.

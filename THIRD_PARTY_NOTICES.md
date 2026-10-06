@@ -61,6 +61,12 @@ and packer from `shaders/`, libmspack (LZX), and [DirectXShaderCompiler](https:/
 v2025.1 (University of Illinois/NCSA Open Source License, with LLVM's license terms). Its own notices are in that
 repository.
 
+## pinyon-shift
+
+The 60 fps option (`--fh1_fps60`, `fh1/src/fh1_fps60.cpp`, the `[[midasm_hook]]` entries of `fh1/overrides.toml`) uses the
+method and the hook places of [pinyon-shift](https://github.com/arcanite24/pinyon-shift), Copyright (c) 2026, Pinyon
+Shift contributors, BSD 3-Clause License. The code here was written for this port; no file of pinyon-shift is included.
+
 ## Trademarks
 
 Need for Speed and Need for Speed: Most Wanted are trademarks of Electronic Arts Inc. Nintendo Switch is a trademark of
