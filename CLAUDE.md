@@ -437,5 +437,12 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   and the renderer's (`ComputeEntry`) must change together, and `kVersion` in `fh1_extra_shaders.cpp` goes up
   with them (saved shaders of another version are deleted). The unattended new-game route reaches the opening
   at about 100 s once Windows has the files cached (not 140 s): take shots from 96 s.
+  **Never make the ring wait** (for a shader, a pipeline, anything) without testing on an installed copy with
+  the driver cache set aside: a frame of about 3.2 s stops the game for good, and on the developer's PC the
+  driver cache hides it (a wait for PC-made shaders froze the first drive twice that day; unknown pipelines go
+  to the helper threads again, `fh1_native_pipelines_ring_ms` 0). Read the longest `[fps] worst frame gap` of
+  the log and check that `drawn=` still grows at the end before looking at pictures. An installed test copy is
+  run with a copy of `tools\auto_test.ps1` whose `$Exe` is the installed `FH1.exe` (no `--game_data_root`), and
+  `FH1Installer.exe --install` over the same folder updates it in a second.
 - Tests cannot use the user's saves (the safety system refused the scripted controller there, and the user moved
   the save out of Documents on 2026-10-06): `--user_data_root=<empty folder>` and the new-game route.

@@ -35,10 +35,13 @@ REXCVAR_DEFINE_STRING(fh1_native_shader_tools, "", "FH1",
 REXCVAR_DEFINE_STRING(fh1_native_extra_shaders_dir, "", "FH1",
                       "Native renderer: folder of the shaders made on this PC; empty = 'shaders_extra' next to "
                       "fh1.exe");
-REXCVAR_DEFINE_INT32(fh1_native_extra_shaders_wait_ms, 20000, "FH1",
-                     "Native renderer: how long the game waits for a shader being made on this PC before going on "
-                     "without it (a short pause once per shader; what the game paints only once, like a stretch of "
-                     "ground, is not lost). 0 = do not wait: what it draws appears a moment late");
+REXCVAR_DEFINE_INT32(fh1_native_extra_shaders_wait_ms, 0, "FH1",
+                     "Native renderer: the game waits for a shader being made on this PC (the object shows at "
+                     "once, after a short pause) while it has waited less than this many ms in the last 3 s; "
+                     "beyond that the shader is finished in the background and what it draws appears a moment "
+                     "late. 0 = never wait (the default: on a PC whose driver has no cache yet, the waits and the "
+                     "pipelines compiled in the same seconds made a frame of more than 3.2 s, which stops the game "
+                     "for good; 2026-10-06, twice, with 20000 and with 1000)");
 
 namespace fh1::native {
 namespace {
@@ -468,14 +471,29 @@ void Request(bool vertices, uint64_t fingerprint, std::span<const uint32_t> micr
 
 bool Wait(bool vertices, uint64_t fingerprint) {
 #if defined(_WIN32)
-  const int32_t milliseconds = REXCVAR_GET(fh1_native_extra_shaders_wait_ms);
-  if (milliseconds <= 0 || !REXCVAR_GET(fh1_native_extra_shaders)) return false;
+  const int32_t budget = REXCVAR_GET(fh1_native_extra_shaders_wait_ms);
+  if (budget <= 0 || !REXCVAR_GET(fh1_native_extra_shaders)) return false;
   Worker& w = TheWorker();
   if (!w.HasTools()) return false;
+  // What the ring has waited in the current window of 3 s (only the ring thread calls this). A first drive asks
+  // for six shaders within a few seconds: waited for one after the other, they made one frame of 5.3 s and the
+  // game stopped for good (2026-10-06).
+  using Clock = std::chrono::steady_clock;
+  static Clock::time_point window_start{};
+  static std::chrono::nanoseconds window_spent{0};
+  const Clock::time_point before = Clock::now();
+  if (before - window_start > std::chrono::seconds(3)) {
+    window_start = before;
+    window_spent = std::chrono::nanoseconds(0);
+  }
+  const std::chrono::nanoseconds left = std::chrono::milliseconds(budget) - window_spent;
+  if (left <= std::chrono::nanoseconds(0)) return false;
   const uint64_t key = fingerprint ^ (vertices ? 0x8000000000000000ull : 0);
   std::unique_lock<std::mutex> lock(w.mutex);
   if (!w.asked.count(key)) return false;
-  return w.done_wake.wait_for(lock, std::chrono::milliseconds(milliseconds), [&] { return w.done.count(key) != 0; });
+  const bool done = w.done_wake.wait_for(lock, left, [&] { return w.done.count(key) != 0; });
+  window_spent += Clock::now() - before;
+  return done;
 #else
   (void)vertices, (void)fingerprint;
   return false;

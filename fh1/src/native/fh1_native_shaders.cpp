@@ -327,6 +327,7 @@ struct ShadersNative::Data {
   // not move the others, and the entries point at them.
   std::deque<fh1::native::Shader> extras;
   uint32_t next_number = 0;
+  uint32_t taken_in = 0;  // shaders made on this PC and taken in during this session (TakeInMade)
   // Other threads read the entries (ByNumber, IdentifyContainer) while the ring thread may add one.
   mutable std::shared_mutex mutex;
   std::vector<EntryShader> entries;
@@ -631,8 +632,8 @@ const EntryShader* ShadersNative::Identify(bool vertices,
     DumpMicrocodeUnknown(vertices, key.fingerprint, microcode);
     // A helper thread makes it on this PC; Adopt takes it in when it is ready.
     extra_shaders::Request(vertices, key.fingerprint, microcode);
-    // The game waits for it (a short pause, once per shader): some things are painted only once, and a stretch of
-    // ground painted while its shader was being made stayed one flat color for the whole session.
+    // The game waits a moment for it (the user, 2026-10-06: a stutter is better than an object that shows late),
+    // within the time extra_shaders::Wait allows: a frame of about 3.2 s stops the game for good.
     static thread_local bool waiting = false;
     if (!waiting && extra_shaders::Wait(vertices, key.fingerprint)) {
       waiting = true;
@@ -659,6 +660,7 @@ void ShadersNative::Adopt(Data& d) {
     EntryShader e;
     e.shader = &d.extras.back();
     e.number = d.next_number++;
+    e.made_in_session = true;
     if (const char* reason = Read(*e.shader, e)) {
       REXLOG_WARN("[native] C5c: shader made on this PC ignored: {}", reason);
       continue;
@@ -678,9 +680,16 @@ void ShadersNative::Adopt(Data& d) {
       d.por_shader[d.entries[index].shader] = index;
     }
     std::erase_if(d.cache, [](const auto& item) { return item.second == nullptr; });
+    ++d.taken_in;
     REXLOG_INFO("[native] C5c: {} shader n{} ({} words) taken in: what it draws appears from now on",
                 vertices ? "vertex" : "pixel", number, words);
   }
+}
+
+uint32_t ShadersNative::TakeInMade() {
+  Data& d = *data_;
+  Adopt(d);
+  return d.taken_in;
 }
 
 const EntryShader* ShadersNative::IdentifyContainer(

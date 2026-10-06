@@ -3043,6 +3043,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
           load->host[i] = rex::memory::load_and_swap<uint32_t>(copy + size_t(i) * 4);
         }
         load->entry = shaders_.loaded() ? shaders_.Identify(type == 0, load->host) : nullptr;
+        load->taken_in = shaders_.loaded() ? shaders_.TakeInMade() : 0;
         load->fingerprint = XXH3_64bits(load->host.data(), bytes);
         load->generation = ++generations_microcode_;
         load->validated = false;
@@ -3060,6 +3061,18 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       }
     }
     load->use = ++loads_tic_;
+    if (!load->entry && shaders_.loaded()) {
+      // FH1: this microcode had no shader when it was first loaded. If the PC has made shaders since, it is
+      // looked up again: without this its draws stayed missing until the game was restarted.
+      const uint32_t taken_in = shaders_.TakeInMade();
+      if (taken_in != load->taken_in) {
+        load->taken_in = taken_in;
+        load->entry = shaders_.Identify(type == 0, load->host);
+        if (load->entry) {
+          load->generation = ++generations_microcode_;  // nothing kept for the old generation knows this entry
+        }
+      }
+    }
     (type == 0 ? vs_actual_ : ps_actual_) = load->entry;
     if (tracing_ && traces_ < 4000 && trace_pitches_.empty()) {
       ++traces_;
@@ -3194,6 +3207,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     uint64_t fingerprint = 0;      // host XXH3, the same one FingerprintVs would compute
     uint64_t generation = 0;  // from generations_microcode_, when this content was stored
     uint64_t use = 0;         // the least recently used way is the one replaced
+    uint32_t taken_in = 0;    // FH1: as LoadShader::taken_in
   };
 
   void LoadImmediate(Reader data, uint32_t type, uint32_t size) {
@@ -3225,6 +3239,18 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
         via = &candidate_2;
         last_2 = uint8_t(v);
         break;
+      }
+    }
+    if (via && !via->entry && shaders_.loaded()) {
+      // FH1: this microcode had no shader when it was stored. If the PC has made shaders since, it is looked up
+      // again (see LoadShader::taken_in): before both branches, so that the check below still agrees.
+      const uint32_t taken_in = shaders_.TakeInMade();
+      if (taken_in != via->taken_in) {
+        via->taken_in = taken_in;
+        via->entry = shaders_.Identify(type == 0, via->host);
+        if (via->entry) {
+          via->generation = ++generations_microcode_;
+        }
       }
     }
     if (via && imm_phase_ == kImmApplying && (++imm_turn_ & (kImmCheckEvery - 1)) != 0) {
@@ -3286,6 +3312,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     std::memcpy(new_entry.raw.data(), raw, bytes);
     new_entry.host.assign(microcode_.begin(), microcode_.end());
     new_entry.entry = entry;
+    new_entry.taken_in = shaders_.loaded() ? shaders_.TakeInMade() : 0;
     new_entry.fingerprint = XXH3_64bits(new_entry.host.data(), bytes);
     new_entry.generation = ++generations_microcode_;
     new_entry.use = ++imm_tic_;
@@ -4956,6 +4983,9 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
     bool validated = false;
     uint32_t version_slot = 0;
     uint32_t version_global = 0;
+    // FH1: ShadersNative::TakeInMade() when entry was last looked up. A shader the library lacks is made on this
+    // PC while the game runs: "no entry" is asked again once another shader has been taken in.
+    uint32_t taken_in = 0;
   };
   std::array<std::array<std::array<LoadShader, 2>, 128>, 2> loads_cache_{};
   uint64_t loads_tic_ = 0;

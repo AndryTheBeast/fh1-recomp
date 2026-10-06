@@ -519,7 +519,10 @@ REXCVAR_DEFINE_BOOL(fh1_native_pipelines_background, true, "FH1",
                     "the frame for 40-160 ms. Only in the passes drawn again every frame (scene, shadows, "
                     "reflection); full-screen rectangles and one-off targets are compiled on the ring as "
                     "before. false = everything on the ring, as before.");
-REXCVAR_DEFINE_INT32(fh1_native_pipelines_ring_ms, 1000, "FH1",
+// 0 since 2026-10-06 (the user, the same day as the 1000 it replaced): on a PC whose driver has no cache a new
+// pipeline takes 100-340 ms, and a second of them on the ring next to the ones that cannot leave it made frames
+// of 2.9-5.3 s on the first drive (the game stopped for good twice).
+REXCVAR_DEFINE_INT32(fh1_native_pipelines_ring_ms, 0, "FH1",
                      "Native renderer: a pipeline no list knows is compiled on the ring at once (the object shows "
                      "immediately, the frame stops 40-160 ms) while the ring has spent less than this many ms on "
                      "such pipelines in the last 3 s; beyond that the helper threads take them (late object), so "
@@ -13415,8 +13418,13 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   // Ring only (PipelineDe, on a pipeline it does not have yet). True = leave this draw out for now.
   bool DeferToBackground(uint64_t fingerprint, const KeyPipeline& key, const EntryVertices& entry,
                          const RequestDraw& p) {
+    // A shader made on this PC a moment ago: what it draws was missing until now in whatever pass, so a few more
+    // frames lose nothing, and its pipelines all arrive together when it is taken in (a first drive on a PC whose
+    // driver has no cache: 16 of them in one frame of 2.9 s, 2026-10-06).
+    const bool made_now = (p.vs && p.vs->made_in_session) || (p.ps && p.ps->made_in_session);
     if ((key.fill & 1) || cache_pipelines_ == VK_NULL_HANDLE ||
-        !(category_pass_ == kGpuScene || category_pass_ == kGpuShadows || category_pass_ == kGpuReflection) ||
+        (!(category_pass_ == kGpuScene || category_pass_ == kGpuShadows || category_pass_ == kGpuReflection) &&
+         !made_now) ||
         !REXCVAR_GET(fh1_native_pipelines_background)) {
       return false;
     }

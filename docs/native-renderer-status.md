@@ -14,21 +14,33 @@ too upwards, even going inside the rim": fixed after that); nobody has driven th
 
 ## After pre-release 1: flat ground and missing characters (eleventh session, 2026-10-06)
 
-Two faults fixed, both found from the logs before any capture. **Not yet in a release** (pre-release 2 needs the
-user's yes); the user has not yet looked at the fixed build.
+Two faults fixed, both found from the logs before any capture. The user asked the same day for the files of
+`v0.1.0-pre1` to be replaced with the fixed ones (same tag and version, release text updated; the first upload
+is kept in `build_logs\release-v0.1.0-pre1-first-upload`).
 
 1. **Flat brown ground on the new game's first drive: only on a first run of an installed copy.** The developer's
    build showed gravel and grass at the spot, and so did the installed copy at its second start. The library an
    installer builds from the disc lacks the vertex shaders Direct3D rewrites at run time (42 in the developer's
    library); a first run makes them on the PC, about half a second each, and until 2026-10-06 the draws that
-   needed one were skipped meanwhile. The game paints that strip of ground once, when the drive loads: skipped
-   then, flat for the whole session. The five shaders only the installed copy had were checked first and are
-   innocent (given to the developer's build: ground still right); so is cause 317 (same count on both). **Fix:
-   the ring waits for the shader** (`extra_shaders::Wait`, at most `--fh1_native_extra_shaders_wait_ms`, 20000;
-   0 = the old behaviour), the tools run at normal priority while it waits. Test: developer's exe with a
-   disc-only library, the tools and an empty `shaders_extra`: 39 made, none failed, each taken in within the same
-   half second it was asked for, ground textured along the whole drive. This is also the user's rule "a stutter
-   is better than an object that shows late" applied to shaders.
+   needed one were skipped meanwhile. **The cause: the two IM_LOAD caches kept "this microcode has no shader"
+   for the whole session** (`LoadShader::entry`, `ImmediateLoad::entry` in `fh1_native_system.cpp`), so a shader
+   taken in a second later was never used until the next start. Now such an answer is asked again whenever the
+   session has taken in another shader (`ShadersNative::TakeInMade`, `taken_in` in both caches). The five
+   shaders only the installed copy had were checked first and are innocent (given to the developer's build:
+   ground still right); so is cause 317 (same count on both).
+   **What did not work: waiting for the shader on the ring** (`extra_shaders::Wait`,
+   `--fh1_native_extra_shaders_wait_ms`: 20000, then 1000 per 3 s). On the developer's PC, whose driver cache
+   knows every pipeline, it looked perfect; on an installed copy with the driver cache set aside the game stopped
+   for good twice (frames of 5.3 s and of more than 3.2 s: the waits plus the new pipelines compiled in the same
+   seconds, 100-340 ms each without a driver cache). The wait is still there but off (0), and **the user asked
+   for the background compiler back**: `fh1_native_pipelines_ring_ms` is 0 again (unknown pipelines go to the
+   helper threads), and the pipelines of a shader made in this session are compiled off the ring in every pass
+   (`EntryShader::made_in_session`; 16 of them had made one frame of 2.9 s at the start of the drive).
+   Fresh-PC test of the installed copy with those defaults, new game to the festival's gate, 300 s: 39 shaders
+   made, none failed, 0 draws rejected, **no frame longer than 0.5 s**, 564 ms of pipelines on the ring in all,
+   ground textured along the drive (`build_logs\test-installed4-20261006-121518-*`). **Lesson: a first-run fix
+   is only tested on an installed copy with the driver cache set aside, and the log's longest frame is read
+   before the pictures.**
 2. **The animal and the presenter of the opening, the driver, the people of the festival were not drawn** (cause
    317, 208 draws in the opening and more than 10,000 at the festival; on every build, not only installed ones).
    They are characters with a skeleton: VS n1376 (`v_85652bc393548597`) fetches four bone numbers into r0, then

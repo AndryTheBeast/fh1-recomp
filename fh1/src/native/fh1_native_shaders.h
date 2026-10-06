@@ -65,6 +65,9 @@ struct EntryShader {
   // Its SPIR-V has tfetch2DShadowMin (the FH1_MARK_SHADOW_MINIMUM constant from shader_common.h): with
   // kSpecShadowMinimum it takes the minimum of the shadow map and its pair. fh1_native_shadow_minimum.
   bool shadow_minimum = false;
+  // Made on this PC during this session (ShadersNative::TakeInMade). What it draws was missing until a moment
+  // ago, so its pipelines may be compiled off the ring in every pass (DeferToBackground).
+  bool made_in_session = false;
   // Bytes of its float constant buffer that the SPIR-V reads (16 per register).
   uint32_t constants_bytes = 256 * 16;
 };
@@ -105,6 +108,12 @@ class ShadersNative {
   // Microcode already in host byte order. nullptr if it is not in the library.
   // Only the ring thread uses it.
   const EntryShader* Identify(bool vertices, std::span<const uint32_t> microcode);
+
+  // Takes in the shaders made on this PC since the last call and returns how many the session has taken in so
+  // far. Whoever keeps "this microcode has no shader" (the IM_LOAD cache) asks again when the number changes:
+  // kept for the whole session, that answer left the ground of the first drive one flat color until a restart.
+  // Only the ring thread uses it; one atomic read when nothing is new.
+  uint32_t TakeInMade();
 
   StatisticsShaders Statistics() const;
 

@@ -241,9 +241,9 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [x] **Characters with a skeleton were not drawn** (the animal and the presenter of the opening, the driver,
         the festival's people; cause 317, every build): fixed 2026-10-06, eleventh session (status document,
         "After pre-release 1"). The user checks them in the game
-  - [x] **Fixed 2026-10-06, eleventh session: it only happened on a first run of an installed copy** (a shader
-        being made on the PC while the game painted that ground once; the game now waits for the shader: status
-        document, "After pre-release 1"). The item as it was written: some ground textures are not
+  - [x] **Fixed 2026-10-06, eleventh session: it only happened on a first run of an installed copy** (the
+        renderer kept "no shader" for the whole session when a shader was still being made on the PC; it now asks
+        again once the shader is there: status document, "After pre-release 1"). The item as it was written: some ground textures are not
         drawn (native renderer). Screenshot `build_logs\reference\user-ground-flat-newgame-20261006-native.webp`:
         the new game's first drive, 1.7 mi from the festival, by day; the strip between the road and the leaves
         is one flat brown color with straight edges, and the ground further right has its texture. The same

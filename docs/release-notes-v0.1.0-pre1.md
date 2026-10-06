@@ -2,7 +2,9 @@
 
 The text of the GitHub release. Tag `v0.1.0-pre1`, marked as a pre-release. Files: `FH1Installer.exe`,
 `fh1-win64.zip`, `fh1-shader-tools.zip`, `SHA256SUMS.txt` (all made by `installer\make_package.ps1` in
-`installer\out\release`). **Nothing is published without the owner's yes at that moment.**
+`installer\out\release`). **Nothing is published without the owner's yes at that moment.** The two zips and the
+checksums were replaced on 2026-10-06 at the owner's request; the first upload's files are
+kept in `build_logs\release-v0.1.0-pre1-first-upload`.
 
 ---
 
@@ -10,6 +12,21 @@ The first pre-release of the unofficial Windows port of **Forza Horizon** (2012,
 
 **You need your own disc image (.iso) of the game, USA version (NTSC-U).** Nothing of the game is in this
 download; the installer reads your disc image on your computer.
+
+## Updated on 6 October 2026
+
+The downloads below were replaced with fixed ones (same version, same installer). What changed, all in the
+default native renderer:
+
+- **Characters are drawn**: the deer and the presenter of the opening, the driver in the car and the people of
+  the festival were missing, or came out scrambled.
+- **The ground beside the road is no longer one flat color on a first run** (seen on the first drive of a new
+  game).
+- **Fewer long stutters on a first run**: shaders the game meets for the first time are prepared in the
+  background again, so an object can show a moment late the first time instead of the game standing still.
+
+**If you installed before this update:** start `FH1Installer.exe` again and choose the same `.iso` and the same
+folder. It replaces the port and prepares the shaders again; your saves are not touched.
 
 ## Install
 
