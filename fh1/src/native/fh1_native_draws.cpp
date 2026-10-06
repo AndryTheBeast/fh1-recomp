@@ -519,6 +519,12 @@ REXCVAR_DEFINE_BOOL(fh1_native_pipelines_background, true, "FH1",
                     "the frame for 40-160 ms. Only in the passes drawn again every frame (scene, shadows, "
                     "reflection); full-screen rectangles and one-off targets are compiled on the ring as "
                     "before. false = everything on the ring, as before.");
+REXCVAR_DEFINE_INT32(fh1_native_pipelines_ring_ms, 1000, "FH1",
+                     "Native renderer: a pipeline no list knows is compiled on the ring at once (the object shows "
+                     "immediately, the frame stops 40-160 ms) while the ring has spent less than this many ms on "
+                     "such pipelines in the last 3 s; beyond that the helper threads take them (late object), so "
+                     "that no frame reaches the 3.2 s that stops the game. 0 = always the helper threads (as before "
+                     "2026-10-06), -1 = always the ring.");
 REXCVAR_DEFINE_BOOL(fh1_native_pipelines_prewarm, true, "FH1",
                     "Native renderer (26/09, build 186): at startup, a lowest-priority thread re-creates in the "
                     "Vulkan cache the pipelines the ring created in earlier sessions (their list is in "
@@ -12782,6 +12788,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                                               std::chrono::steady_clock::now() - start_creation)
                                               .count());
     ns_pipelines_ += ns_creation;
+    if (ring_window_pending_) {  // DeferToBackground let this one through to the ring
+      ring_window_pending_ = false;
+      ring_window_spent_ns_ += ns_creation;
+    }
     NotePipelineCreated(key, entry, p, pipeline, ns_creation);  // List and measurement
     pipelines_.emplace(fingerprint, std::make_pair(key, pipeline));
     ++pipelines_by_mode_[key.fill2 & 3];  // Dynamic state report
@@ -13394,6 +13404,28 @@ class DrawsVulkanImpl final : public DrawsVulkan {
       ++background_left_out_;
       return true;
     }
+    // User, 2026-10-06: an object that shows late is worse than a stutter. A pipeline no list knows is compiled
+    // on the ring, at once, as long as the ring has spent less than fh1_native_pipelines_ring_ms on such
+    // pipelines in the last kRingWindowNs; only beyond that (dozens arriving together) do the helper threads take
+    // them, because one frame of about 3.2 s stops the game for good.
+    const int32_t ring_ms = REXCVAR_GET(fh1_native_pipelines_ring_ms);
+    if (ring_ms < 0) {
+      return false;
+    }
+    if (ring_ms > 0) {
+      const uint64_t now = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now().time_since_epoch())
+                                        .count());
+      if (now - ring_window_start_ns_ > kRingWindowNs) {
+        ring_window_start_ns_ = now;
+        ring_window_spent_ns_ = 0;
+      }
+      if (ring_window_spent_ns_ < uint64_t(ring_ms) * 1000000ull) {
+        ring_window_pending_ = true;  // PipelineOf adds what this one costs
+        ++ring_at_once_;
+        return false;
+      }
+    }
     const ShadersNative* library = LibraryActive();
     auto job = std::make_shared<JobBackground>();
     if (!library || !library->loaded() || layout_pipeline_ == VK_NULL_HANDLE || !RecordOf(key, entry, p, job->r)) {
@@ -13463,6 +13495,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
 
   // Ring only, from ReportPrewarm (every 10 s): one line when the background compiler did anything.
   void ReportBackground() {
+    if (ring_at_once_ != ring_at_once_reported_) {
+      ring_at_once_reported_ = ring_at_once_;
+      REXLOG_INFO("[native] C6 unknown pipelines compiled on the ring at once (no late object): {} so far; {} went "
+                  "to the helper threads because too many came together",
+                  ring_at_once_, background_started_);
+    }
     if (background_started_ == background_reported_) {
       return;
     }
@@ -14720,6 +14758,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   bool background_stop_ = false;                                 // under background_mutex_
   std::atomic<uint64_t> background_ns_{0};
   uint64_t background_started_ = 0, background_ready_ = 0, background_left_out_ = 0;
+  // fh1_native_pipelines_ring_ms: what the ring spent compiling unknown pipelines in the current window.
+  static constexpr uint64_t kRingWindowNs = 3000000000ull;
+  uint64_t ring_window_start_ns_ = 0, ring_window_spent_ns_ = 0, ring_at_once_ = 0, ring_at_once_reported_ = 0;
+  bool ring_window_pending_ = false;
   uint64_t background_reported_ = 0;
   std::thread prewarm_thread_;
   const ShadersNative* library_prewarm_ = nullptr;

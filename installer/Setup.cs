@@ -185,9 +185,9 @@ public static class Launchers {
       "  FH1 (emulated Vulkan).bat\r\n" +
       "      the same exact picture drawn through Vulkan\r\n" +
       "\r\n" +
-      "The first run is rough: the first time the game shows something new, its objects and textures can\r\n" +
-      "take a long time to appear (the shaders are prepared on your PC right then, once). The same place is\r\n" +
-      "fine the next time, and the game gets smoother the more you play.\r\n" +
+      "The first run is rough: the first time the game shows something new it stutters, and some objects\r\n" +
+      "appear a moment late (the shaders are prepared on your PC right then, once). The same place is fine\r\n" +
+      "the next time, and the game gets smoother the more you play.\r\n" +
       "\r\n" +
       "In the game: F3 shows the frame rate, F4 the port's settings. The game runs at 30 frames per second,\r\n" +
       "its own limit on the Xbox 360. Your saves are in your Documents folder, in \"fh1\".\r\n" +
