@@ -43,7 +43,8 @@ will be removed at some point.
 - Only the USA disc. No Xbox Live, Kinect or downloadable content.
 - The default native renderer: no ground at the Horizon Outpost of Montano Plains and a dark patch beside the
   road east of it; upside-down scenery patches in a mountain race; night colors too warm; garage and car damage
-  not checked; a car's small picture (thumbnail) is sometimes wrong; objects and textures appear late the first
+  not checked; a car's small picture (thumbnail) is sometimes wrong; a car's
+  dashboard can stay dark; objects and textures appear late the first
   time (see "The first run is rough" above); tried on AMD graphics only. The emulated launchers do not have these
   faults.
 - The emulated launchers on Intel graphics: a dark square in a corner and a hard-edged shadow under the car.

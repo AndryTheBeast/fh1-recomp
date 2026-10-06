@@ -90,6 +90,7 @@ The default, the native renderer (`FH1.exe`). The two "emulated" launchers do no
 - **The first run is rough**: the first time the game shows something new, its objects and textures can take a
   long time to appear (the shaders are prepared on your PC right then, once). It gets better the more you play.
 - The small picture (thumbnail) of a car is sometimes wrong.
+- A car's dashboard can stay dark (its dials do not light up).
 - It has only been tried on AMD graphics.
 
 The two "emulated" launchers:

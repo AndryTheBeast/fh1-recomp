@@ -13017,7 +13017,12 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     // numbers them differently: every record of the shipped list was skipped on an installed copy (813 of 813,
     // 2026-10-06). The numbers are set from the containers' fingerprints, which do not depend on the library.
     const ShadersNative* library = LibraryActive();
-    size_t renumbered = 0;
+    size_t renumbered = 0, unusable = 0;
+    // False for a record written before the shaders made on this PC had a fingerprint (0): it cannot be told
+    // which shader it meant, so it is left out and the pipeline is recorded again when the game asks for it.
+    const auto usable = [](const RegisterPipeline& r) {
+      return r.fingerprint_vs != 0 && (r.key.ps == 0 || r.fingerprint_ps != 0);
+    };
     const auto renumber = [&](RegisterPipeline& r) {
       if (!library || !library->loaded()) {
         return;
@@ -13049,14 +13054,18 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         if (r.n_attributes > RegisterPipeline::kMaxAttributes || r.n_bindings > RegisterPipeline::kMaxBindings) {
           continue;
         }
+        if (!usable(r)) {
+          ++unusable;
+          continue;
+        }
         renumber(r);
         if (index_list_.emplace(XXH3_64bits(&r.key, sizeof(r.key)), list_file_.size()).second) {
           list_file_.push_back(r);
         }
       }
       written_list_ = std::move(data);  // the writer thread rewrites it unchanged if only the cache changes
-      if (renumbered) {
-        list_without_save_ = 1;  // saved with their new numbers
+      if (renumbered || unusable) {
+        list_without_save_ = 1;  // saved with their new numbers, without the unusable ones
       }
     }
     const size_t renumbered_local = renumbered;
@@ -13083,7 +13092,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
         for (uint32_t i = 0; i < header_shipped[3] && list_file_.size() < kMaxRegistersList; ++i) {
           RegisterPipeline r;
           std::memcpy(&r, shipped.data() + kHeaderList + size_t(i) * sizeof(RegisterPipeline), sizeof(r));
-          if (r.n_attributes > RegisterPipeline::kMaxAttributes || r.n_bindings > RegisterPipeline::kMaxBindings) {
+          if (r.n_attributes > RegisterPipeline::kMaxAttributes || r.n_bindings > RegisterPipeline::kMaxBindings ||
+              !usable(r)) {
             continue;
           }
           renumber(r);
@@ -13105,6 +13115,10 @@ class DrawsVulkanImpl final : public DrawsVulkan {
                 "list, {} of the shipped list{}",
                 renumbered_local, renumbered - renumbered_local,
                 library && library->loaded() ? "" : " (no library yet: numbers kept)");
+    if (unusable) {
+      REXLOG_INFO("[native] C6 prewarm: {} records of this PC's list named a shader without a fingerprint (written "
+                  "before 2026-10-06): left out, recorded again when met", unusable);
+    }
   }
 
   // Ring only (SaveCachePipelines): the file's list without the records the thread found missing their

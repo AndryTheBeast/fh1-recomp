@@ -420,7 +420,12 @@ bool ShadersNative::Load(const std::filesystem::path& file) {
   }
   // The library's shaders, then the ones earlier sessions made on this PC.
   d.extras.clear();
-  for (fh1::native::Shader& s : extra_shaders::LoadSaved()) d.extras.push_back(std::move(s));
+  for (fh1::native::Shader& s : extra_shaders::LoadSaved()) {
+    // The container's fingerprint, as the library computes it for its own (fh1_shader_library.cpp). Without it
+    // (0 until 2026-10-06) no pipeline record that uses such a shader could be matched in another session.
+    s.fingerprint = XXH3_64bits(s.original.data(), s.original.size());
+    d.extras.push_back(std::move(s));
+  }
   std::vector<const fh1::native::Shader*> shaders;
   for (const fh1::native::Shader& s : d.library.shaders()) shaders.push_back(&s);
   for (const fh1::native::Shader& s : d.extras) shaders.push_back(&s);
@@ -640,6 +645,7 @@ void ShadersNative::Adopt(Data& d) {
       REXLOG_WARN("[native] C5c: no room left for a shader made in this session: it is used from the next start");
       continue;
     }
+    made.fingerprint = XXH3_64bits(made.original.data(), made.original.size());
     d.extras.push_back(std::move(made));
     EntryShader e;
     e.shader = &d.extras.back();

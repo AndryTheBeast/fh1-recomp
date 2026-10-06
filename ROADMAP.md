@@ -252,6 +252,10 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] **After the first pre-release (user, 2026-10-06, installed copy): a car's thumbnail picture is sometimes
         wrong and sometimes right** (native renderer; the user's guess: timing). The photos of a saved car were
         fixed that morning with a measured wait (`fh1_native_read_one_off_wait_texels`): start there
+  - [ ] **After the first pre-release (user, 2026-10-06, installed copy): the car's dashboard never lights up**
+        (native renderer; two runs, the second with every shader read back, 0 draws rejected, so not the shader
+        or pipeline preparing). Not looked at. A lead, not checked: one log line per run "texture format not
+        supported yet: an empty one is used (cause 422)". Ask first whether it lights up on the emulated GPU
   - [ ] After the first pre-release (user, 2026-10-06): with a shader the game makes on the PC for the first time,
         the object's texture takes a long time to show (the release texts warn that the first run is rough);
         and the "Preparing shaders" text does not show on the two emulated launchers (the user's impression)

@@ -61,6 +61,12 @@ def union(paths, report):
     seen = {}
     for path in paths:
         records = read_list(path)
+        # A record whose vertex shader has no fingerprint (0) was written by a build older than 2026-10-06 for a
+        # shader made on that PC: it cannot be matched anywhere, the game leaves it out too.
+        usable = [r for r in records if r[KEY_BYTES:KEY_BYTES + 8] != bytes(8)]
+        if report and len(usable) != len(records):
+            print(f"{path}: {len(records) - len(usable)} records without a shader fingerprint left out")
+        records = usable
         new = 0
         for r in records:
             if identity(r) not in seen:
