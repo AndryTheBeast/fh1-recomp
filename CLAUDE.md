@@ -399,5 +399,10 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   build, which has none. It also found a vertex shader the developer's own library lacks (v_B6AA15E7F187FBAF).
   `fh1\out\win-release\shaders_extra.test-20261006` is that test's output (game-derived: never commit). When several test windows open, say for each one
   whose saves it uses (the user took a picture test on the real save for the empty-saves test).
+- **The native renderer is the default since 2026-10-06** (the user's decision for the pre-release):
+  `fh1_renderer` defaults to `native`, and fh1.exe falls back to the emulated GPU when `fh1_shaders.nfsp` is
+  not next to it. The emulated GPU is now `--fh1_renderer=xenos` (Vulkan: add `--gpu_backend=vulkan`): give
+  it to `auto_test.ps1 -ExtraArgs` for every emulated reference shot (a plain run is native now). Older notes
+  in this file that call the emulated GPU "the default" are from before that day.
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.

@@ -76,8 +76,8 @@ class Fh1App : public rex::ReXApp {
     Fh1StartProfiler();  // --fh1_profile=N (fh1_profiler.cpp)
     fh1::census::Start();  // --fh1_d3d_census (Direct3D mapping)
   }
-  // By default Forza Horizon draws through the SDK's Xbox 360 GPU emulation (the native renderer
-  // is opt-in). The SDK defaults to none because nfsmw-nx renders natively.
+  // By default Forza Horizon draws with its native Vulkan renderer (since 2026-10-06); --fh1_renderer=xenos, or
+  // a missing shader library, selects the SDK's Xbox 360 GPU emulation.
   // --gpu_plugin=<name> on the command line still wins.
   void OnPreSetup(rex::RuntimeConfig& config) override {
     // --fh1_renderer=native: FH1's native Vulkan renderer (src/native, docs/native-renderer-fh1.md) goes in

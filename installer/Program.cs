@@ -147,7 +147,8 @@ public static class Installation {
       string game = Path.Combine(folder, Checks.GameFolder);
       // Its own empty user folder: this run never looks at the saves.
       int code = ShaderLibrary.Run(Path.Combine(folder, Launchers.Exe),
-                                   "\"--game_data_root=" + game + "\" \"--user_data_root=" +
+                                   // The emulated GPU: this run only reads the program and must not need Vulkan.
+                                   "--fh1_renderer=xenos \"--game_data_root=" + game + "\" \"--user_data_root=" +
                                        Path.Combine(imageFolder, "user") + "\" \"--fh1_unpack_image=" + image + "\"",
                                    180);
       if (code != 0 || !File.Exists(image)) {

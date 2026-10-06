@@ -109,8 +109,10 @@ std::string Summary();
 #include "../../sdk/src/core/threading_switch.h"
 #endif
 
-REXCVAR_DEFINE_STRING(fh1_renderer, "xenos", "FH1",
-                      "xenos = Xbox GPU translation layer; native = the native Vulkan renderer")
+// The native renderer is the default since 2026-10-06 (the user's decision for the first pre-release).
+REXCVAR_DEFINE_STRING(fh1_renderer, "native", "FH1",
+                      "native = the native Vulkan renderer (default; needs fh1_shaders.nfsp next to the program); "
+                      "xenos = the emulated Xbox 360 GPU (Direct3D 12, or Vulkan with --gpu_backend=vulkan)")
     .allowed({"xenos", "native"})
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
@@ -5216,9 +5218,20 @@ uint64_t SwapsNative() {
   return g_swaps_native.load(std::memory_order_relaxed);
 }
 
+// Decided once, at the first call (the app asks after the command line is read). The native renderer cannot
+// draw without its shader library: when the file is not next to the program, the emulated GPU is used
+// instead of a black window.
 bool Active() {
-  const std::string& renderer = REXCVAR_GET(fh1_renderer);
-  return renderer == "native";
+  static const bool active = [] {
+    if (REXCVAR_GET(fh1_renderer) != "native") return false;
+    std::error_code ec;
+    const std::filesystem::path library = rex::filesystem::GetExecutableFolder() / "fh1_shaders.nfsp";
+    if (std::filesystem::is_regular_file(library, ec)) return true;
+    REXLOG_WARN("[native] no shader library at {}: using the emulated Xbox 360 GPU instead of the native renderer",
+                library.string());
+    return false;
+  }();
+  return active;
 }
 
 // The one native system, for the app's calls below. It lives until the app ends.

@@ -30,7 +30,8 @@ public static class Needs {
     string text = HasRuntime() ? "Microsoft Visual C++ runtime: installed." : "Microsoft Visual C++ runtime: MISSING (the game needs it).";
     text += HasDirect3D12() ? " Direct3D 12: there." : " Direct3D 12: MISSING (the game needs Windows 10 or 11).";
     text += HasVulkan() ? " Vulkan: there."
-                        : " Vulkan: not found (only the two Vulkan launchers need it: install your graphics card's current driver).";
+                        : " Vulkan: MISSING (FH1.exe draws with it: install your graphics card's current driver; " +
+                          "until then only \"FH1 (emulated Direct3D 12).bat\" works).";
     return text;
   }
 
@@ -149,29 +150,61 @@ public static class Source {
   }
 }
 
-// How the game is started: FH1.exe by itself draws with the emulated Xbox 360 GPU on Direct3D 12 (the default,
-// the correct picture); two .bat files in the folder start the other two ways.
+// How the game is started: FH1.exe by itself draws with the native Vulkan renderer (the default since
+// 2026-10-06, the user's decision); two .bat files in the folder start the emulated Xbox 360 GPU, on
+// Direct3D 12 and on Vulkan.
 public static class Launchers {
   public const string Exe = "FH1.exe";
+  public const string Direct3DBat = "FH1 (emulated Direct3D 12).bat";
   public const string VulkanBat = "FH1 (emulated Vulkan).bat";
-  public const string NativeBat = "FH1 (native Vulkan, experimental).bat";
+  // What earlier versions of the installer wrote: removed by an update.
+  static readonly string[] OldFiles = { "FH1 (native Vulkan, experimental).bat" };
   public const string ShortcutName = "Forza Horizon.lnk";
+  public const string ReadMeName = "Read me.txt";
+
+  const string ReadMe =
+      "Forza Horizon (Xbox 360) for Windows - unofficial port, pre-release\r\n" +
+      "\r\n" +
+      "Start the game\r\n" +
+      "  FH1.exe (or the \"Forza Horizon\" shortcut on the desktop)\r\n" +
+      "      the default: the native Vulkan renderer (lighter on the PC; it still has some picture\r\n" +
+      "      faults, and its first start shows \"Preparing shaders\" for some tens of seconds)\r\n" +
+      "  FH1 (emulated Direct3D 12).bat\r\n" +
+      "      the Xbox 360's exact picture, drawn through Direct3D 12: use it if something looks wrong\r\n" +
+      "  FH1 (emulated Vulkan).bat\r\n" +
+      "      the same exact picture drawn through Vulkan\r\n" +
+      "\r\n" +
+      "In the game: F3 shows the frame rate, F4 the port's settings. The game runs at 30 frames per second,\r\n" +
+      "its own limit on the Xbox 360. Your saves are in your Documents folder, in \"fh1\".\r\n" +
+      "\r\n" +
+      "Something went wrong?\r\n" +
+      "  Every start of the game writes a log into the folder \"logs\" here (fh1_001.log, fh1_002.log, ...).\r\n" +
+      "  Open an issue at https://github.com/AndryTheBeast/fh1-recomp/issues and attach the newest one,\r\n" +
+      "  plus logs\\fh1.crash.txt if the game crashed. A log can contain your Windows user name inside\r\n" +
+      "  file paths. Never attach files of the game itself.\r\n" +
+      "\r\n" +
+      "Guide and known issues: https://github.com/AndryTheBeast/fh1-recomp/blob/main/docs/install.md\r\n" +
+      "To update: start a newer FH1Installer.exe and choose this same folder.\r\n";
 
   static string Bat(string what, string option) {
     return "@echo off\r\n" +
            "rem Forza Horizon recomp: " + what + "\r\n" +
-           "rem (FH1.exe by itself uses the emulated Xbox 360 GPU on Direct3D 12.)\r\n" +
+           "rem (FH1.exe by itself uses the native Vulkan renderer.)\r\n" +
            "cd /d \"%~dp0\"\r\n" +
            "start \"\" \"%~dp0" + Exe + "\" " + option + " %*\r\n";
   }
 
   // Returns the path of the desktop shortcut, or null when it could not be made (the game works without it).
   public static string Write(string folder) {
+    File.WriteAllText(Path.Combine(folder, ReadMeName), ReadMe);
+    foreach (string old in OldFiles) {
+      if (File.Exists(Path.Combine(folder, old))) File.Delete(Path.Combine(folder, old));
+    }
+    File.WriteAllText(Path.Combine(folder, Direct3DBat),
+                      Bat("the emulated Xbox 360 GPU on Direct3D 12 (the Xbox 360's exact picture).",
+                          "--fh1_renderer=xenos"));
     File.WriteAllText(Path.Combine(folder, VulkanBat),
-                      Bat("the emulated Xbox 360 GPU on Vulkan instead of Direct3D 12.", "--gpu_backend=vulkan"));
-    File.WriteAllText(Path.Combine(folder, NativeBat),
-                      Bat("the native Vulkan renderer (experimental: faster, still has picture faults).",
-                          "--fh1_renderer=native"));
+                      Bat("the emulated Xbox 360 GPU on Vulkan.", "--fh1_renderer=xenos --gpu_backend=vulkan"));
     try {
       string shortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), ShortcutName);
       // Windows' own scripting object writes .lnk files.

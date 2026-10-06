@@ -19,13 +19,16 @@ Switch-side problems (memory, threads, Vulkan on NVK, shader pre-translation).
 
 **Playable on PC at full speed (since September 2026).** From a new game through the intro, the festival,
 loading a save, races, the garage and the paint shop, with no crashes, at a steady **30 fps** (the game's own
-frame cap on the Xbox 360) with a correct picture. This default path draws through ReXGlue's emulation of the
-Xbox 360 GPU (Direct3D 12, or Vulkan with `--gpu_backend=vulkan`).
+frame cap on the Xbox 360).
 
-**In progress (October 2026): a native Vulkan renderer** (`--fh1_renderer=native`) that draws the game
-directly, without emulating the Xbox 360 GPU; it is what the Switch port will need. Boot, videos, menus and
-loading screens already match the emulated picture; the 3D scene runs at 30 fps but still has picture glitches.
-Plan in [ROADMAP.md](ROADMAP.md), details in [docs/native-renderer-status.md](docs/native-renderer-status.md).
+**The default since October 2026: a native Vulkan renderer** that draws the game directly, without emulating the
+Xbox 360 GPU. It is what the Switch port will need, so it is the one we want reports about. It runs at 30 fps
+and still has some picture faults ([known issues](docs/install.md#known-issues)). Plan in [ROADMAP.md](ROADMAP.md),
+details in [docs/native-renderer-status.md](docs/native-renderer-status.md).
+
+The earlier path, ReXGlue's emulation of the Xbox 360 GPU (`--fh1_renderer=xenos`: Direct3D 12, or Vulkan with
+`--gpu_backend=vulkan`), shows the console's exact picture. It is kept for comparison for now and will be
+retired at some point.
 
 ### Test hardware
 
@@ -47,8 +50,18 @@ APU: Zen 4 CPU and an RDNA 3 integrated GPU, running Windows 11.
 | `shaders/` | XenosRecomp with nfsmw-nx's changes, and the shader library tools |
 | `mesa/` | Patch for mesa-switch (NVK on the Switch) |
 | `tools/` | Code generation, gap-finding and build scripts |
+| `installer/` | The Windows installer of the pre-releases (C#) and the scripts that make a release's files |
 | `docs/` | This project's documents ([index](docs/README.md)); nfsmw-nx's documentation is in `docs/nfsmw-nx/` |
 | `reference/` | Leftovers of nfsmw-nx kept for the Switch port (its README, profile data) |
+
+## Installing (pre-release)
+
+Pre-releases come with a small Windows installer, `FH1Installer.exe`, on the
+[Releases](https://github.com/AndryTheBeast/fh1-recomp/releases) page: you choose your own disc image (.iso, USA
+version) and a folder, and it copies the game's files, downloads the pre-built port and prepares the shaders on
+your PC. The guide, the known issues and how to report a problem (with the log the game always writes) are in
+**[docs/install.md](docs/install.md)**. The installer is modelled on StevensND's installer for nfsmw-nx; its
+source is in `installer/`.
 
 ## Building on Windows
 

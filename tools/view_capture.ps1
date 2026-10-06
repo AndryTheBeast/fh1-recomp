@@ -75,7 +75,8 @@ $presses = @(0..6 | ForEach-Object { "{0}+0.2=rb" -f ($First + 8 * $_) }) -join 
 $auto = "33+0.2=start;33.8+0.2=start;34.6+0.2=start;35.5+0.2=a;36.8+0.2=a;38.1+0.2=a;$presses"
 $argv = @("--game_data_root=$Top\game_root", "--log_file=$Log", "--log_level=debug", "--fh1_autoplay=`"$auto`"") +
   @($ExtraArgs -split "\s+" | Where-Object { $_ })
-if ($Native) { $argv += "--fh1_renderer=native" }
+# Named both ways: the native renderer is the program's default since 2026-10-06.
+$argv += $(if ($Native) { "--fh1_renderer=native" } else { "--fh1_renderer=xenos" })
 if ($Native -and -not $NoCapture -and -not $RenderDoc) {
   $argv += @("--fh1_dump_resolved_at_s=-1", "--fh1_native_diag_frame_s=-1")
 }

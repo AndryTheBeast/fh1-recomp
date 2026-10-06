@@ -16,6 +16,7 @@
 #if defined(_WIN32)
 
 #include <rex/cvar.h>
+#include <rex/filesystem.h>
 #include <rex/logging.h>
 
 #include <windows.h>
@@ -169,7 +170,10 @@ LONG WINAPI Unhandled(EXCEPTION_POINTERS* ep) {
 
 void InstallCrashReport() {
   std::string log = REXCVAR_GET(log_file);
-  g_report_path = log.empty() ? std::string("fh1.crash.txt") : log + ".crash.txt";
+  // Without --log_file the SDK writes its logs to the folder "logs" next to the program: the report goes there
+  // too, so a player has one folder to send (docs/install.md, "Reporting a problem").
+  g_report_path = log.empty() ? (rex::filesystem::GetExecutableFolder() / "logs" / "fh1.crash.txt").string()
+                              : log + ".crash.txt";
   AddVectoredExceptionHandler(0, LastChanceGuestFault);  // 0 = after the SDK's handler
   SetUnhandledExceptionFilter(Unhandled);
   REXLOG_INFO("Crash report enabled: {}", g_report_path);

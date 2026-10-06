@@ -111,7 +111,7 @@ public sealed class MainForm : Form {
   void ShowNeeds() {
     bool runtime = Needs.HasRuntime();
     needsStatus_.Text = Needs.Describe();
-    needsStatus_.ForeColor = runtime && Needs.HasDirect3D12() ? Good : Bad;
+    needsStatus_.ForeColor = runtime && Needs.HasDirect3D12() && Needs.HasVulkan() ? Good : Bad;
     runtimeButton_.Visible = !runtime;
     installButton_.Enabled = worker_ == null && isoOk_ && folderOk_ && runtime;
   }
@@ -322,9 +322,9 @@ public sealed class MainForm : Form {
         if (finished) {
           summary += Launchers.Write(folder) != null
                          ? " Start the game with the \"Forza Horizon\" shortcut on your desktop, or " + Launchers.Exe +
-                               " in the folder; the two .bat files there start it on Vulkan."
+                               " in the folder; the two .bat files there start the emulated picture."
                          : " Start the game with " + Launchers.Exe + " in the folder (the desktop shortcut could " +
-                               "not be made); the two .bat files there start it on Vulkan.";
+                               "not be made); the two .bat files there start the emulated picture.";
         }
       }
     } catch (OperationCanceledException) {

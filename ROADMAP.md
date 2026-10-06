@@ -15,9 +15,9 @@ play, 26-28 in the busiest spots.
 
 | graphics path | how to run | state |
 | --- | --- | --- |
-| Emulated Xbox 360 GPU, D3D12 (default) | `run_fh1.bat` | correct, 30 fps; F3 frame monitor |
-| Emulated Xbox 360 GPU, Vulkan | `run_fh1.bat --gpu_backend=vulkan` | correct, 28-30 fps |
-| **Native renderer** (Vulkan, in progress) | `run_fh1.bat --fh1_renderer=native` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps (animated crowd, soft edges, right exposure); evening car color and the glow of lights fixed 2026-10-05; the slightly dark picture, 4x MSAA and the driving check still to do |
+| Emulated Xbox 360 GPU, D3D12 | `run_fh1.bat --fh1_renderer=xenos` | correct, 30 fps; F3 frame monitor |
+| Emulated Xbox 360 GPU, Vulkan | `run_fh1.bat --fh1_renderer=xenos --gpu_backend=vulkan` | correct, 28-30 fps |
+| **Native renderer** (Vulkan, in progress; **the default since 2026-10-06**) | `run_fh1.bat` | boot, videos, menus, loading screens correct; festival in daylight close to the emulated picture at 30 fps (animated crowd, soft edges, right exposure); evening car color and the glow of lights fixed 2026-10-05; the slightly dark picture, 4x MSAA and the driving check still to do |
 
 ## Stage 1 — Translate the game (done)
 
@@ -249,7 +249,8 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         an upside-down scene is what the game's mirrored reflection picture looks like, so these surfaces may be
         drawn with the reflection texture (or an old resolved picture at the same address) in place of their own;
         the forest in the sky of the first screenshot is upside down too
-  - [ ] Make the native renderer the default once it matches the emulated picture
+  - [x] The native renderer is the default (user, 2026-10-06, for the first pre-release, with its known faults
+        listed in docs/install.md); the emulated GPU is `--fh1_renderer=xenos`
 
 ## Tools (done)
 
@@ -315,6 +316,10 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
       11 MB zipped), extracts the ISO, builds the shader library (about 10 minutes); the emulated GPU is the
       default and the native renderer a second launcher; unsigned (the guide says Smart App Control must be
       off); tag `v0.1.0-pre1`
+      **Changed by the user later that day: the native renderer is the default** (`fh1_renderer` defaults to
+      `native`; FH1.exe without its shader library falls back to the emulated GPU), and the two .bat files
+      start the emulated Direct3D 12 (`--fh1_renderer=xenos`) and the emulated Vulkan
+      (`--fh1_renderer=xenos --gpu_backend=vulkan`)
     - [x] fh1.exe: an "unpack only" mode that writes default.xex's image for the installer
           (`--fh1_unpack_image=<file>`, 1 s; the same 478 shaders as the image dumped from the running game; the
           window shows for that second) - 2026-10-06
@@ -354,7 +359,15 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           shortcut; two .bat files in the game folder, one for the emulated Vulkan (`--gpu_backend=vulkan`) and
           one for the native renderer (`--fh1_renderer=native`). For that fh1.exe must find the game's files in
           a folder next to itself when `--game_data_root` is not given (today: an error box)
-    - [ ] Install guide, known issues, release text; the release itself only with the user's yes
+    - [x] Install guide and known issues (`docs/install.md`), release text
+          (`docs/release-notes-v0.1.0-pre1.md`), README section, issue form asking for the log
+          (`.github/ISSUE_TEMPLATE/bug_report.md`), `Read me.txt` written into the game's folder - 2026-10-06
+    - [x] Logging in the pre-releases (user, 2026-10-06): on by default (`logs\fh1_NNN.log` next to FH1.exe,
+          info level, the newest 20); the crash report now goes to `logs\fh1.crash.txt` too - 2026-10-06
+    - [ ] The user's checks: the new installer window (Update on `Downloads\FH1`), first-person view and the
+          paint booth on the native launcher of that installed copy (its library has no run-time shaders)
+    - [ ] The release itself (tag `v0.1.0-pre1`, the four files of `installer\out\release`): only with the
+          user's yes at that moment. After it: one real download test with the installer alone
 - [ ] (old wording) Source-only pre-release (tag + install guide + known issues; users build from their own disc). **User,
       2026-10-06: this is the focus now**, after the offline shader library for the PC; the other native renderer
       fixes (night colors, races / garage / damage, Carbon clean-up, F3 viewer) wait
