@@ -17,7 +17,10 @@ using System.Windows.Forms;
 namespace Fh1Installer {
 
 public static class Program {
-  public const string Version = "0.1.1-pre1";
+  // The release's tag is "v" + Version; its name on GitHub and in the window is Name (the user's naming,
+  // 2026-10-06: "Alpha - 0.1.0" is the release whose tag stays v0.1.0-pre1, "Alpha - 0.1.1" this one).
+  public const string Version = "0.1.1";
+  public const string Name = "Alpha - " + Version;
 
   [DllImport("user32.dll")]
   static extern bool SetProcessDPIAware();
@@ -108,7 +111,7 @@ public static class Installation {
   public static void WriteMarker(string folder) {
     Directory.CreateDirectory(folder);
     File.WriteAllText(Path.Combine(folder, Checks.MarkerName),
-                      "Forza Horizon recomp, installer " + Program.Version + "\r\n" +
+                      "Forza Horizon recomp, installer " + Program.Name + "\r\n" +
                       "This file tells the installer that this folder is one of its installations.\r\n");
   }
 

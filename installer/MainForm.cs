@@ -38,7 +38,7 @@ public sealed class MainForm : Form {
 
   public MainForm() {
     using (Graphics g = CreateGraphics()) { scale_ = g.DpiX / 96f; }
-    Text = "Forza Horizon recomp - installer (" + Program.Version + ")";
+    Text = "Forza Horizon recomp - installer (" + Program.Name + ")";
     try {
       // The program's own icon in the title bar and on the taskbar.
       Icon = Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
