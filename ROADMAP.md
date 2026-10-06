@@ -249,6 +249,12 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
         an upside-down scene is what the game's mirrored reflection picture looks like, so these surfaces may be
         drawn with the reflection texture (or an old resolved picture at the same address) in place of their own;
         the forest in the sky of the first screenshot is upside down too
+  - [ ] **After the first pre-release (user, 2026-10-06, installed copy): a car's thumbnail picture is sometimes
+        wrong and sometimes right** (native renderer; the user's guess: timing). The photos of a saved car were
+        fixed that morning with a measured wait (`fh1_native_read_one_off_wait_texels`): start there
+  - [ ] After the first pre-release (user, 2026-10-06): with a shader the game makes on the PC for the first time,
+        the object's texture takes a long time to show (the release texts warn that the first run is rough);
+        and the "Preparing shaders" text does not show on the two emulated launchers (the user's impression)
   - [x] The native renderer is the default (user, 2026-10-06, for the first pre-release, with its known faults
         listed in docs/install.md); the emulated GPU is `--fh1_renderer=xenos`
 

@@ -19,6 +19,10 @@ download; the installer reads your disc image on your computer.
    and prepares the shaders for your PC: a few minutes.
 3. Start the game with the **Forza Horizon** shortcut on your desktop.
 
+**The first run is rough.** The first time the game shows something new (a place, a menu, a race), its objects and
+textures can take a long time to appear, because the shaders are prepared on your PC right then. Each is prepared
+only once: the same place is fine the next time, and the game gets smoother the more you play.
+
 You only download `FH1Installer.exe`; it fetches the two zips itself. The full guide, with what to do about
 Smart App Control, is in [docs/install.md](https://github.com/AndryTheBeast/fh1-recomp/blob/main/docs/install.md).
 
@@ -39,8 +43,9 @@ will be removed at some point.
 - Only the USA disc. No Xbox Live, Kinect or downloadable content.
 - The default native renderer: no ground at the Horizon Outpost of Montano Plains and a dark patch beside the
   road east of it; upside-down scenery patches in a mountain race; night colors too warm; garage and car damage
-  not checked; objects can appear a moment late the first time; tried on AMD graphics only. The emulated
-  launchers do not have these faults.
+  not checked; a car's small picture (thumbnail) is sometimes wrong; objects and textures appear late the first
+  time (see "The first run is rough" above); tried on AMD graphics only. The emulated launchers do not have these
+  faults.
 - The emulated launchers on Intel graphics: a dark square in a corner and a hard-edged shadow under the car.
 - The busiest races can dip to 22-28 frames per second on the test PC.
 - The programs are not signed: Smart App Control must be off (Windows cannot turn it back on without a reset).

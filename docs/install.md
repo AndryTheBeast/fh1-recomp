@@ -49,6 +49,11 @@ it on your computer and nothing leaves your computer.
 | `FH1 (emulated Direct3D 12).bat` | The Xbox 360's exact picture, drawn through an emulation of its graphics chip on Direct3D 12. **Use this one if something looks wrong.** |
 | `FH1 (emulated Vulkan).bat` | The same exact picture drawn through Vulkan. |
 
+**The first run is rough.** The native renderer prepares shaders on your PC the first time the game shows
+something new: objects and textures can stay missing or plain for a while, sometimes for many seconds, in every
+new place, menu and race. Each one is prepared only once and kept, so the same place is fine the next time and the
+game gets smoother the more you play. The two "emulated" launchers do not have this.
+
 The native renderer is the one this project is going on with (the planned Nintendo Switch port is built on it),
 so **reports about it are what helps most**. The two "emulated" launchers are there to compare with and to fall
 back on; they will be removed at some point.
@@ -82,8 +87,9 @@ The default, the native renderer (`FH1.exe`). The two "emulated" launchers do no
 - **In a mountain road race, patches of the hillside show an upside-down picture** of sky, mountains and trees.
 - At night the colors are warmer and greyer than they should be.
 - The garage and car damage have not been checked.
-- The first time the game meets something new, an object can appear a moment late (its shaders are prepared on
-  your PC right then, once).
+- **The first run is rough**: the first time the game shows something new, its objects and textures can take a
+  long time to appear (the shaders are prepared on your PC right then, once). It gets better the more you play.
+- The small picture (thumbnail) of a car is sometimes wrong.
 - It has only been tried on AMD graphics.
 
 The two "emulated" launchers:
