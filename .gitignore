@@ -39,6 +39,9 @@ __pycache__/
 .vscode/
 
 # --- Forza Horizon project ------------------------------------------------------
+# This PC's own icons, made from a picture that is not ours to publish (tools/fh1_make_icon.py --image). The
+# builds use them when they exist; the repository only holds the drawn icons.
+*_local.ico
 fh1/generated/
 fh1/assets/
 fh1/out/

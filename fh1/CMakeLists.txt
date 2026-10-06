@@ -57,6 +57,15 @@ set(FH1_SOURCES
 )
 
 if(WIN32)
+    # The icon of fh1.exe: the drawn one of the repository, or this PC's own (res/fh1_local.ico, ignored by git)
+    # when there is one. See res/fh1.rc.in and tools/fh1_make_icon.py.
+    set(FH1_ICON "${CMAKE_CURRENT_SOURCE_DIR}/res/fh1.ico")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/res/fh1_local.ico")
+        set(FH1_ICON "${CMAKE_CURRENT_SOURCE_DIR}/res/fh1_local.ico")
+    endif()
+    message(STATUS "fh1.exe icon: ${FH1_ICON}")
+    configure_file(res/fh1.rc.in "${CMAKE_CURRENT_BINARY_DIR}/fh1_icon.rc" @ONLY)
+    list(APPEND FH1_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/fh1_icon.rc")
     add_executable(fh1 WIN32 ${FH1_SOURCES})
 else()
     add_executable(fh1 ${FH1_SOURCES})

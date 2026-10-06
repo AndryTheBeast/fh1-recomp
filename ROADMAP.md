@@ -364,6 +364,9 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           (`.github/ISSUE_TEMPLATE/bug_report.md`), `Read me.txt` written into the game's folder - 2026-10-06
     - [x] Logging in the pre-releases (user, 2026-10-06): on by default (`logs\fh1_NNN.log` next to FH1.exe,
           info level, the newest 20); the crash report now goes to `logs\fh1.crash.txt` too - 2026-10-06
+    - [x] Icons for FH1.exe and the installer (`tools/fh1_make_icon.py`): the repository holds a drawn one
+          (`fh1/res/fh1.ico`, `installer/fh1_installer.ico`); the user's builds use the user's own picture
+          (`--image`, written as `*_local.ico`, ignored by git; the user's decision) - 2026-10-06
     - [ ] The user's checks: the new installer window (Update on `Downloads\FH1`), first-person view and the
           paint booth on the native launcher of that installed copy (its library has no run-time shaders)
     - [ ] The release itself (tag `v0.1.0-pre1`, the four files of `installer\out\release`): only with the

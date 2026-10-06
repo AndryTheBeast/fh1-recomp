@@ -404,5 +404,10 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   not next to it. The emulated GPU is now `--fh1_renderer=xenos` (Vulkan: add `--gpu_backend=vulkan`): give
   it to `auto_test.ps1 -ExtraArgs` for every emulated reference shot (a plain run is native now). Older notes
   in this file that call the emulated GPU "the default" are from before that day.
+- Icons (2026-10-06): `tools/fh1_make_icon.py` draws the repository's icons; with `--image <picture>` it writes
+  `fh1/res/fh1_local.ico` and `installer/fh1_installer_local.ico` (ignored by git), which the builds prefer
+  (fh1/CMakeLists.txt fills `res/fh1.rc.in`; `installer\build_installer.ps1`). The user's picture is
+  `FH1-recomp\icon-source.png`; its use is the user's settled decision. Any change to fh1/CMakeLists.txt gives
+  the long build (rexglue.exe relinked, code generator run: about 14 minutes).
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.

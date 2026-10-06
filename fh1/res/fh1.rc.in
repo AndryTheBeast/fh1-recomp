@@ -1,0 +1,5 @@
+// fh1 - the program's icon. The first icon of a program is the one Windows shows for the file, its shortcuts,
+// the taskbar and the window. CMake fills in the file: res/fh1.ico (original artwork, drawn by
+// tools/fh1_make_icon.py), or res/fh1_local.ico when this PC has one (made from the builder's own picture with
+// tools/fh1_make_icon.py --image; ignored by git).
+IDI_ICON1 ICON "@FH1_ICON@"

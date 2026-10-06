@@ -38,6 +38,11 @@ public sealed class MainForm : Form {
   public MainForm() {
     using (Graphics g = CreateGraphics()) { scale_ = g.DpiX / 96f; }
     Text = "Forza Horizon recomp - installer (" + Program.Version + ")";
+    try {
+      // The program's own icon in the title bar and on the taskbar.
+      Icon = Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
+    } catch (Exception) {
+    }
     Font = new Font("Segoe UI", 9.75f);
     AutoScaleMode = AutoScaleMode.None;
     StartPosition = FormStartPosition.CenterScreen;
