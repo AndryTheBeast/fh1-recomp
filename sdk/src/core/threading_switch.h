@@ -55,7 +55,7 @@ extern "C" {
 typedef uint32_t RexSwitchHandle;
 #define REX_SWITCH_INVALID_HANDLE ((RexSwitchHandle)0)
 
-/* --- sets de CPU -------------------------------------------------- */
+/* --- CPU sets ------------------------------------------------------------ */
 
 /*
  * The Switch has 4 cores; core 3 is reserved by the system except in title
@@ -168,6 +168,30 @@ bool RexSwitchPinCurrentThreadToCore(int core);
 
 /* Which core the calling thread is running on right now. It can only be asked about oneself. */
 int RexSwitchCurrentCore(void);
+
+/*
+ * --- host threads made by rex::thread::Thread::Create ---------------------
+ *
+ * On Horizon a joinable pthread that ends keeps its stack (16 MB for a guest thread) and its kernel
+ * thread until someone joins it, and nothing joins a thread nobody waited on. Carbon starts short
+ * threads for videos and loads, so the heap ran out after about an hour and a cutscene froze
+ * (2026-10-05). libnx has no detach (pthread_detach does nothing), so with this on a thread that ends
+ * hands itself to a reaper thread that joins it, which frees the stack and the kernel thread
+ * (2026-10-06). If the big stack still cannot be had, creation retries with smaller stacks.
+ */
+void RexSwitchSetDetachHostThreads(bool on);
+/* A thread that ends itself unwinds and returns instead of calling pthread_exit (needs detaching). */
+void RexSwitchSetThreadExitUnwind(bool on);
+/*
+ * Host stack of every thread made by Thread::Create, in KB (0 = what the caller asks for, 16 MB for a guest
+ * thread). The 2026-10-06 console run grew the heap by 64 MB (4 x 16 MB) per attract-video loop although the
+ * threads ended, so a smaller stack shrinks that growth. Threads that need more fall back like before.
+ */
+void RexSwitchSetHostStackKb(uint32_t kb);
+/* Log a line (stderr, then the log) with the heap size at each thread start and end. */
+void RexSwitchSetThreadHeapLog(bool on);
+/* Counters since start: created, ended, failed creations, created with a smaller stack. */
+void RexSwitchHostThreadStats(uint32_t* created, uint32_t* ended, uint32_t* failed, uint32_t* small_stack);
 
 #ifdef __cplusplus
 }

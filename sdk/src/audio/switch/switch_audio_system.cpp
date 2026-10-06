@@ -98,8 +98,22 @@ void SwitchAudioDriver::SubmitFrame(uint32_t frame_ptr) {
     }
   }
   std::memcpy(output_frame, input_frame, kFrameSamples * sizeof(float));
-  std::lock_guard<std::mutex> guard(frames_mutex_);
-  frames_queued_.push(output_frame);
+  uint64_t requested = 0;
+  {
+    std::lock_guard<std::mutex> guard(frames_mutex_);
+    frames_queued_.push(output_frame);
+    if (!request_ticks_.empty()) {
+      requested = request_ticks_.front();
+      request_ticks_.pop();
+    }
+  }
+  // Time from the output's request to the game's frame (counting only; ids 33-35).
+  if (requested) {
+    const u64 us = armTicksToNs(armGetSystemTick() - requested) / 1000;
+    RexSwitchPerfAdd(33, 1);
+    RexSwitchPerfAdd(34, us);
+    RexSwitchPerfMax(35, us);
+  }
 }
 
 bool SwitchAudioDriver::MixFrameInto(float* stereo_out, const StereoFold& fold, float gain,
@@ -108,11 +122,13 @@ bool SwitchAudioDriver::MixFrameInto(float* stereo_out, const StereoFold& fold, 
   {
     std::lock_guard<std::mutex> guard(frames_mutex_);
     if (frames_queued_.empty()) {
+      RexSwitchPerfMax(39, ++missing_run_);  // the longest run of missing frames (5.33 ms each)
       return false;
     }
     frame = frames_queued_.front();
     frames_queued_.pop();
   }
+  missing_run_ = 0;
   std::array<float, kChannelSamples * 2> folded;
   conversion::sequential_6_BE_to_interleaved_2_LE(folded.data(), frame, kChannelSamples, fold,
                                                   gain);
@@ -140,6 +156,11 @@ size_t SwitchAudioDriver::QueuedFrames() {
 void SwitchAudioDriver::RequestFrame() {
   // The semaphore has a maximum: if the game does not serve the requests, the excess ones are lost.
   semaphore_->Release(1, nullptr);
+  std::lock_guard<std::mutex> guard(frames_mutex_);
+  if (request_ticks_.size() >= 32) {
+    request_ticks_.pop();  // requests the game never served: drop the oldest so the timing stays meaningful
+  }
+  request_ticks_.push(armGetSystemTick());
 }
 
 /* --- system ------------------------------------------------------------------ */

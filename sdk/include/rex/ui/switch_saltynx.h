@@ -37,11 +37,11 @@ bool ModeBase(bool real);
 
 // What the Reverse-NX block says, as is, for the profile report. Mind the semantics: "by_default"
 // is its "Controlled by system", and when it is true its "Mode" does not decide anything, it only
-// reflects the console's real state. Without a block (no SaltyNX or no plugin), there_is = false and the
+// reflects the console's real state. Without a block (no SaltyNX or no plugin), present = false and the
 // rest means nothing.
 struct StateReverseNx {
   bool there_is;
-  bool en_base;
+  bool docked;
   bool by_default;
   bool plugin_active;
 };
@@ -56,7 +56,7 @@ inline void Enable(bool) {}
 inline bool ModeBase(bool real) { return real; }
 struct StateReverseNx {
   bool there_is;
-  bool en_base;
+  bool docked;
   bool by_default;
   bool plugin_active;
 };

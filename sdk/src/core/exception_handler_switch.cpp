@@ -4,7 +4,7 @@
  *
  * How a fault arrives on Horizon, which is not how it does on POSIX
  *
- * All measured on the console (see docs/nfsmw-nx/platform-notes.md), not assumed:
+ * All measured on the console (see nfsc-nx docs/platform-notes.md), not assumed:
  *
  *  - There are no signals. A fault reaches __libnx_exception_handler, which libnx calls
  *    as a normal function on a stack of its own.
@@ -410,9 +410,9 @@ void WriteCrashFile(const char* data, size_t len) {
   char path[FS_MAX_PATH];
   // In <NRO folder>/logs/rex/ (switch_crash_hooks.c computes it at startup, without allocating here).
   // If that path cannot be translated, the default one.
-  char path[FS_MAX_PATH];
-  std::snprintf(path, sizeof(path), "%srex_crash.log", RexSwitchLogDir());
-  if ((fsdevTranslatePath(path, &fs, path) < 0 || !fs) &&
+  char path_value[FS_MAX_PATH];
+  std::snprintf(path_value, sizeof(path_value), "%srex_crash.log", RexSwitchLogDir());
+  if ((fsdevTranslatePath(path_value, &fs, path) < 0 || !fs) &&
       (fsdevTranslatePath("sdmc:/switch/rex_crash.log", &fs, path) < 0 || !fs)) {
     return;
   }
@@ -451,7 +451,7 @@ extern "C" void RexSwitchCrashLog(const char* reason, const ThreadExceptionDump*
   svcGetThreadId(&tid, CUR_THREAD_HANDLE);
 
   Append(b, "==== %s ====\n", reason ? reason : "?");
-  Append(b, "thread_value %" PRIu64 ", image 0x%016" PRIx64 " (code until 0x%016" PRIx64 ")\n", tid,
+  Append(b, "thread %" PRIu64 ", image 0x%016" PRIx64 " (code up to 0x%016" PRIx64 ")\n", tid,
          base, text_hi);
   Append(b, "pc 0x%016" PRIx64 " = image+0x%" PRIx64 "\n", pc, pc - base);
 
@@ -733,7 +733,7 @@ void WriteBack(const Exception& ex, const HostThreadContext& tc, ThreadException
             RexSwitchPerfCount(3);
             RexResumeFromException(ctx);
           }
-          break;  // neither retryable nor emulable: goes on to SEH and fatal
+          break;  // neither retryable nor emulable: on to SEH and fatal
         }
       }
       RexSwitchPerfCount(2);

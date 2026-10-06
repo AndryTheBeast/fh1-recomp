@@ -159,10 +159,12 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
     // once more per 360 view. The limit figures come from the profiler
     // (switch_perf.cpp); switch.h cannot be included here without clashing with
     // the SDK types.
+    uint32_t shed_ok = 0;
+    const uint32_t shed = RexGmViewsShed(&shed_ok);
     REXLOG_ERROR("AllocFixed: could not commit 0x{:X} bytes at 0x{:016X}. Error 0x{:08X}; backing {} MB, mapped {} "
-                 "MB counting mirrors.",
+                 "MB counting mirrors; {} chunks; views dropped {} times ({} then let the commit work).",
                  length, reinterpret_cast<uintptr_t>(base_address), RexGmLastResult(),
-                 RexGmCommittedBytes() >> 20, RexGmMappedBytes() >> 20);
+                 RexGmCommittedBytes() >> 20, RexGmMappedBytes() >> 20, RexGmChunkCount(), shed, shed_ok);
     return nullptr;
   }
 

@@ -9,6 +9,7 @@
 #include <rex/ui/windowed_app_context_switch.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 
 #include <rex/logging.h>
@@ -29,6 +30,11 @@ constexpr u64 kWaitTimeoutNs = 100'000'000;
 void AppletHookCallback(AppletHookType hook, void* param) {
   static_cast<SwitchWindowedAppContext*>(param)->OnAppletHook(int(hook));
 }
+
+// The freeze watchdog (rex/watchdog.h) asks for a normal close from another thread: the flag is looked at
+// by the message loop, which is woken through the context.
+std::atomic<bool> g_close_requested_by_watchdog{false};
+std::atomic<SwitchWindowedAppContext*> g_instance{nullptr};
 
 const char* FocusStateName(AppletFocusState state) {
   switch (state) {
@@ -62,9 +68,11 @@ SwitchWindowedAppContext::SwitchWindowedAppContext() : impl_(std::make_unique<Im
   // Created here rather than in Initialize: other threads may post functions
   // as soon as the context exists.
   ueventCreate(&impl_->wakeup, true);
+  g_instance.store(this, std::memory_order_release);
 }
 
 SwitchWindowedAppContext::~SwitchWindowedAppContext() {
+  g_instance.store(nullptr, std::memory_order_release);
   // Execute leftover pending functions before the loop machinery goes away,
   // mirroring the shutdown contract documented in WindowedAppContext.
   ExecutePendingFunctionsFromUIThread();
@@ -201,6 +209,10 @@ int SwitchWindowedAppContext::RunMainMessageLoop() {
     if (!appletMainLoop()) {
       ProcessQuitRequest();
     }
+    if (g_close_requested_by_watchdog.load(std::memory_order_acquire) && !quit_requested_) {
+      REXLOG_ERROR("Switch: the freeze watchdog asked to close the game");
+      ProcessQuitRequest();
+    }
 
     ExecutePendingFunctionsFromUIThread();
     if (HasQuitFromUIThread()) {
@@ -235,3 +247,11 @@ int SwitchWindowedAppContext::RunMainMessageLoop() {
 }
 
 }  // namespace rex::ui
+
+// Called by the freeze watchdog (switch_perf.cpp) from its own thread.
+extern "C" void RexSwitchRequestQuit(void) {
+  rex::ui::g_close_requested_by_watchdog.store(true, std::memory_order_release);
+  if (auto* context = rex::ui::g_instance.load(std::memory_order_acquire)) {
+    context->WakeUILoop();
+  }
+}

@@ -36,7 +36,7 @@ class SwitchAudioDriver final : public AudioDriver {
 
   // Output thread only. Folds the oldest queued frame to stereo and adds it to
   // stereo_out (kChannelSamples interleaved pairs), then releases the guest
-  // semaphore for it if release is set (sin audio_switch_pump). Returns false,
+  // semaphore for it if release is set (without audio_switch_pump). Returns false,
   // touching nothing, if no frame is queued.
   bool MixFrameInto(float* stereo_out, const StereoFold& fold, float gain, bool release);
 
@@ -50,6 +50,11 @@ class SwitchAudioDriver final : public AudioDriver {
   std::mutex frames_mutex_;
   std::queue<float*> frames_queued_;
   std::stack<float*> frames_unused_;
+  // Audio timing counters (profiler ids 33-35 and 39, see switch_perf.cpp): when each frame was requested
+  // (system ticks, under frames_mutex_; the oldest is matched with the next frame delivered) and how many
+  // frames in a row came out missing.
+  std::queue<uint64_t> request_ticks_;
+  uint64_t missing_run_ = 0;  // output thread only
 };
 
 // audout accepts a single 48 kHz stereo s16 stream per process, while the

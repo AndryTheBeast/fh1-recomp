@@ -39,8 +39,8 @@
 namespace rex::ui::switch_saltynx {
 namespace {
 
-constexpr uint32_t kMagicFps = 0x465053;          // «SPF»: block de NX-FPS
-constexpr uint32_t kMagicReverseNx = 0x5452584E;  // «NXRT» en little-endian
+constexpr uint32_t kMagicFps = 0x465053;          // «SPF»: NX-FPS block
+constexpr uint32_t kMagicReverseNx = 0x5452584E;  // «NXRT» in little-endian
 constexpr size_t kSharedPageSize = 0x1000;      // SaltyNX maps one page
 
 /* Resolution calls as the overlay reads them: width, height and how many times. */
@@ -81,10 +81,10 @@ struct BlockFps {
 
 static_assert(sizeof(BlockFps) == 174, "the overlay expects 174 bytes");
 
-/* struct Shared de ReverseNX-RT (9 bytes). */
+/* ReverseNX-RT's Shared struct (9 bytes). */
 struct BlockReverseNx {
   uint32_t magic;
-  bool en_base;
+  bool docked;
   bool by_default;
   bool plugin_active;
   uint8_t resolutions;
@@ -120,7 +120,7 @@ uint64_t g_frames = 0;    // idem
 std::atomic<BlockReverseNx*> g_reverse{nullptr};
 std::atomic<bool> g_reverse_en_base{false};
 std::atomic<bool> g_reverse_active{false};
-/* Turned on by the game (cvar fh1_switch_saltynx). On by default. */
+/* Turned on by the game (cvar nfsc_switch_saltynx). On by default. */
 std::atomic<int> g_enabled{1};
 /*
  * Connection attempts left. The sysmodule may take longer than us to start, so if it is not there at
@@ -366,7 +366,7 @@ void Diagnostic(Result rc_saltysd) {
       {"[saltynx] sessions used / cap:", LimitableResource_Sessions},
       {"[saltynx] events used / cap:", LimitableResource_Events},
       {"[saltynx] threads used / cap:", LimitableResource_Threads},
-      {"[saltynx] memories transferibles used / cap:", LimitableResource_TransferMemories},
+      {"[saltynx] transfer memories used / cap:", LimitableResource_TransferMemories},
   };
   for (const Resource& r : kResources) {
     s64 now = 0;
@@ -724,7 +724,7 @@ void Update(double fps_second, double fps_media, uint32_t width, uint32_t height
   }
   if (BlockReverseNx* reverse = g_reverse.load(std::memory_order_acquire)) {
     g_reverse_active.store(!reverse->by_default, std::memory_order_relaxed);
-    g_reverse_en_base.store(reverse->en_base, std::memory_order_relaxed);
+    g_reverse_en_base.store(reverse->docked, std::memory_order_relaxed);
   }
 }
 
@@ -795,10 +795,10 @@ bool ModeBase(bool real) {
   // "Game didn't check any mode!" and does not show the controls.
   reverse->plugin_active = true;
   if (reverse->by_default) {
-    reverse->en_base = real;  // the system decides: mirror it so the overlay shows the real mode
+    reverse->docked = real;  // the system decides: mirror it so the overlay shows the real mode
     return real;
   }
-  return reverse->en_base;
+  return reverse->docked;
 }
 
 StateReverseNx StateReverse() {
@@ -806,7 +806,7 @@ StateReverseNx StateReverse() {
   if (!reverse) {
     return {false, false, false, false};
   }
-  return {true, reverse->en_base, reverse->by_default, reverse->plugin_active};
+  return {true, reverse->docked, reverse->by_default, reverse->plugin_active};
 }
 
 }  // namespace rex::ui::switch_saltynx

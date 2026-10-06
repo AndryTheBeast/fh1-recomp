@@ -2,7 +2,7 @@
  * Guest memory on Horizon: reservation, commit, aliases and protection.
  *
  * This is the core of the port. Everything here was measured on the console, not
- * assumed; see docs/nfsmw-nx/platform-notes.md.
+ * assumed; see nfsc-nx docs/platform-notes.md.
  *
  * The problem
  *
@@ -166,6 +166,10 @@ size_t RexGmCommittedBytes(void);
  * five views, so this figure grows much faster than the backing one.
  */
 size_t RexGmMappedBytes(void);
+/* Number of committed chunks (each one is a kernel mapping). */
+size_t RexGmChunkCount(void);
+/* Times the 360 views were dropped to get under the mapping limit; *retry_ok = how many of those let the commit work. */
+uint32_t RexGmViewsShed(uint32_t* retry_ok);
 
 /*
  * Tells whether watched pages are protected with permissions (readable) or by

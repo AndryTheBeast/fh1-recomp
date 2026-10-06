@@ -204,7 +204,7 @@ bool ProtectWithPermissions(uint8_t* page, bool only_read) {
         Proc(), reinterpret_cast<u64>(page), kPageSize, only_read ? Perm_R : Perm_Rw);
     if (R_FAILED(rc)) {
         if (g_only_read == OnlyRead::kWithoutTest) {
-            g_only_read = OnlyRead::kNo;  // no se vuelve a try
+            g_only_read = OnlyRead::kNo;  // not tried again
         }
         return false;
     }
@@ -340,6 +340,17 @@ void UnmapChunkFromViews(State& s, const Chunk& c) {
     }
 }
 
+uint32_t g_views_shed = 0;           /* times the views were dropped to get under the mapping limit */
+uint32_t g_views_shed_retry_ok = 0;  /* of those, times the commit then worked */
+
+/* Drops every chunk from the 360 views (the shadow of each chunk stays). Returns false if there was nothing to drop. */
+bool ShedViews(State& s) {
+    const size_t before = s.mapped;
+    for (auto& kv : s.chunks) UnmapChunkFromViews(s, kv.second);
+    ++g_views_shed;
+    return s.mapped < before;
+}
+
 void ReleaseChunk(const Chunk& c) {
     svcUnmapProcessCodeMemory(Proc(), reinterpret_cast<u64>(c.shadow),
                               reinterpret_cast<u64>(c.backing), c.length);
@@ -421,6 +432,19 @@ size_t RexGmCommittedBytes(void) {
     State& s = S();
     std::lock_guard<std::mutex> lock(s.mutex);
     return s.committed;
+}
+
+size_t RexGmChunkCount(void) {
+    State& s = S();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    return s.chunks.size();
+}
+
+uint32_t RexGmViewsShed(uint32_t* retry_ok) {
+    State& s = S();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    if (retry_ok) *retry_ok = g_views_shed_retry_ok;
+    return g_views_shed;
 }
 
 size_t RexGmMappedBytes(void) {
@@ -510,6 +534,13 @@ bool RexGmCommit(size_t offset, size_t length, RexGmAccess access) {
         Result rc = shadow ? svcMapProcessCodeMemory(Proc(), reinterpret_cast<u64>(shadow),
                                                      reinterpret_cast<u64>(backing), tam)
                            : 0;
+        if (shadow && rc == 0xCE01 && ShedViews(s)) {
+            /* Process limit on mappable memory reached (2001-0103). The views are only a cache of what the
+             * chunks hold (each one re-enters on its next access), so they are dropped and the map retried once. */
+            rc = svcMapProcessCodeMemory(Proc(), reinterpret_cast<u64>(shadow),
+                                         reinterpret_cast<u64>(backing), tam);
+            g_views_shed_retry_ok += R_SUCCEEDED(rc) ? 1 : 0;
+        }
         virtmemUnlock();
 
         if (!shadow) {
@@ -569,8 +600,8 @@ bool RexGmFaultIn(uint64_t window_address) {
                        static_cast<size_t>(window_address -
                                            reinterpret_cast<uint64_t>(s.views[vi].base));
     Chunk* c = ChunkAt(s, off);
-    if (!c) return false;                                       /* sin confirmar */
-    if (s.view_mapped.count({vi, c->offset}) != 0) return false; /* ya was_writable */
+    if (!c) return false;                                       /* not committed */
+    if (s.view_mapped.count({vi, c->offset}) != 0) return false; /* already there */
     return MapChunkIntoView(s, vi, *c);
 }
 

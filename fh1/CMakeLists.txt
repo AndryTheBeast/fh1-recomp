@@ -22,6 +22,14 @@ if(WIN32)
     add_link_options(-Wl,/pdbaltpath:%_PDB%)
 endif()
 
+# GCC (Switch) fuses a multiply and an add into one FMA by default (-ffp-contract=fast), so the recompiled game code
+# would round differently from the Xbox 360. The SDK turns that off only for its own targets; the game's targets
+# made here need it too (found by GoatHonks on the console: 359k differences in Carbon's mixer validation).
+# Clang (PC) is not touched.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_compile_options(-ffp-contract=off)
+endif()
+
 include(generated/rexglue.cmake)
 
 # Sources
@@ -40,6 +48,7 @@ set(FH1_SOURCES
     src/fh1_perf_hooks.cpp
     src/fh1_fps60.cpp
     src/fh1_shader_dump.cpp
+    src/fh1_static_modules.cpp
     # FH1's native renderer (--fh1_renderer=native). Started from nfsc-recomp's (GoatHonks), itself nfsmw-nx's
     # (StevensND), GPL-3.0: see src/native/README.md.
     src/native/fh1_native_system.cpp
@@ -101,4 +110,22 @@ target_include_directories(fh1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/native ${
 if(NOT REXGLUE_PLATFORM_SWITCH AND TARGET renderdoc)
     target_include_directories(fh1 PRIVATE
         $<TARGET_PROPERTY:renderdoc,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
+
+# Nintendo Switch: package the executable as fh1-nx.nro (devkitPro elf2nro). The Switch-only build files (toolchain
+# file, NRO build script, Mesa patch, SD package) are in the separate fh1-nx repository, which configures this
+# project with its toolchain file. Layout and options follow GoatHonks' Carbon port and StevensND's nfsmw-nx.
+if(REXGLUE_PLATFORM_SWITCH)
+    # LTO on the game code and the app (not on the SDK libraries), as in nfsmw-nx (its step 6). Off by default: the
+    # whole-program phase over FH1's generated code (about 320 MB of C++) needs far more memory than Carbon's.
+    option(FH1_LTO "LTO on the game code and the app (Switch)" OFF)
+    if(FH1_LTO)
+        foreach(target_lto fh1_recomp fh1)
+            if(TARGET ${target_lto})
+                target_compile_options(${target_lto} PRIVATE -flto -fno-fat-lto-objects)
+            endif()
+        endforeach()
+        target_link_options(fh1 PRIVATE -flto=2 -flto-partition=balanced)
+    endif()
+    rexglue_switch_add_nro(fh1 OUTPUT "fh1-nx" NAME "Forza Horizon" AUTHOR "AndryTheBeast" VERSION "0.0.1")
 endif()

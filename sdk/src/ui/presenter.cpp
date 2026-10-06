@@ -546,6 +546,10 @@ void Presenter::PaintFromUIThread(bool force_paint) {
   if (!InSurfaceOnMonitorFromUIThread()) {
     return;
   }
+  // Paused (Switch out of focus): no paint and, above all, no swapchain rebuild.
+  if (display_paused_.load(std::memory_order_acquire)) {
+    return;
+  }
 
   // Defer changes to the paint mode as well as window paint requests, and do
   // them in this function so they're consistent with the assumptions made here.
@@ -734,6 +738,11 @@ bool Presenter::RefreshGuestOutput(
     guest_output_mailbox_writable_ = (3 - last_acquired - guest_output_mailbox_writable_) % 3;
   }
 
+  // Out of focus (Switch HOME / sleep) nothing is presented; the frame stays in the mailbox.
+  if (display_paused_.load(std::memory_order_acquire)) {
+    display_paused_frames_.fetch_add(1, std::memory_order_relaxed);
+    return is_active;
+  }
   // Trigger the presentation on the host.
   PaintResult paint_result = PaintResult::kNotPresented;
   /*
@@ -1663,6 +1672,10 @@ Presenter::PaintResult Presenter::PaintAndPresent(bool execute_ui_drawers) {
       break;
     case PaintResult::kNotPresentedConnectionOutdated:
       surface_paint_connection_state_ = SurfacePaintConnectionState::kConnectedOutdated;
+      connection_outdated_at_ns_.store(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                           std::chrono::steady_clock::now().time_since_epoch())
+                                           .count(),
+                                       std::memory_order_release);
       break;
     default:
       // Another issue not directly related to the surface connection.
@@ -1671,6 +1684,31 @@ Presenter::PaintResult Presenter::PaintAndPresent(bool execute_ui_drawers) {
   return result;
 }
 
+void Presenter::SetDisplayPausedFromUIThread(bool paused) {
+  if (display_paused_.exchange(paused, std::memory_order_acq_rel) == paused) {
+    return;
+  }
+  // No lock taken here on purpose: a present stuck in a display that stopped taking frames would hold
+  // paint_mode_mutex_, and waiting for it is what could hang the UI thread.
+  if (paused) {
+    display_paused_frames_.store(0, std::memory_order_relaxed);
+    REXLOG_INFO("[present] display paused (out of focus): no presents and no swapchain rebuild until focus returns");
+  } else {
+    REXLOG_INFO("[present] display resumed: {} game frames were not presented while paused",
+                display_paused_frames_.load(std::memory_order_relaxed));
+  }
+}
+
+int64_t Presenter::NsSinceConnectionOutdated() const {
+  const int64_t at = connection_outdated_at_ns_.load(std::memory_order_acquire);
+  if (at == 0) {
+    return INT64_MAX;
+  }
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+             .count() -
+         at;
+}
 // The presenter's own thread. See the long comment in presenter.h.
 
 void Presenter::StartPaintThreadFromUIThread() {
@@ -1844,6 +1882,11 @@ void Presenter::RequestPaintFromPaintThread() {
 }
 
 void Presenter::PaintFromPaintThread() {
+  // A frame signaled just before the pause is dropped too (see SetDisplayPausedFromUIThread).
+  if (display_paused_.load(std::memory_order_acquire)) {
+    display_paused_frames_.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
   PaintResult paint_result = PaintResult::kNotPresented;
   {
     // The paint_mode_ contract does not change: whoever paints holds this lock the whole time it paints,

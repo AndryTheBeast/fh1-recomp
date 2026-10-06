@@ -48,7 +48,7 @@
  *
  *   It only ever lowers back to what the console had at the start: nothing is ever raised above
  *   that. And if this firmware did not have the "high GPU + unchanged RAM" pair, the GPU is left
- *   as it was rather than raising the RAM; fh1_switch_ram_1600 opts into that trade.
+ *   as it was rather than raising the RAM; nfsc_switch_ram_1600 opts into that trade.
  */
 
 #include "rex/ui/switch_apm.h"
@@ -81,6 +81,8 @@ std::atomic<int> g_ticks_emc{0};
 std::atomic<int> g_corrections_emc{0};
 std::atomic<bool> g_warning_emc{false};
 std::atomic<bool> g_given_up_emc{false};
+std::atomic<bool> g_pause_out_of_focus{true};
+std::atomic<bool> g_paused_logged{false};
 
 /*
  * How often the watchdog looks. For the first kTicksConsecutive ticks (one second each) it always looks,
@@ -102,7 +104,7 @@ constexpr int kMaxCorrectionsEmc = 3;
  * What is watched after requesting the configuration, before accepting anything.
  *
  * Waiting 250 ms was still not enough: the log said "the memory stays at 1331.2 MHz (checked
- * 250 ms after)" and one second later the watchdog already found it at 1600. So the raise takes
+ * 250 ms later)" and one second later the watchdog already found it at 1600. So the raise takes
  * between 0.25 and ~1 s. Now it polls every 150 ms for 1.5 s, and a single read that sees it moved
  * is enough to reject the configuration. It only costs that second and a half when the candidate is
  * good; when it is bad it stops as soon as it shows.
@@ -184,7 +186,7 @@ struct Candidate {
 /*
  * The correct table. The first two are confirmed by a console log:
  *
- *   0x00020003  GPU 307.2  EMC 1331.2   <- "de game: config 0x00020003 ... memory_block 1331.2"
+ *   0x00020003  GPU 307.2  EMC 1331.2   <- "starting point: config 0x00020003 ... memory 1331.2"
  *   0x92220007  GPU 460.8  EMC 1600     <- "SET 0x92220007" and the memory ended at 1600
  *
  * and they match Horizon's PerformanceConfiguration table exactly. The one we want is the sibling of
@@ -196,7 +198,7 @@ struct Candidate {
  * exist returns an error and changes nothing, so it is enough to list them and let the check decide.
  */
 constexpr Candidate kCandidates[] = {
-    {460, 0x92220008u, 1331},  // GPU 460,8 + EMC 1331,2: la good
+    {460, 0x92220008u, 1331},  // GPU 460.8 + EMC 1331.2: the good one
     {460, 0x92220007u, 1600},  // GPU 460.8 + EMC 1600: raises the RAM clock
     {384, 0x00020004u, 1331},  // GPU 384 + EMC 1331,2
     {384, 0x00010000u, 1600},  // GPU 384 + EMC 1600
@@ -211,6 +213,10 @@ extern "C" void RexSwitchApmRequestGpuMhz(int mhz) {
 
 extern "C" void RexSwitchApmAllowRam1600(int allow) {
   g_allow_ram_1600.store(allow != 0, std::memory_order_relaxed);
+}
+
+extern "C" void RexSwitchApmPauseOutOfFocus(int pause) {
+  g_pause_out_of_focus.store(pause != 0, std::memory_order_relaxed);
 }
 
 extern "C" void RexSwitchApmApply(void) {
@@ -264,10 +270,10 @@ extern "C" void RexSwitchApmApply(void) {
     if (gpu_uploaded && memory_still) {
       if (!still_of_true) {
         std::fprintf(stderr,
-                     "[apm] 0x%08X raises the memory to %.1f MHz, but fh1_switch_ram_1600 is true: accepted and "
+                     "[apm] 0x%08X raises the memory to %.1f MHz, but nfsc_switch_ram_1600 is true: accepted and "
                      "the memory is NOT watched\n",
                      c.config, double(emc1) / 1e6);
-        std::fprintf(stderr, "[apm] SET 0x%08X: GPU %.1f MHz (era %.1f), memory_block %.1f MHz\n",
+        std::fprintf(stderr, "[apm] SET 0x%08X: GPU %.1f MHz (was %.1f), memory %.1f MHz\n",
                      c.config, double(gpu1) / 1e6, double(gpu0) / 1e6, double(emc1) / 1e6);
         return;  // watchdog not armed: lowering it would fight what the cvar asks for
       }
@@ -283,7 +289,7 @@ extern "C" void RexSwitchApmApply(void) {
                    double(emc1) / 1e6, double(kPollStepNs) * kPollSteps / 1e9);
       return;
     }
-    std::fprintf(stderr, "[apm] descartada 0x%08X: GPU %.1f MHz, memory_block %.1f MHz (%s)\n", c.config,
+    std::fprintf(stderr, "[apm] rejected 0x%08X: GPU %.1f MHz, memory %.1f MHz (%s)\n", c.config,
                  double(gpu1) / 1e6, double(emc1) / 1e6,
                  !gpu_uploaded ? "the GPU does not reach the requested clock" : "MOVES THE MEMORY");
   }
@@ -294,7 +300,7 @@ extern "C" void RexSwitchApmApply(void) {
    * the EMC of the active apm configuration, and clkrst cannot fight that.
    *
    * So the console is left as it was, and the log says exactly what trade is available and how to
-   * take it (fh1_switch_ram_1600).
+   * take it (nfsc_switch_ram_1600).
    */
   if (there_is_original && R_SUCCEEDED(apmSetPerformanceConfiguration(mode, config_original))) {
     u32 gpu2 = 0, emc2 = 0;
@@ -302,7 +308,7 @@ extern "C" void RexSwitchApmApply(void) {
     std::fprintf(stderr,
                  "[apm] this firmware has NO %d MHz configuration that leaves the memory at %.1f MHz; going back "
                  "to the original 0x%08X (GPU %.1f MHz, memory %.1f MHz).\n[apm] IF YOU PREFER THE HIGH GPU EVEN "
-                 "IF THE RAM GOES UP TO 1600: set fh1_switch_ram_1600 = true in fh1.toml\n",
+                 "IF THE RAM GOES UP TO 1600: set nfsc_switch_ram_1600 = true in nfsc.toml\n",
                  mhz, double(emc0) / 1e6, config_original, double(gpu2) / 1e6, double(emc2) / 1e6);
   } else {
     std::fprintf(stderr, "[apm] no %d MHz configuration worked and the original could NOT be restored: check the "
@@ -315,6 +321,19 @@ extern "C" void RexSwitchApmWatch(void) {
   const u32 emc0 = g_emc_original.load(std::memory_order_relaxed);
   if (emc0 == 0 || g_given_up_emc.load(std::memory_order_relaxed)) {
     return;  // nothing changed, or we already know this firmware does not allow it
+  }
+  /*
+   * HOME / sleep: the system owns the clocks then (2026-10-05 freeze on HOME, cause not proven).
+   * Nothing is read or corrected until focus returns; the tick count does not advance either.
+   */
+  if (g_pause_out_of_focus.load(std::memory_order_relaxed) && appletGetFocusState() != AppletFocusState_InFocus) {
+    if (!g_paused_logged.exchange(true)) {
+      std::fprintf(stderr, "[apm] out of focus: memory clock watching paused (switch_focus_pause_apm)\n");
+    }
+    return;
+  }
+  if (g_paused_logged.exchange(false)) {
+    std::fprintf(stderr, "[apm] back in focus: memory clock watching resumed\n");
   }
 
   const int tic = g_ticks_emc.fetch_add(1, std::memory_order_relaxed);
@@ -347,6 +366,7 @@ extern "C" void RexSwitchApmWatch(void) {
 #else   // !REX_PLATFORM_SWITCH
 extern "C" void RexSwitchApmRequestGpuMhz(int) {}
 extern "C" void RexSwitchApmAllowRam1600(int) {}
+extern "C" void RexSwitchApmPauseOutOfFocus(int) {}
 extern "C" void RexSwitchApmApply(void) {}
 extern "C" void RexSwitchApmWatch(void) {}
 #endif  // REX_PLATFORM_SWITCH

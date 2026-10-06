@@ -6,6 +6,7 @@
  *              See LICENSE file in the project root for full license text.
  */
 
+#include <atomic>
 #include <rex/input/switch/switch_input_driver.h>
 
 #include <algorithm>
@@ -343,11 +344,19 @@ void SwitchInputDriver::Poll(size_t index) {
 
 /* From the profiler (switch_perf.cpp): turns the GPU A/B test lap on and off. */
 extern "C" void RexSwitchPerfToggleAb(void);
+
+/* L+R+Minus: the app's benchmark (set with RexSwitchSetBenchShortcut; nothing if the app sets none). */
+namespace {
+std::atomic<void (*)(void)> g_bench_shortcut{nullptr};
+}  // namespace
+extern "C" void RexSwitchSetBenchShortcut(void (*callback)(void)) {
+  g_bench_shortcut.store(callback, std::memory_order_release);
+}
 /*
  * The SDK menus, on the controller
  *
  * On the PC they are function keys (see RegisterBind in rex_app.cpp): F3 debug,
- * F4 settings, F7 achievements and the tilde key for the log console. The Switch
+ * F4 settings, F7 achievements, F2 the app's FPS monitor and the tilde key for the log console. The Switch
  * has no keyboard, so they go to combinations with L+R, which no game uses
  * together with the D-pad:
  *
@@ -355,7 +364,9 @@ extern "C" void RexSwitchPerfToggleAb(void);
  *   L + R + Right -> settings
  *   L + R + Down  -> log console
  *   L + R + Left  -> achievements
+ *   L + R + ZR    -> F2: the app's FPS / frame time monitor, if it binds F2 (Carbon does)
  *   L + R + ZL    -> GPU A/B test lap (for measuring, not for playing)
+ *   L + R + Minus -> the app's benchmark (temporary: goes away with the AI driver), if it registered one (RexSwitchSetBenchShortcut)
  *   L + R + right stick -> moves the debug overlay if it is open
  *                          (its position is saved; see Poll and debug_overlay.cpp)
  *
@@ -373,6 +384,7 @@ void SwitchInputDriver::DispatchMenuShortcuts(Slot& slot, uint64_t held) {
       {HidNpadButton_Right, rex::ui::VirtualKey::kF4},
       {HidNpadButton_Down, rex::ui::VirtualKey::kOem3},
       {HidNpadButton_Left, rex::ui::VirtualKey::kF7},
+      {HidNpadButton_ZR, rex::ui::VirtualKey::kF2},
   };
 
   const bool modifier = (held & kModifier) == kModifier;
@@ -392,8 +404,8 @@ void SwitchInputDriver::DispatchMenuShortcuts(Slot& slot, uint64_t held) {
         rex::ui::KeyEvent key(nullptr, vk, 1, false, false, false, false, false);
         rex::ui::ProcessKeyEvent(key);
       };
-      rex::ui::Window* const window = window_ui_.load(std::memory_order_acquire);
-      if (!window || !window->app_context().CallInUIThread(press)) {
+      rex::ui::Window* const window_value = window_ui_.load(std::memory_order_acquire);
+      if (!window_value || !window_value->app_context().CallInUIThread(press)) {
         press();
       }
       REXLOG_INFO("menu shortcut: {}", rex::ui::VirtualKeyToString(vk));
@@ -415,6 +427,19 @@ void SwitchInputDriver::DispatchMenuShortcuts(Slot& slot, uint64_t held) {
   }
   slot.menu_shortcuts = ab_now ? (slot.menu_shortcuts | kBitAb)
                                  : (slot.menu_shortcuts & ~kBitAb);
+
+  // L+R+Minus: the app's benchmark (same once-per-press rule).
+  const uint64_t kBitBench = uint64_t(1) << 9;
+  const bool bench_now = modifier && (held & HidNpadButton_Minus) != 0;
+  const bool bench_before = (slot.menu_shortcuts & kBitBench) != 0;
+  if (bench_now && !bench_before) {
+    if (void (*const callback)(void) = g_bench_shortcut.load(std::memory_order_acquire)) {
+      REXLOG_INFO("menu shortcut: benchmark");
+      callback();
+    }
+  }
+  slot.menu_shortcuts = bench_now ? (slot.menu_shortcuts | kBitBench)
+                                    : (slot.menu_shortcuts & ~kBitBench);
 }
 
 SwitchInputDriver::Slot* SwitchInputDriver::FindSlot(DeviceId id) {
@@ -561,10 +586,10 @@ X_RESULT SwitchInputDriver::SetDeviceVibration(DeviceId id, X_INPUT_VIBRATION* v
   }
 
   // See the vibration_sent comment in Slot: same value as the last one sent, nothing to do.
-  const uint16_t left = uint16_t(vibration->left_motor_speed);
-  const uint16_t right = uint16_t(vibration->right_motor_speed);
-  if (slot->vibration_sent && slot->vibration_left == left &&
-      slot->vibration_right == right) {
+  const uint16_t left_value = uint16_t(vibration->left_motor_speed);
+  const uint16_t right_value = uint16_t(vibration->right_motor_speed);
+  if (slot->vibration_sent && slot->vibration_left == left_value &&
+      slot->vibration_right == right_value) {
     return X_ERROR_SUCCESS;
   }
 
@@ -582,8 +607,8 @@ X_RESULT SwitchInputDriver::SetDeviceVibration(DeviceId id, X_INPUT_VIBRATION* v
     return X_ERROR_FUNCTION_FAILED;
   }
   slot->vibration_sent = true;
-  slot->vibration_left = left;
-  slot->vibration_right = right;
+  slot->vibration_left = left_value;
+  slot->vibration_right = right_value;
   return X_ERROR_SUCCESS;
 }
 

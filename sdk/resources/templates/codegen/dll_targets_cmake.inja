@@ -18,7 +18,19 @@ if(EXISTS "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ mod.output_dir }}/sour
     endif()
     unset(_REXGLUE_PREVIOUS_GENERATED_SOURCES)
     unset(_REXGLUE_RESTORE_GENERATED_SOURCES)
-    add_library({{ mod.lib_name }} SHARED {{ cmake_var("DLL_SOURCES_" + mod.target_name) }})
+    if(REXGLUE_PLATFORM_SWITCH)
+        # An NRO cannot load libraries at run time: the module's objects are linked into the host, with the
+        # four names every module defines renamed after the module. The host registers them with
+        # rex::system::RegisterStaticModuleLibrary (see kernel_state.h).
+        add_library({{ mod.lib_name }} OBJECT {{ cmake_var("DLL_SOURCES_" + mod.target_name) }})
+        target_compile_definitions({{ mod.lib_name }} PRIVATE
+            ReXModule_Register=ReXModule_Register_{{ mod.target_name }}
+            ReXModule_GetImageInfo=ReXModule_GetImageInfo_{{ mod.target_name }}
+            PPCImageConfig=PPCImageConfig_{{ mod.target_name }}
+            PPCFuncMappings=PPCFuncMappings_{{ mod.target_name }})
+    else()
+        add_library({{ mod.lib_name }} SHARED {{ cmake_var("DLL_SOURCES_" + mod.target_name) }})
+    endif()
     target_include_directories({{ mod.lib_name }} PRIVATE
         {{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}
         {{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ mod.output_dir }}
@@ -26,10 +38,18 @@ if(EXISTS "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ mod.output_dir }}/sour
     target_link_libraries({{ mod.lib_name }} PRIVATE rex::runtime)
     rexglue_apply_recomp_settings({{ mod.lib_name }}
         "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ mod.output_dir }}/{{ project }}_pch.h")
-    add_dependencies({{ mod.lib_name }} {{ project }}_codegen)
-    set_target_properties({{ mod.lib_name }} PROPERTIES
-        CXX_VISIBILITY_PRESET hidden
-    )
-    rexglue_configure_module_target({{ mod.lib_name }} HOST {{ cmake_var("REXGLUE_HOST_TARGET") }})
+    if(TARGET {{ project }}_codegen)
+        add_dependencies({{ mod.lib_name }} {{ project }}_codegen)
+    endif()
+    if(REXGLUE_PLATFORM_SWITCH)
+        rexglue_apply_target_settings({{ mod.lib_name }})
+        cmake_language(EVAL CODE
+            "cmake_language(DEFER CALL target_link_libraries {{ cmake_var("REXGLUE_HOST_TARGET") }} PRIVATE {{ mod.lib_name }})")
+    else()
+        set_target_properties({{ mod.lib_name }} PROPERTIES
+            CXX_VISIBILITY_PRESET hidden
+        )
+        rexglue_configure_module_target({{ mod.lib_name }} HOST {{ cmake_var("REXGLUE_HOST_TARGET") }})
+    endif()
 endif()
 {% endfor %}

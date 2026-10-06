@@ -21,6 +21,12 @@ void RexSwitchApmRequestGpuMhz(int mhz);
 void RexSwitchApmAllowRam1600(int allow);
 
 /*
+ * While the game is out of focus (HOME, sleep), do not read or touch the memory clock in
+ * RexSwitchApmWatch. On by default; cvar switch_focus_pause_apm (window_switch.cpp).
+ */
+void RexSwitchApmPauseOutOfFocus(int pause);
+
+/*
  * Requests the profile. Does nothing if 0 was requested, if the console is docked, or if it was
  * already called. If the configuration does not exist in this firmware, apm returns an error and
  * changes nothing.

@@ -57,7 +57,7 @@ namespace rex::ui::switch_sysclk {
 namespace {
 
 constexpr unsigned kModules = 3;   // CPU, GPU, MEM
-constexpr unsigned kProfiles = 5;  // handheld, +charging, +charging USB, +official charger, docked
+constexpr unsigned kProfiles = 5;  // handheld, +charging, +USB charging, +official charger, docked
 constexpr unsigned kProfileDocked = 4;
 constexpr unsigned kProfileHandheld = 0;
 
@@ -68,7 +68,7 @@ constexpr unsigned kProfileHandheld = 0;
  * "Fake Handheld" to mean anything they have to be forced.
  */
 constexpr uint32_t kHandheldOfSerieHz[kModules] = {0u, 307200000u, 1331200000u};
-constexpr uint64_t kProfileGlobal = 0xA111111111111111ull;  // GLOBAL_PROFILE_ID de sys-clk
+constexpr uint64_t kProfileGlobal = 0xA111111111111111ull;  // sys-clk's GLOBAL_PROFILE_ID
 
 constexpr uint32_t kOrderProfiles = 5;   // SysClkIpcCmd_GetProfiles
 constexpr uint32_t kOrderOverride = 8;   // SysClkIpcCmd_SetOverride
@@ -80,7 +80,7 @@ struct ListProfiles {
 
 /* SysClkIpc_SetOverride_Args. */
 struct ArgsOverride {
-  uint32_t modulo;
+  uint32_t module_handle;
   uint32_t hz;
 };
 
@@ -149,7 +149,7 @@ Result RequestContextOf(unsigned char* output) {
 
 void Dump(const unsigned char* buf, unsigned tam) {
   char line[340];
-  int n = std::snprintf(line, sizeof(line), "[clocks] context_id (%u bytes):", tam);
+  int n = std::snprintf(line, sizeof(line), "[clocks] context (%u bytes):", tam);
   for (unsigned i = 0; i < tam && n > 0 && unsigned(n) + 4 < sizeof(line); ++i) {
     n += std::snprintf(line + n, sizeof(line) - unsigned(n), " %02X", buf[i]);
   }
@@ -172,8 +172,8 @@ void DumpContext() {
   Warning("[clocks] GetCurrentContext does not work with any of the sizes tried");
 }
 
-Result SetOverride(uint32_t modulo, uint32_t hz) {
-  const ArgsOverride args{modulo, hz};
+Result SetOverride(uint32_t module_handle, uint32_t hz) {
+  const ArgsOverride args{module_handle, hz};
   return serviceDispatchIn(&g_service, kOrderOverride, args);
 }
 
@@ -273,7 +273,7 @@ bool Open() {
     Warning("[clocks] the sysmodule does not answer GetVersionString (command 1)");
   }
   DumpContext();
-  std::fprintf(stderr, "[clocks] sysmodule '%s', API %u (servicios found: %s)\n", chosen,
+  std::fprintf(stderr, "[clocks] sysmodule '%s', API %u (services found: %s)\n", chosen,
                (unsigned)version, found);
   g_open = true;
   Warning("[clocks] ready: the clocks can follow Reverse-NX");

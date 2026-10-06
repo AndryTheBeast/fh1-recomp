@@ -16,6 +16,7 @@
 
 #include "fh1_autoplay.h"
 #include "fh1_crash_report.h"
+#include "fh1_graphics_settings.h"
 #include "fh1_native_system.h"
 #include "fh1_perf_overlay.h"
 #include "fh1_prepare_screen.h"
@@ -31,6 +32,7 @@ void Fh1StartProfiler();  // fh1_profiler.cpp
 void Fh1UnpackImageIfAsked(const uint8_t* image);  // fh1_unpack_image.cpp
 void Fh1Fps60Apply();  // fh1_fps60.cpp
 namespace fh1::census { void Start(); }  // fh1_d3d_census_report.cpp
+void Fh1RegisterStaticModules();  // fh1_static_modules.cpp (Nintendo Switch: the two run-time modules)
 
 // Forza Horizon is single player. By default every controller drives player 1: tools like
 // DSX / DS4Windows show one pad twice (the real one and a virtual Xbox 360 pad), and with
@@ -76,6 +78,11 @@ class Fh1App : public rex::ReXApp {
     fh1::InstallCrashReport();
     Fh1StartProfiler();  // --fh1_profile=N (fh1_profiler.cpp)
     fh1::census::Start();  // --fh1_d3d_census (Direct3D mapping)
+#if REX_PLATFORM_SWITCH
+    // Handheld: ask the system for its official 460.8 MHz graphics mode (a homebrew program starts at 307.2).
+    // StevensND's finding, see docs/nfsmw-nx/platform-notes.md (Clocks).
+    fh1::settings::ApplySwitchClocks();
+#endif
   }
   // By default Forza Horizon draws with its native Vulkan renderer (since 2026-10-06); --fh1_renderer=xenos, or
   // a missing shader library, selects the SDK's Xbox 360 GPU emulation.
@@ -84,6 +91,7 @@ class Fh1App : public rex::ReXApp {
     // --fh1_renderer=native: FH1's native Vulkan renderer (src/native, docs/native-renderer-fh1.md) goes in
     // config.graphics, and ReXApp then does not load the GPU plugin.
     Fh1Fps60Apply();  // --fh1_fps60: before the graphics system reads the video mode
+    Fh1RegisterStaticModules();
     if (fh1::native::Active()) {
       config.graphics = fh1::native::CreateSystemGraphics();
     }
@@ -203,6 +211,20 @@ class Fh1App : public rex::ReXApp {
   // An installed game (the installer's layout): the disc's files are in the folder "game" next to fh1.exe, so
   // a double click on fh1.exe starts the game. --game_data_root still wins.
   void OnConfigurePaths(rex::PathConfig& paths) override {
+#if REX_PLATFORM_SWITCH
+    // The Switch starts homebrew without command-line options, and fh1.toml is read after the paths are fixed,
+    // so game_data_root from the file would come too late: the folders are next to the NRO
+    // (sdmc:/switch/fh1-nx/game_root and user), as in GoatHonks' Carbon port.
+    {
+      const std::filesystem::path dir = paths.config_path.parent_path();
+      if (paths.game_data_root.empty()) paths.game_data_root = dir / "game_root";
+      if (rex::cvar::GetFlagByName("user_data_root").empty()) {
+        paths.user_data_root = dir / "user";
+        if (rex::cvar::GetFlagByName("cache_root").empty()) paths.cache_root = dir / "user" / "cache";
+      }
+      return;
+    }
+#endif
     if (!paths.game_data_root.empty()) return;
     const std::filesystem::path game = paths.config_path.parent_path() / "game";
     std::error_code ec;

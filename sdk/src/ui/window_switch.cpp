@@ -16,9 +16,23 @@
 
 #include <switch.h>
 
+#include "rex/ui/switch_apm.h"
 #include "rex/ui/switch_saltynx.h"
 
 REXCVAR_DECLARE(bool, input_xbox_layout);  // defined in switch_input_driver.cpp
+
+// 2026-10-05: HOME froze the whole console right after "swapchain outdated", a failed swapchain creation and
+// nwindowSetDimensions failing (0xF59). The presenter's own thread kept presenting out of focus (only the UI
+// thread's paint looked at focus) and the UI thread rebuilt the swapchain while the system was taking the screen.
+REXCVAR_DEFINE_BOOL(switch_focus_pause_present, true, "Switch",
+                    "Out of focus (HOME, sleep, overlay applets): no thread presents and the swapchain is not "
+                    "rebuilt until focus returns ('[present] display paused/resumed' in the log)");
+REXCVAR_DEFINE_INT32(switch_reconnect_delay_ms, 200, "Switch",
+                     "After a present reports the swapchain outdated, wait this long before rebuilding it, so a "
+                     "focus change the system sends a little later is seen first. 0 = rebuild at once (old behavior)");
+REXCVAR_DEFINE_BOOL(switch_focus_pause_apm, true, "Switch",
+                    "Out of focus, do not read or correct the memory clock (RexSwitchApmWatch); '[apm] out of "
+                    "focus' line in rex_stderr.log");
 
 namespace rex::ui {
 
@@ -87,6 +101,7 @@ bool WindowSwitch::OpenImpl() {
     return false;
   }
   switch_app_context().RegisterWindow(this);
+  RexSwitchApmPauseOutOfFocus(REXCVAR_GET(switch_focus_pause_apm) ? 1 : 0);
 
   uint32_t width, height;
   QueryDisplayResolution(width, height);
@@ -146,9 +161,25 @@ void WindowSwitch::HandlePendingPaint() {
   }
   // Without focus (HOME menu, sleep, an overlay applet) the display stack may
   // stop taking frames, and a present could block the UI thread.
-  if (has_focus_) {
-    OnPaint();
+  if (!has_focus_) {
+    return;
   }
+  // A present just came back outdated: HOME may be on its way. Keep the paint pending and look again at the
+  // next loop wakeup (100 ms at most, sooner with an applet message), after the focus messages are processed.
+  Presenter* const current_presenter = presenter();
+  const int32_t delay_ms = REXCVAR_GET(switch_reconnect_delay_ms);
+  if (current_presenter && delay_ms > 0 &&
+      current_presenter->NsSinceConnectionOutdated() < int64_t(delay_ms) * 1000000) {
+    if (!reconnect_waiting_) {
+      reconnect_waiting_ = true;
+      REXLOG_INFO("WindowSwitch: swapchain outdated, waiting {} ms before rebuilding it (switch_reconnect_delay_ms)",
+                  delay_ms);
+    }
+    paint_pending_.store(true, std::memory_order_release);
+    return;
+  }
+  reconnect_waiting_ = false;
+  OnPaint();
 }
 
 void WindowSwitch::HandleDisplayModeChange() {
@@ -168,6 +199,10 @@ void WindowSwitch::HandleFocusChange(bool has_focus) {
     return;
   }
   has_focus_ = has_focus;
+  // Before the listeners and before the repaint below, which is what rebuilds the swapchain on return.
+  if (Presenter* const current_presenter = presenter()) {
+    current_presenter->SetDisplayPausedFromUIThread(!has_focus && REXCVAR_GET(switch_focus_pause_present));
+  }
   WindowDestructionReceiver destruction_receiver(this);
   OnFocusUpdate(has_focus, destruction_receiver);
   if (has_focus && !destruction_receiver.IsWindowDestroyed()) {

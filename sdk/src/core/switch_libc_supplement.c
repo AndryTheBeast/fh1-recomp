@@ -210,9 +210,9 @@ void __assert_func(const char* file, int line, const char* func, const char* exp
     static _Atomic int inside = 0;
     if (inside++ == 0) { /* an assert inside fopen does not re-enter */
         /* in <NRO folder>/logs/rex/ (switch_crash_hooks.c) */
-        char path[FS_MAX_PATH];
-        snprintf(path, sizeof(path), "%srex_assert.log", RexSwitchLogDir());
-        FILE* f = fopen(path, "a");
+        char path_value[FS_MAX_PATH];
+        snprintf(path_value, sizeof(path_value), "%srex_assert.log", RexSwitchLogDir());
+        FILE* f = fopen(path_value, "a");
         if (f) {
             fprintf(f, "assert failed: %s\n  at %s:%d (%s)\n", expr ? expr : "?",
                     file ? file : "?", line, func ? func : "?");

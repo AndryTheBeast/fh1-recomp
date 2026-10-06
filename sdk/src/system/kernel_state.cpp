@@ -12,7 +12,9 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include <fmt/format.h>
 #include <rex/assert.h>
@@ -46,6 +48,39 @@
 namespace rex::system {
 
 constexpr uint32_t kDeferredOverlappedDelayMillis = 100;
+
+namespace {
+// Modules linked into the host (KernelState::RegisterStaticModuleLibrary). Filled before the game starts,
+// read by LoadUserModule: the lock only covers a late registration.
+struct StaticModuleLibrary {
+  std::string shared_lib_name;
+  void* register_fn;
+  void* get_image_info_fn;
+};
+std::mutex g_static_module_libraries_mutex;
+std::vector<StaticModuleLibrary>& StaticModuleLibraries() {
+  static std::vector<StaticModuleLibrary> libraries;
+  return libraries;
+}
+bool FindStaticModuleLibrary(const std::string& shared_lib_name, void** register_fn,
+                             void** get_image_info_fn) {
+  std::lock_guard<std::mutex> lock(g_static_module_libraries_mutex);
+  for (const auto& library : StaticModuleLibraries()) {
+    if (library.shared_lib_name == shared_lib_name) {
+      *register_fn = library.register_fn;
+      *get_image_info_fn = library.get_image_info_fn;
+      return true;
+    }
+  }
+  return false;
+}
+}  // namespace
+
+void KernelState::RegisterStaticModuleLibrary(const char* shared_lib_name, void* register_fn,
+                                              void* get_image_info_fn) {
+  std::lock_guard<std::mutex> lock(g_static_module_libraries_mutex);
+  StaticModuleLibraries().push_back({shared_lib_name ? shared_lib_name : "", register_fn, get_image_info_fn});
+}
 
 // This is a global object initialized with the XboxkrnlModule.
 // It references the current kernel state object that all kernel methods should
@@ -759,15 +794,21 @@ object_ref<UserModule> KernelState::LoadUserModule(const std::string_view raw_na
     }
 
     rex::platform::DynamicLibrary library_local;
-    if (!library_local.Load(std::filesystem::path(recomp->shared_lib_name),
-                            rex::platform::SymbolResolution::kImmediate)) {
+    // A module linked into the host (no dynamic loading on the platform): its entry points come from the
+    // table, and library_local stays empty.
+    void* static_register = nullptr;
+    void* static_get_image_info = nullptr;
+    const bool linked_in =
+        FindStaticModuleLibrary(recomp->shared_lib_name, &static_register, &static_get_image_info);
+    if (!linked_in && !library_local.Load(std::filesystem::path(recomp->shared_lib_name),
+                                          rex::platform::SymbolResolution::kImmediate)) {
       REXSYS_ERROR("Failed to load shared library for module '{}'", recomp->pe_name);
     } else {
       auto register_func = reinterpret_cast<runtime::FunctionDispatcher::RegisterFn>(
-          library_local.GetRawSymbol("ReXModule_Register"));
+          linked_in ? static_register : library_local.GetRawSymbol("ReXModule_Register"));
       using GetImageInfoFn = const rex::PPCImageInfo* (*)();
-      auto get_image_info =
-          reinterpret_cast<GetImageInfoFn>(library_local.GetRawSymbol("ReXModule_GetImageInfo"));
+      auto get_image_info = reinterpret_cast<GetImageInfoFn>(
+          linked_in ? static_get_image_info : library_local.GetRawSymbol("ReXModule_GetImageInfo"));
       if (!register_func) {
         REXSYS_ERROR("ReXModule_Register not found in '{}'", recomp->shared_lib_name);
       } else if (!get_image_info) {

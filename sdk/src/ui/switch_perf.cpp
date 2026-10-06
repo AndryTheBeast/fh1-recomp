@@ -27,7 +27,7 @@
  * time the calling thread spends inside: fences (zero-timeout queries and waits), submission
  * kickoffs, new NvMaps (with and without CPU cache), GPU addresses and mappings, armDCacheClean, the
  * window queue and svcSleepThread. Every fence query is at least one ioctl even when the GPU has
- * already finished (see docs/nfsmw-nx/platform-notes.md), so the count per second is needed before changing
+ * already finished (see nfsc-nx docs/platform-notes.md), so the count per second is needed before changing
  * anything.
  *
  * Careful with the pause: while a thread is paused nothing is done that could take a lock (no
@@ -47,9 +47,13 @@
 #include <string>
 #include <vector>
 
+#include <malloc.h>
 #include <switch.h>
 
+#include "../core/threading_switch.h"
+
 #include "rex/ui/switch_apm.h"
+#include "rex/watchdog.h"
 #include "rex/ui/switch_saltynx.h"
 #include "rex/ui/switch_sysclk.h"
 
@@ -63,7 +67,11 @@ const char* RexSwitchLogDir(void);
  */
 size_t RexGmCommittedBytes(void);
 size_t RexGmMappedBytes(void);
-/* 0 = sin test, 1 = permissions (pages watched legibles), 2 = desmapeo. */
+size_t RexGmChunkCount(void);
+uint32_t RexGmViewsShed(uint32_t* retry_ok);
+/* Asks the app to close through its normal path (windowed_app_context_switch.cpp). */
+void RexSwitchRequestQuit(void);
+/* 0 = untested, 1 = permissions (watched pages readable), 2 = unmap. */
 int RexGmModeProtection(void);
 Result __real_threadCreate(Thread* t, ThreadFunc entry, void* arg, void* stack_mem,
                            size_t stack_sz, int prio, int cpuid);
@@ -103,7 +111,7 @@ constexpr u64 kReportSeconds = 10;
 constexpr u64 kStartDelayNs = 8000000000ULL;
 constexpr size_t kMaxSamples = 1 << 15;
 constexpr size_t kFrames = 10;
-constexpr unsigned kCounterCount = 33;
+constexpr unsigned kCounterCount = 40;  // 33-39: audio timing (switch_audio_system.cpp, audio_system.cpp)
 // In <NRO folder>/logs/rex/ (switch_crash_hooks.c computes it at startup).
 std::string ReportPath() {
   return std::string(RexSwitchLogDir()) + "rex_profile.log";
@@ -131,7 +139,7 @@ struct Sample {
 /*
  * Long frame windows. The renderer calls RexSwitchPerfHitch with the interval of every frame over
  * 45 ms; the report separates the samples taken inside those intervals and says what each thread was
- * doing right then (section "during los hitches"). Only works with profile_stacks.flag.
+ * doing right then (section "during the hitches"). Only works with profile_stacks.flag.
  */
 constexpr size_t kMaxHitches = 256;
 struct WindowHitch {
@@ -151,8 +159,8 @@ std::atomic<u64> g_counters[kCounterCount];
  * before the constructors.
  */
 enum : unsigned {
-  kFenceQuery,     // nvFenceWait con wait 0
-  kFenceWait,       // nvFenceWait con wait
+  kFenceQuery,     // nvFenceWait with a 0 timeout
+  kFenceWait,       // nvFenceWait with a timeout
   kKickoff,           // nvGpuChannelKickoff
   kNvMapCached,     // nvMapCreate with CPU cache
   kNvMapSinCache,     // nvMapCreate without CPU cache
@@ -187,7 +195,7 @@ inline void Note(unsigned id, u64 since, u64 bytes = 0) {
 /*
  * Automatic A/B tests. Each report (10 s) removes one part of the GPU work: those commands (draw or
  * dispatch) stop being recorded, but everything else stays the same, so the state does not break.
- * The image looks wrong while the mode lasts; that is expected. If with "sin nothing" it is just as
+ * The image looks wrong while the mode lasts; that is expected. If with "nothing" it is just as
  * slow, the cost is not in the work but in something fixed (submissions, driver).
  */
 struct Mode {
@@ -217,7 +225,7 @@ constexpr size_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
  * the measurement is useful. From then on it removes one part of the GPU work per report, goes once
  * through the eight modes and returns to "normal".
  *
- * How to read it. If with "sin nothing" the game is just as slow, the cost is not in the GPU work but
+ * How to read it. If with "nothing" the game is just as slow, the cost is not in the GPU work but
  * in something fixed: submissions, the driver, or the guest itself. If FPS shoots up, the mode where
  * it rises most points to the culprit.
  */
@@ -378,6 +386,9 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
     return;
   }
 
+  uint32_t shed_ok_tmp = 0;
+  const uint32_t shed_n = RexGmViewsShed(&shed_ok_tmp);
+  const size_t shed_chunks = RexGmChunkCount();
   u64 lim_used = 0, lim_cap = 0, proc_used = 0, proc_total = 0;
   LimitOfMapping(&lim_used, &lim_cap, &proc_used, &proc_total);
 
@@ -389,7 +400,7 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                "==== %.1f s | mode: %s | game %.1f fps | total CPU %.0f%% (400%% = 4 cores) | faults/s: emulated "
                "read %.0f, SDK handler %.0f, emulated retry %.0f, SEH %.0f, physical commit %.0f, views %.0f | "
                "guest %zu/%zu MB (backing/mapped) | map limit %llu/%llu MB, process %llu/%llu MB | samples %zu | "
-               "watch: %s | samplers: %.0f new/s, %.0f stalls/s\n",
+               "watch: %s | samplers: %.0f new/s, %.0f stalls/s | chunks %zu, views dropped %u (%u let the commit work)\n",
                seconds, mode, double(counters_now[0] - counters_last[0]) / seconds, total_cpu,
                double(counters_now[1] - counters_last[1]) / seconds,
                double(counters_now[2] - counters_last[2]) / seconds,
@@ -399,11 +410,11 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                double(counters_now[18] - counters_last[18]) / seconds,
                RexGmCommittedBytes() >> 20, RexGmMappedBytes() >> 20,
                (u64)lim_used, (u64)lim_cap, (u64)proc_used, (u64)proc_total, g_sample_count,
-                (RexGmModeProtection() == 1   ? "permissions (pages legibles)"
-                 : RexGmModeProtection() == 2 ? "unmapping (every read fails)"
+                (RexGmModeProtection() == 1   ? "permissions (readable pages)"
+                 : RexGmModeProtection() == 2 ? "unmap (every read faults)"
                                               : "untested"),
                 double(counters_now[20] - counters_last[20]) / seconds,
-                double(counters_now[19] - counters_last[19]) / seconds);
+                double(counters_now[19] - counters_last[19]) / seconds, shed_chunks, shed_n, shed_ok_tmp);
   // Work the game sends to the GPU, per presented frame. One screen is
   // 1280x720 = 921,600 pixels.
   const auto delta = [&](unsigned id) { return double(counters_now[id] - counters_last[id]); };
@@ -420,6 +431,34 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                rex::ui::switch_saltynx::ModeBase(appletGetOperationMode() == AppletOperationMode_Console)
                    ? "docked"
                    : "handheld");
+  // Audio timing, for the gaps ("requests without data"): from the output's request to the game's frame
+  // (33 frames, 34 sum us, 35 max us), the game's audio callback (36 calls, 37 sum us, 38 max us) and the
+  // longest run of missing frames (39, 5.33 ms each). The max counters are reset here.
+  {
+    const u64 late_max = g_counters[35].exchange(0, std::memory_order_relaxed);
+    const u64 callback_max = g_counters[38].exchange(0, std::memory_order_relaxed);
+    const u64 run_max = g_counters[39].exchange(0, std::memory_order_relaxed);
+    const double frames_timed = delta(33), calls = delta(36);
+    std::fprintf(f,
+                 "     audio timing: request -> game frame %.2f ms on average, %.1f ms at worst (%.0f frames) | game "
+                 "callback %.3f ms on average, %.1f ms at worst (%.0f calls) | longest run of missing frames %llu "
+                 "(%.1f ms of silence)\n",
+                 frames_timed ? delta(34) / frames_timed / 1000.0 : 0.0, double(late_max) / 1000.0, frames_timed,
+                 calls ? delta(37) / calls / 1000.0 : 0.0, double(callback_max) / 1000.0, calls,
+                 (unsigned long long)run_max, double(run_max) * 5.333);
+  }
+  // Host threads and heap (2026-10-05 freeze: a cutscene thread could not get its 16 MB stack after an
+  // hour). "alive" should stay flat; if it climbs, threads are leaking again.
+  {
+    uint32_t created = 0, ended = 0, failed = 0, small_stack = 0;
+    RexSwitchHostThreadStats(&created, &ended, &failed, &small_stack);
+    const struct mallinfo mi = mallinfo();
+    std::fprintf(f,
+                 "     host threads: %u created, %u ended, %u alive, %u with a smaller stack, %u failed | heap: "
+                 "%.1f MB taken from the system, %.1f MB free inside it\n",
+                 created, ended, created - ended, small_stack, failed, double(mi.arena) / (1024.0 * 1024.0),
+                 double(mi.fordblks) / (1024.0 * 1024.0));
+  }
   // Reverse-NX state as is, without interpretation. A whole test session was wasted because its
   // overlay said "Docked" while "Controlled by system" was Yes, and in that case its mode does not
   // rule: it only mirrors the console's. This shows at a glance which of the two is happening.
@@ -433,8 +472,8 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
       std::fprintf(f,
                    "     Reverse-NX: says %s, decides %s (Controlled by system %s), the game has asked: %s; real "
                    "console %s -> obeying %s\n",
-                   reverse.en_base ? "docked" : "handheld", reverse.by_default ? "the console" : "Reverse-NX",
-                   reverse.by_default ? "Yes" : "No", reverse.plugin_active ? "yes" : "no",
+                   reverse.docked ? "docked" : "handheld", reverse.by_default ? "the console" : "Reverse-NX",
+                   reverse.by_default ? "Yes" : "No", reverse.plugin_active ? "si" : "no",
                    real ? "docked" : "handheld",
                    rex::ui::switch_saltynx::ModeBase(real) ? "docked" : "handheld");
     }
@@ -495,9 +534,9 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
                  "     clocks: CPU %.1f MHz, GPU %.1f MHz, memory %.1f MHz%s | process cores %u (mask 0x%llX) | "
                  "SoC %.1f C, board %.1f C%s\n",
                  double(hz[0]) / 1.0e6, double(hz[1]) / 1.0e6, double(hz[2]) / 1.0e6,
-                 there_is_clkrst ? "" : " (clkrst no available)", cores,
+                 there_is_clkrst ? "" : " (clkrst not available)", cores,
                  (unsigned long long)mask_cores, double(degrees_soc), double(degrees_board),
-                 there_is_ts ? "" : " (ts no available)");
+                 there_is_ts ? "" : " (ts not available)");
   }
   // libnx calls: per second, with the ms per second the calling threads spend inside.
   {
@@ -630,14 +669,13 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
     // Horizon priority, preferred core and allowed cores: who can take the CPU from whom.
     s32 priority = -1;
     s32 preferred = -1;
-    u64 mask = 0;
+    u64 mask_value = 0;
     svcGetThreadPriority(&priority, s.handle.load());
-    svcGetThreadCoreMask(&preferred, &mask, s.handle.load());
+    svcGetThreadCoreMask(&preferred, &mask_value, s.handle.load());
     std::fprintf(f,
-                 "\n-- thread_value %" PRIu64 " \"%s\": CPU %.1f%% | priority 0x%X, core preferred %d, "
-                 "mask 0x%llX\n",
+                 "\n-- thread %" PRIu64 " \"%s\": CPU %.1f%% | priority 0x%X, preferred core %d, mask 0x%llX\n",
                  tid, s.name[0] ? s.name : "?", s.cpu, static_cast<unsigned>(priority),
-                 static_cast<int>(preferred), static_cast<unsigned long long>(mask));
+                 static_cast<int>(preferred), static_cast<unsigned long long>(mask_value));
 
     auto lo = std::lower_bound(samples.begin(), samples.end(), i,
                                [](const Sample& a, size_t v) { return a.slot < v; });
@@ -724,11 +762,11 @@ void Report(u64 elapsed_ticks, u64 tick_freq, u64 counters_last[kCounterCount],
 struct TicOverlay {
   u64 tic = 0;
   u64 presented = 0;
-  double media[10] = {};
+  double recent_fps[10] = {};
   size_t pos = 0;
 
-  void Start(u64 now) {
-    tic = now;
+  void Start(u64 now_value) {
+    tic = now_value;
     presented = g_counters[0].load(std::memory_order_relaxed);
     // Publish what is known right away: the resolution is valid from the first instant (g_resolution
     // starts at 1280x720 and the game corrects it when choosing the video mode), so the overlay's RES
@@ -739,25 +777,25 @@ struct TicOverlay {
 
   // Once per second. `with_clocks` turns off the Reverse-NX and clock sysmodule part, which is better
   // left alone during warm-up.
-  void Step(u64 now, u64 freq, bool with_clocks) {
-    if (now - tic < freq) {
+  void Step(u64 now_value, u64 freq, bool with_clocks) {
+    if (now_value - tic < freq) {
       return;
     }
-    const double seconds = double(now - tic) / double(freq);
+    const double seconds_value = double(now_value - tic) / double(freq);
     const u64 now_presented = g_counters[0].load(std::memory_order_relaxed);
-    const double fps = seconds > 0.0 ? double(now_presented - presented) / seconds : 0.0;
-    media[pos] = fps;
+    const double fps = seconds_value > 0.0 ? double(now_presented - presented) / seconds_value : 0.0;
+    recent_fps[pos] = fps;
     pos = (pos + 1) % 10;
     double sum = 0.0;
-    size_t how_many_2 = 0;
-    for (double v : media) {
+    size_t how_many = 0;
+    for (double v : recent_fps) {
       if (v > 0.0) {
         sum += v;
-        ++how_many_2;
+        ++how_many;
       }
     }
     const uint32_t res = g_resolution.load(std::memory_order_relaxed);
-    rex::ui::switch_saltynx::Update(fps, how_many_2 ? sum / double(how_many_2) : fps, res >> 16, res & 0xFFFF,
+    rex::ui::switch_saltynx::Update(fps, how_many ? sum / double(how_many) : fps, res >> 16, res & 0xFFFF,
                                         now_presented);
     // Reverse-NX is also told that the game keeps asking for the mode (its overlay requires it to show
     // the controls) and, if the system rules, the real mode is mirrored.
@@ -776,7 +814,7 @@ struct TicOverlay {
      */
     RexSwitchApmWatch();
     presented = now_presented;
-    tic = now;
+    tic = now_value;
   }
 };
 
@@ -812,7 +850,7 @@ void ProfilerMain(void*) {
     counters_last[i] = g_counters[i].load(std::memory_order_relaxed);
   }
   if (FILE* f = std::fopen(ReportPath().c_str(), "w")) {
-    std::fprintf(f, "image 0x%016" PRIx64 ", code until 0x%016" PRIx64 "\n\n", g_base,
+    std::fprintf(f, "image 0x%016" PRIx64 ", code up to 0x%016" PRIx64 "\n\n", g_base,
                  g_text_hi);
     std::fprintf(f, "Stack sampling: %s\n", sample_stacks ? "active (1 ms)" : "off");
     std::fclose(f);
@@ -890,6 +928,126 @@ void ProfilerMain(void*) {
   }
 }
 
+/*
+ * Freeze watchdog glue (rex/watchdog.h): what only this file can do on the console.
+ *
+ * The thread dump follows the sampler's rule: while a thread is paused nothing allocates and nothing prints,
+ * because the paused thread may hold the heap lock. Pass 1 pauses each thread, reads pc/lr/stack into a
+ * static table and resumes it (system calls only); pass 2 prints.
+ */
+struct WatchdogThread {
+  size_t slot;
+  bool paused_ok;
+  u64 pc, lr;
+  u64 frames[kFrames];
+};
+WatchdogThread g_wd_threads[kMaxThreads];
+
+void WatchdogDumpThreads(FILE* f) {
+  const Handle self = threadGetSelf() ? threadGetSelf()->handle : 0;
+  size_t count = 0;
+  for (size_t i = 0; i < kMaxThreads; ++i) {
+    const u32 h = g_slots[i].handle.load();
+    if (!h || h == self) {
+      continue;
+    }
+    WatchdogThread& out = g_wd_threads[count++];
+    out = {};
+    out.slot = i;
+    if (R_FAILED(svcSetThreadActivity(h, ThreadActivity_Paused))) {
+      continue;  // already suspended by someone else: left alone
+    }
+    ThreadContext ctx;
+    if (R_SUCCEEDED(svcGetThreadContext3(&ctx, h))) {
+      out.paused_ok = true;
+      out.pc = ctx.pc.x;
+      out.lr = ctx.lr;
+      MemoryInfo smi;
+      u32 spi = 0;
+      if (R_SUCCEEDED(svcQueryMemory(&smi, &spi, ctx.sp)) && (smi.perm & Perm_R)) {
+        const u64 lo = smi.addr, hi = smi.addr + smi.size;
+        u64 fp = ctx.fp;
+        for (size_t k = 0; k < kFrames && fp >= lo && fp + 16 <= hi && (fp & 7) == 0; ++k) {
+          out.frames[k] = reinterpret_cast<const u64*>(fp)[1];
+          const u64 next = reinterpret_cast<const u64*>(fp)[0];
+          if (next <= fp) {
+            break;
+          }
+          fp = next;
+        }
+      }
+    }
+    svcSetThreadActivity(h, ThreadActivity_Runnable);
+  }
+  std::fprintf(f, "image 0x%016" PRIx64 " (addresses below are image+offset: resolve with aarch64-none-elf-addr2line)\n",
+               g_base);
+  for (size_t n = 0; n < count; ++n) {
+    const WatchdogThread& t = g_wd_threads[n];
+    const Slot& s = g_slots[t.slot];
+    const u32 h = s.handle.load();
+    u64 tid = 0, ticks = 0;
+    svcGetThreadId(&tid, h);
+    svcGetInfo(&ticks, InfoType_ThreadTickCount, h, UINT64_MAX);
+    s32 priority = -1, preferred = -1;
+    u64 mask_value = 0;
+    svcGetThreadPriority(&priority, h);
+    svcGetThreadCoreMask(&preferred, &mask_value, h);
+    std::fprintf(f, "thread %" PRIu64 " \"%s\": priority 0x%X, core %d (mask 0x%llX), CPU used so far %.1f s | ", tid,
+                 s.name[0] ? s.name : "?", unsigned(priority), int(preferred), (unsigned long long)mask_value,
+                 double(ticks) / double(armGetSystemTickFreq()));
+    if (!t.paused_ok) {
+      std::fprintf(f, "could not be paused\n");
+      continue;
+    }
+    std::fprintf(f, "%s | pc ", AfterSvc(t.pc) ? "waiting in the kernel" : "running or runnable");
+    PrintAddr(f, t.pc);
+    std::fputs(" lr ", f);
+    PrintAddr(f, t.lr);
+    std::fputs(" stack", f);
+    for (size_t j = 0; j < kFrames && t.frames[j]; ++j) {
+      std::fputs(j == 0 ? " " : " <- ", f);
+      PrintAddr(f, t.frames[j]);
+    }
+    std::fputc('\n', f);
+  }
+}
+
+void WatchdogDumpMemory(FILE* f) {
+  u64 lim_used = 0, lim_cap = 0, proc_used = 0, proc_total = 0;
+  LimitOfMapping(&lim_used, &lim_cap, &proc_used, &proc_total);
+  uint32_t shed_ok = 0;
+  const uint32_t shed = RexGmViewsShed(&shed_ok);
+  std::fprintf(f, "map limit %llu / %llu MB, process memory %llu / %llu MB\n", (unsigned long long)lim_used,
+               (unsigned long long)lim_cap, (unsigned long long)proc_used, (unsigned long long)proc_total);
+  std::fprintf(f, "guest memory: %zu MB backing committed, %zu MB mapped (with the 360 mirrors), %zu chunks, %u views dropped (%u let the commit work)\n",
+               RexGmCommittedBytes() >> 20, RexGmMappedBytes() >> 20, RexGmChunkCount(), shed, shed_ok);
+  const struct mallinfo mi = mallinfo();
+  std::fprintf(f, "heap: %.1f MB taken from the system, %.1f MB free inside it, %.1f MB releasable at the top\n",
+               double(mi.arena) / 1048576.0, double(mi.fordblks) / 1048576.0, double(mi.keepcost) / 1048576.0);
+  uint32_t created = 0, ended = 0, failed = 0, small_stack = 0;
+  RexSwitchHostThreadStats(&created, &ended, &failed, &small_stack);
+  std::fprintf(f, "host threads: %u created, %u ended, %u alive, %u with a smaller stack, %u failed to be created\n",
+               created, ended, created - ended, small_stack, failed);
+}
+
+uint32_t WatchdogHeapMb() {
+  const struct mallinfo mi = mallinfo();
+  return uint32_t(size_t(mi.arena) >> 20);
+}
+
+bool WatchdogInFocus() { return appletGetFocusState() == AppletFocusState_InFocus; }
+
+/* Last resort after the normal close did not end the process in time. svcExitProcess ends every thread. */
+void WatchdogForceExit(int code) {
+  std::fflush(nullptr);
+  svcExitProcess();
+  (void)code;
+  for (;;) {
+  }
+}
+
+const char* WatchdogLogDir() { return RexSwitchLogDir(); }
+
 /* Priority 102: after switch_crash_hooks.c, before the SDK. */
 __attribute__((constructor(102))) void StartProfiler() {
   g_base = reinterpret_cast<u64>(&_start);
@@ -899,6 +1057,15 @@ __attribute__((constructor(102))) void StartProfiler() {
     g_text_lo = mi.addr;
     g_text_hi = mi.addr + mi.size;
   }
+  rex::watchdog::Hooks hooks;
+  hooks.dump_threads = &WatchdogDumpThreads;
+  hooks.dump_memory = &WatchdogDumpMemory;
+  hooks.in_focus = &WatchdogInFocus;
+  hooks.heap_mb = &WatchdogHeapMb;
+  hooks.request_quit = &RexSwitchRequestQuit;
+  hooks.force_exit = &WatchdogForceExit;
+  hooks.log_dir = &WatchdogLogDir;
+  rex::watchdog::SetHooks(hooks);
   Register(envGetMainThreadHandle());
   std::strncpy(g_slots[0].name, "main (interfaz)", sizeof(g_slots[0].name) - 1);
   // 0x2A: above everything in the game (audio runs at 0x2B), so the samples
@@ -974,7 +1141,7 @@ void __wrap_armDCacheClean(void* addr, size_t size) {
 }
 
 /*
- * The presentation interval (fh1_swap_interval).
+ * The presentation interval (nfsc_swap_interval).
  *
  * It is reapplied on every present, not when the chain is created, on purpose: the WSI sets it to 1
  * when creating the swapchain, and the chain is recreated when switching from docked to handheld.
@@ -1027,8 +1194,8 @@ void RexSwitchPerfHitch(u64 start, u64 fin) {
   }
 }
 
-void RexSwitchPerfResolution(unsigned width, unsigned height) {
-  g_resolution.store(((width & 0xFFFF) << 16) | (height & 0xFFFF), std::memory_order_relaxed);
+void RexSwitchPerfResolution(unsigned width_value, unsigned height_value) {
+  g_resolution.store(((width_value & 0xFFFF) << 16) | (height_value & 0xFFFF), std::memory_order_relaxed);
 }
 
 // See g_interval_swap, next to the nwindowQueueBuffer wrapper. 0 = touch nothing (the normal case).

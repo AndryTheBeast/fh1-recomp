@@ -10,7 +10,7 @@
  * the definition of abort has to reach the link before the one in libc.a to
  * replace it.
  *
- *   stderr  -> <NRO folder>/logs/rex/rex_stderr.log, unbuffered, rewritten on every boot
+ *   stderr  -> <NRO folder>/logs/rex/rex_stderr.log, line-buffered, rewritten on every boot
  *   abort() -> <NRO folder>/logs/rex/rex_crash.log with the stack, and error 2345-0101
  *   exit()  -> the same, error 2345-0103. The orderly shutdown does not go through exit()
  *              (see windowed_app_main_switch.cpp), so getting here means some library
@@ -89,8 +89,15 @@ static void RexSwitchCrashHooksInit(void) {
     RexSwitchInitLogDir();
     char path[FS_MAX_PATH];
     snprintf(path, sizeof(path), "%srex_stderr.log", g_rex_log_dir);
+    /*
+     * Line-buffered, not unbuffered. newlib prints to an unbuffered stream through a temporary
+     * FILE with its own lock (__sbprintf), so lines from several threads reach fsdev's write at
+     * the same time; fsdev keeps the file offset without a lock, and two racing writes left
+     * holes the SD filled with old data (2026-10-06 console log: binary junk and half lines).
+     * Line-buffered prints go through stderr's own lock and leave as one write per line.
+     */
     if (freopen(path, "w", stderr)) {
-        setvbuf(stderr, NULL, _IONBF, 0);
+        setvbuf(stderr, NULL, _IOLBF, 1024);
     }
     atexit(RexSwitchExitHook);
 }

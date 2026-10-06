@@ -446,6 +446,10 @@ uint32_t LogFrameStatsOnSwap(uint64_t& host_gpu_wait_ticks) {
 // swap (so a capture holds exactly one guest frame, including its present), then starts a new
 // one once the next requested time has passed. Only the GPU Commands worker thread calls this.
 void UpdateRenderDocCaptureOnSwap() {
+#if REX_PLATFORM_SWITCH
+  // No RenderDoc on the console (its API header is not part of that build).
+  return;
+#else
   static bool initialized = false;
   static std::unique_ptr<rex::ui::RenderDocAPI> api;
   static std::vector<double> pending_seconds;
@@ -505,6 +509,7 @@ void UpdateRenderDocCaptureOnSwap() {
     capturing = true;
     REXGPU_INFO("RenderDoc: capturing the guest frame after {:.1f} s", seconds);
   }
+#endif
 }
 
 ReadbackResolveMode ParseReadbackResolveMode(std::string_view value) {

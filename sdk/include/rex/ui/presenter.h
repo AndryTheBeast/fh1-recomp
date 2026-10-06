@@ -390,6 +390,13 @@ class Presenter {
   // Requests (re)painting with the UI if there's UI to draw.
   void RequestUIPaintFromUIThread();
 
+  // From nfsc-recomp (GoatHonks; Switch HOME / sleep): while paused, no thread presents and the UI thread does
+  // not rebuild an outdated swapchain; the newest guest frame stays in the mailbox. Unpausing does not paint by
+  // itself.
+  void SetDisplayPausedFromUIThread(bool paused);
+  bool IsDisplayPaused() const { return display_paused_.load(std::memory_order_acquire); }
+  // Nanoseconds since a present last reported the swapchain outdated (INT64_MAX if never).
+  int64_t NsSinceConnectionOutdated() const;
  protected:
   /*
    * Stops and joins the presenter's own thread (present_own_thread).
@@ -1001,6 +1008,10 @@ class Presenter {
   // thread checks to know whether there is anyone to notify.
   std::unique_ptr<rex::thread::Thread> paint_thread_;
   std::atomic<bool> paint_thread_active_{false};
+  // SetDisplayPausedFromUIThread: frames not presented while paused, and when the last outdated present was.
+  std::atomic<bool> display_paused_{false};
+  std::atomic<uint64_t> display_paused_frames_{0};
+  std::atomic<int64_t> connection_outdated_at_ns_{0};
   std::mutex paint_thread_mutex_;
   std::condition_variable paint_thread_signal_;
   /*

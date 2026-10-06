@@ -258,6 +258,13 @@ class KernelState {
                                 const char* shared_lib_name);
   std::optional<RecompiledModuleInfo> FindRecompiledModule(std::string_view guest_path);
 
+  // Platforms without dynamic loading (Nintendo Switch: an NRO cannot open a library). The modules' code is
+  // linked into the host, which names each module's two entry points here (ReXModule_Register and
+  // ReXModule_GetImageInfo, renamed per module by the build) before the game starts. LoadUserModule takes
+  // them from this table instead of opening shared_lib_name. Nothing registered = the usual library load.
+  static void RegisterStaticModuleLibrary(const char* shared_lib_name, void* register_fn,
+                                          void* get_image_info_fn);
+
   object_ref<KernelModule> GetKernelModule(const std::string_view name);
   template <typename T>
   object_ref<KernelModule> LoadKernelModule() {

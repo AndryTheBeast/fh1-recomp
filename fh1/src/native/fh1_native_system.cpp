@@ -2606,6 +2606,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
   // native renderer, from one Swap to the next, each time a file named capture_now appears in the working folder
   // (the same trigger as the emulated GPU's --renderdoc_capture_seconds=-1; tools\capture_now.ps1 writes it).
   void CaptureRenderDocOnSwap() {
+#if !REX_PLATFORM_SWITCH  // no RenderDoc on the console (its API header is not part of that build)
     static bool initialized = false;
     static std::unique_ptr<rex::ui::RenderDocAPI> api;
     static bool capturing = false;
@@ -2635,6 +2636,7 @@ class SystemGraphicsNative final : public rex::system::IGraphicsSystem {
       capturing = true;
       REXLOG_INFO("[fh1] RenderDoc: capturing the frame after Swap {}", swaps_.load());
     }
+#endif
   }
 
   // Diagnostic (fh1_native_diag_frame_s): every draw and every copy of one whole

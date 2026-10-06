@@ -18,7 +18,11 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only")
 #include <cerrno>
 #include <cstddef>
 #include <ctime>
+#include <condition_variable>
+#include <cstdlib>
 #include <deque>
+#include <mutex>
+#include <vector>
 #include <limits>
 #include <memory>
 
@@ -34,10 +38,160 @@ static_assert(REX_PLATFORM_LINUX || REX_PLATFORM_MAC, "This file is POSIX-only")
 // Horizon has no sys/syscall.h. The shim provides affinity, priority, cpu_set_t
 // and the thread id. See core/threading_switch.h.
 #include "threading_switch.h"
+#include <malloc.h>
 #else
 #include <sys/syscall.h>
 #endif
 #include <sys/time.h>
+
+#if defined(__SWITCH__)
+// See RexSwitchSetDetachHostThreads in threading_switch.h.
+static std::atomic<bool> g_switch_detach_threads{true};
+static std::atomic<uint32_t> g_switch_threads_created{0}, g_switch_threads_ended{0},
+    g_switch_threads_failed{0}, g_switch_threads_small_stack{0}, g_switch_threads_reaped{0};
+extern "C" void RexSwitchSetDetachHostThreads(bool on) {
+  g_switch_detach_threads.store(on, std::memory_order_relaxed);
+}
+// A guest thread ends itself through ExTerminateThread -> Thread::Exit -> pthread_exit, which never returns
+// to the thread start routine. On Horizon that leaves the 16 MB host stack allocated (2026-10-06 console log:
+// +4 threads and +65 MB of heap for every video that played, "ended" always 0, thread creation failing after
+// ~9 minutes of the attract video). With this on, the exiting thread unwinds (a C++ exception caught in the start
+// routine) and returns normally, so a detached thread frees itself.
+static std::atomic<bool> g_switch_unwind_exit{true};
+static std::atomic<uint32_t> g_switch_host_stack_kb{0};
+static std::atomic<bool> g_switch_thread_heap_log{false};
+extern "C" void RexSwitchSetHostStackKb(uint32_t kb) {
+  g_switch_host_stack_kb.store(kb, std::memory_order_relaxed);
+}
+extern "C" void RexSwitchSetThreadHeapLog(bool on) {
+  g_switch_thread_heap_log.store(on, std::memory_order_relaxed);
+}
+// One line per thread start/end with the heap, to see which event moves it (stderr: it may run on a dying thread).
+static void LogThreadHeap(const char* what, size_t stack_kb) {
+  if (!g_switch_thread_heap_log.load(std::memory_order_relaxed)) {
+    return;
+  }
+  const struct mallinfo mi = mallinfo();
+  std::fprintf(stderr, "[threads] %s (host stack %zu KB): heap %.1f MB taken, %.1f MB free inside | %u created, %u ended, %u freed\n",
+               what, stack_kb, double(mi.arena) / (1024.0 * 1024.0), double(mi.fordblks) / (1024.0 * 1024.0),
+               g_switch_threads_created.load(std::memory_order_relaxed),
+               g_switch_threads_ended.load(std::memory_order_relaxed),
+               g_switch_threads_reaped.load(std::memory_order_relaxed));
+}
+extern "C" void RexSwitchSetThreadExitUnwind(bool on) {
+  g_switch_unwind_exit.store(on, std::memory_order_relaxed);
+}
+// libnx has no detach: pthread_detach calls the weak __syscall_thread_detach, which libnx does not define (it
+// returns ENOSYS and does nothing), and pthread_create ignores the detach state of the attributes. The only call
+// that frees a thread (its stack, its kernel thread and its libnx Thread) is pthread_join -> threadClose. So every
+// "detached" game thread kept its stack forever (2026-10-06 console runs: +64 MB per attract-video loop with 16 MB
+// stacks, +16 MB with 2 MB stacks, "free inside" never grew). A finished thread hands itself to this reaper thread,
+// which joins it; the join waits until the thread has really exited.
+// Stacks of game threads are kept and handed to the next thread of the same size. libnx gets its own stacks with
+// an aligned allocation, which needs a little more room than the block it frees, so a freed stack hole could never
+// hold the next stack of the same size: with the reaper on, "free inside" grew by the freed stacks and the heap still
+// took ~8 MB more from the system per attract-video loop (2026-10-06). A stack given by the caller is mapped by libnx
+// but never freed by it, so the pool owns it.
+static std::mutex g_stack_pool_mutex;
+static std::vector<std::pair<size_t, void*>> g_stack_pool;
+static std::atomic<uint32_t> g_switch_stacks_reused{0}, g_switch_stacks_new{0};
+static void* SwitchTakeStack(size_t size) {
+  {
+    std::lock_guard<std::mutex> lock(g_stack_pool_mutex);
+    for (size_t i = 0; i < g_stack_pool.size(); ++i) {
+      if (g_stack_pool[i].first == size) {
+        void* block = g_stack_pool[i].second;
+        g_stack_pool[i] = g_stack_pool.back();
+        g_stack_pool.pop_back();
+        g_switch_stacks_reused.fetch_add(1, std::memory_order_relaxed);
+        return block;
+      }
+    }
+  }
+  void* block = aligned_alloc(0x1000, size);
+  if (block) {
+    g_switch_stacks_new.fetch_add(1, std::memory_order_relaxed);
+  }
+  return block;
+}
+static void SwitchReturnStack(void* block, size_t size) {
+  if (!block) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(g_stack_pool_mutex);
+  g_stack_pool.emplace_back(size, block);
+}
+struct ReapItem {
+  pthread_t thread;
+  void* stack;
+  size_t stack_size;
+};
+static std::mutex g_reap_mutex;
+static std::condition_variable g_reap_cv;
+static std::deque<ReapItem> g_reap_queue;
+static bool g_reaper_started = false, g_reaper_failed = false;
+static void* SwitchReaperMain(void*) {
+  for (;;) {
+    ReapItem item;
+    {
+      std::unique_lock<std::mutex> lock(g_reap_mutex);
+      g_reap_cv.wait(lock, [] { return !g_reap_queue.empty(); });
+      item = g_reap_queue.front();
+      g_reap_queue.pop_front();
+    }
+    pthread_join(item.thread, nullptr);
+    // Only now has the thread stopped running on its stack.
+    SwitchReturnStack(item.stack, item.stack_size);
+    g_switch_threads_reaped.fetch_add(1, std::memory_order_relaxed);
+    if (g_switch_thread_heap_log.load(std::memory_order_relaxed)) {
+      const struct mallinfo mi = mallinfo();
+      std::fprintf(stderr, "[threads] freed by the reaper: heap %.1f MB taken, %.1f MB free inside | %u created, %u "
+                   "ended, %u freed | stacks: %u new, %u reused\n",
+                   double(mi.arena) / (1024.0 * 1024.0), double(mi.fordblks) / (1024.0 * 1024.0),
+                   g_switch_threads_created.load(std::memory_order_relaxed),
+                   g_switch_threads_ended.load(std::memory_order_relaxed),
+                   g_switch_threads_reaped.load(std::memory_order_relaxed),
+                   g_switch_stacks_new.load(std::memory_order_relaxed),
+                   g_switch_stacks_reused.load(std::memory_order_relaxed));
+    }
+  }
+  return nullptr;
+}
+// Called by a game thread on its way out, with its own pthread_t and the pool stack it runs on (null if libnx made
+// it). Touches nothing of the Thread object.
+static void SwitchQueueForReap(pthread_t self, void* stack, size_t stack_size) {
+  std::lock_guard<std::mutex> lock(g_reap_mutex);
+  if (!g_reaper_started && !g_reaper_failed) {
+    pthread_attr_t attr;
+    pthread_t reaper;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 64 * 1024);
+    if (pthread_create(&reaper, &attr, SwitchReaperMain, nullptr) == 0) {
+      g_reaper_started = true;
+    } else {
+      g_reaper_failed = true;
+      std::fprintf(stderr, "[threads] the reaper thread could not be created: finished threads keep their stack\n");
+    }
+    pthread_attr_destroy(&attr);
+  }
+  if (g_reaper_started) {
+    g_reap_queue.push_back(ReapItem{self, stack, stack_size});
+    g_reap_cv.notify_one();
+  }
+}
+namespace {
+struct ThreadExitUnwind {
+  int exit_code;
+};
+}  // namespace
+extern "C" void RexSwitchHostThreadStats(uint32_t* created, uint32_t* ended, uint32_t* failed,
+                                         uint32_t* small_stack) {
+  *created = g_switch_threads_created.load(std::memory_order_relaxed);
+  *ended = g_switch_threads_ended.load(std::memory_order_relaxed);
+  *failed = g_switch_threads_failed.load(std::memory_order_relaxed);
+  *small_stack = g_switch_threads_small_stack.load(std::memory_order_relaxed);
+}
+#endif
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -323,7 +477,7 @@ class PosixConditionBase {
         if (now >= deadline) {
           return WaitResult::kTimeout;
         }
-        // Sleep lets the owner advance even if it has a lower priority.
+        // Sleeping lets the owner make progress even if it has a lower priority.
         const auto remaining = std::chrono::ceil<std::chrono::microseconds>(deadline - now);
         std::this_thread::sleep_for(std::min(remaining, std::chrono::microseconds(100)));
       }
@@ -716,6 +870,14 @@ class PosixCondition<Thread> : public PosixConditionBase {
     pthread_attr_t attr;
     if (pthread_attr_init(&attr) != 0)
       return false;
+#if defined(__SWITCH__)
+    {
+      const size_t cap = size_t(g_switch_host_stack_kb.load(std::memory_order_relaxed)) * 1024;
+      if (cap >= 256 * 1024 && cap < params.stack_size) {
+        params.stack_size = cap;
+      }
+    }
+#endif
     if (pthread_attr_setstacksize(&attr, params.stack_size) != 0) {
       pthread_attr_destroy(&attr);
       return false;
@@ -732,10 +894,52 @@ class PosixCondition<Thread> : public PosixConditionBase {
         return false;
       }
     }
+#if defined(__SWITCH__)
+    // "Detached" here means the thread owns itself and the reaper joins it when it ends (libnx ignores the
+    // detach state, see SwitchQueueForReap); the pthread stays joinable so that join is legal.
+    detached_ = g_switch_detach_threads.load(std::memory_order_relaxed);
+    // A reaped thread runs on a pool stack (see SwitchTakeStack); set before pthread_create, read by the thread.
+    if (detached_ && (params.stack_size & 0xFFF) == 0) {
+      stack_block_ = SwitchTakeStack(params.stack_size);
+      if (stack_block_) {
+        stack_block_size_ = params.stack_size;
+        pthread_attr_setstack(&attr, stack_block_, params.stack_size);
+      }
+    }
+    // Retry with smaller stacks rather than fail: a failed guest thread freezes the game.
+    int rc = pthread_create(&thread_, &attr, ThreadStartRoutine, start_data);
+    if (rc != 0 && stack_block_) {
+      // Not the stack's fault (the kernel thread failed): give it back and let libnx try its own, smaller ones.
+      SwitchReturnStack(stack_block_, stack_block_size_);
+      stack_block_ = nullptr;
+      stack_block_size_ = 0;
+      pthread_attr_setstackaddr(&attr, nullptr);
+    }
+    for (size_t stack = params.stack_size / 4; rc != 0 && stack >= 1024 * 1024; stack /= 4) {
+      if (pthread_attr_setstacksize(&attr, stack) != 0) {
+        break;
+      }
+      rc = pthread_create(&thread_, &attr, ThreadStartRoutine, start_data);
+      if (rc == 0) {
+        g_switch_threads_small_stack.fetch_add(1, std::memory_order_relaxed);
+        std::fprintf(stderr, "[threads] host thread created with a %zu KB stack (%zu KB not available)\n",
+                     stack / 1024, params.stack_size / 1024);
+      }
+    }
+    if (rc != 0) {
+      g_switch_threads_failed.fetch_add(1, std::memory_order_relaxed);
+      std::fprintf(stderr, "[threads] pthread_create failed (%d) even with a 1 MB stack\n", rc);
+      pthread_attr_destroy(&attr);
+      return false;
+    }
+    g_switch_threads_created.fetch_add(1, std::memory_order_relaxed);
+    LogThreadHeap("start", params.stack_size / 1024);
+#else
     if (pthread_create(&thread_, &attr, ThreadStartRoutine, start_data) != 0) {
       pthread_attr_destroy(&attr);
       return false;
     }
+#endif
     pthread_attr_destroy(&attr);
     return true;
   }
@@ -832,6 +1036,16 @@ class PosixCondition<Thread> : public PosixConditionBase {
   uint32_t system_id() const { return static_cast<uint32_t>(thread_); }
 #endif
 
+  // Switch: a self-owned thread that ended was joined by the reaper, so its pthread_t points at freed memory.
+  bool ReapedOnSwitch() {
+#if defined(__SWITCH__)
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return detached_ && state_ == State::kFinished;
+#else
+    return false;
+#endif
+  }
+
   uint64_t affinity_mask() {
     WaitStarted();
 #if defined(__APPLE__)
@@ -865,6 +1079,9 @@ class PosixCondition<Thread> : public PosixConditionBase {
 
   void set_affinity_mask(uint64_t mask) {
     WaitStarted();
+    if (ReapedOnSwitch()) {
+      return;
+    }
 #if defined(__APPLE__)
     // macOS doesn't expose Linux-style pthread affinity masks; keep this a
     // no-op so higher layers can build and run.
@@ -891,6 +1108,9 @@ class PosixCondition<Thread> : public PosixConditionBase {
 
   int priority() {
     WaitStarted();
+    if (ReapedOnSwitch()) {
+      return -1;
+    }
     int policy;
     sched_param param{};
     int ret = pthread_getschedparam(thread_, &policy, &param);
@@ -903,6 +1123,9 @@ class PosixCondition<Thread> : public PosixConditionBase {
 
   void set_priority(int new_priority) {
     WaitStarted();
+    if (ReapedOnSwitch()) {
+      return;
+    }
     sched_param param{};
     param.sched_priority = new_priority;
     int result = pthread_setschedparam(thread_, SCHED_FIFO, &param);
@@ -1028,6 +1251,12 @@ class PosixCondition<Thread> : public PosixConditionBase {
     bool is_current_thread = pthread_self() == thread_;
     {
       std::unique_lock<std::mutex> lock(state_mutex_);
+#if defined(__SWITCH__)
+      // A detached thread that ended is gone; its pthread_t must not be touched.
+      if (detached_ && state_ == State::kFinished) {
+        return false;
+      }
+#endif
       if (out_previous_suspend_count) {
         *out_previous_suspend_count = suspend_count_;
       }
@@ -1083,6 +1312,15 @@ class PosixCondition<Thread> : public PosixConditionBase {
       cond_.notify_all();
     }
     if (is_current_thread) {
+#if defined(__SWITCH__)
+      // Only when detached: the object destroyed during the unwinding would otherwise join its own thread.
+      if (detached_ && g_switch_unwind_exit.load(std::memory_order_relaxed)) {
+        throw ThreadExitUnwind{exit_code};
+      }
+      if (detached_) {
+        SwitchQueueForReap(pthread_self(), stack_block_, stack_block_size_);
+      }
+#endif
       pthread_exit(reinterpret_cast<void*>(exit_code));
     } else {
 #if REX_PLATFORM_ANDROID
@@ -1116,7 +1354,12 @@ class PosixCondition<Thread> : public PosixConditionBase {
   static void* ThreadStartRoutine(void* parameter);
   inline bool signaled() const override { return signaled_; }
   inline void post_execution() override {
+#if defined(__SWITCH__)
+    // A detached thread freed itself when it ended; joining it is undefined.
+    if (thread_ && !detached_) {
+#else
     if (thread_) {
+#endif
       pthread_join(thread_, nullptr);
     }
 #if defined(__APPLE__)
@@ -1129,6 +1372,11 @@ class PosixCondition<Thread> : public PosixConditionBase {
 #endif
   }
   pthread_t thread_;
+#if defined(__SWITCH__)
+  bool detached_ = false;
+  void* stack_block_ = nullptr;  // Switch: pool stack of a reaped thread (null = libnx allocated it)
+  size_t stack_block_size_ = 0;
+#endif
   bool signaled_;
   int exit_code_;
   State state_;             // Protected by state_mutex_
@@ -1542,12 +1790,36 @@ void* PosixCondition<Thread>::ThreadStartRoutine(void* parameter) {
                                        [thread] { return thread->handle_.suspend_count_ == 0; });
   }
 
+#if defined(__SWITCH__)
+  const bool reap = thread->handle_.detached_;
+  void* const reap_stack = thread->handle_.stack_block_;
+  const size_t reap_stack_size = thread->handle_.stack_block_size_;
+  try {
+    start_routine();
+  } catch (const ThreadExitUnwind&) {
+    // Terminate() already set the state, the exit code and the signal before throwing, and the thread object
+    // may already be gone (the last reference was released while unwinding): touch nothing of it.
+    g_switch_threads_ended.fetch_add(1, std::memory_order_relaxed);
+    LogThreadHeap("end (unwound)", 0);
+    current_thread_ = nullptr;
+    current_thread_condition_ = nullptr;
+    if (reap) {
+      SwitchQueueForReap(pthread_self(), reap_stack, reap_stack_size);
+    }
+    return nullptr;
+  }
+#else
   start_routine();
+#endif
 
   {
     std::unique_lock<std::mutex> lock(thread->handle_.state_mutex_);
     thread->handle_.state_ = State::kFinished;
   }
+#if defined(__SWITCH__)
+  g_switch_threads_ended.fetch_add(1, std::memory_order_relaxed);
+  LogThreadHeap("end", 0);
+#endif
 
   {
     std::unique_lock<std::mutex> lock(thread->handle_.mutex_);
@@ -1558,6 +1830,11 @@ void* PosixCondition<Thread>::ThreadStartRoutine(void* parameter) {
 
   current_thread_ = nullptr;
   current_thread_condition_ = nullptr;
+#if defined(__SWITCH__)
+  if (reap) {
+    SwitchQueueForReap(pthread_self(), reap_stack, reap_stack_size);
+  }
+#endif
   return nullptr;
 }
 

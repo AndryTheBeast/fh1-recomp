@@ -116,7 +116,11 @@ function(rexglue_switch_configure_target target_name)
 endfunction()
 
 function(rexglue_switch_add_nro target_name)
-    cmake_parse_arguments(ARG "" "NAME;AUTHOR;VERSION;ICON" "" ${ARGN})
+    cmake_parse_arguments(ARG "" "NAME;AUTHOR;VERSION;ICON;OUTPUT" "" ${ARGN})
+    # OUTPUT: file name of the .nro (without extension); default the target name.
+    if(NOT ARG_OUTPUT)
+        set(ARG_OUTPUT "${target_name}")
+    endif()
     if(NOT ARG_NAME)
         set(ARG_NAME "${target_name}")
     endif()
@@ -144,7 +148,7 @@ function(rexglue_switch_add_nro target_name)
             "${_dir}/${target_name}.stripped.elf"
         COMMAND "${CMAKE_STRIP}" --strip-all "${_dir}/${target_name}.stripped.elf"
         COMMAND "${REXGLUE_ELF2NRO}" "${_dir}/${target_name}.stripped.elf"
-            "${_dir}/${target_name}.nro" "--nacp=${_dir}/${target_name}.nacp" "--icon=${ARG_ICON}"
-        COMMENT "Packaging ${target_name}.nro"
+            "${_dir}/${ARG_OUTPUT}.nro" "--nacp=${_dir}/${target_name}.nacp" "--icon=${ARG_ICON}"
+        COMMENT "Packaging ${ARG_OUTPUT}.nro"
         VERBATIM)
 endfunction()

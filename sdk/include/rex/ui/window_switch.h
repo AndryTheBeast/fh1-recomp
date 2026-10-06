@@ -51,6 +51,8 @@ class WindowSwitch final : public Window {
   NWindow* nwindow_ = nullptr;
   bool has_focus_ = false;
   std::atomic<bool> paint_pending_{false};
+  // HandlePendingPaint is holding back a swapchain rebuild (switch_reconnect_delay_ms); for its log line.
+  bool reconnect_waiting_ = false;
 };
 
 }  // namespace rex::ui

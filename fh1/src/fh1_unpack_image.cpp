@@ -13,9 +13,13 @@
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <cstdlib>
+#endif
 
 REXCVAR_DEFINE_STRING(fh1_unpack_image, "", "FH1",
                       "Installer: write default.xex's loaded image to this file and exit without starting the game");
@@ -39,5 +43,9 @@ void Fh1UnpackImageIfAsked(const uint8_t* image) {
   }
   REXLOG_INFO("[unpack] image {:08X}-{:08X} {} {}", kImageBegin, kImageEnd, ok ? "written to" : "NOT written to", path);
   // The window and the SDK's threads exist already: end the process here, without their shutdown.
+#if defined(_WIN32)
   TerminateProcess(GetCurrentProcess(), ok ? 0 : 3);
+#else
+  std::_Exit(ok ? 0 : 3);
+#endif
 }

@@ -102,8 +102,8 @@ class SwitchMappedMemory : public MappedMemory {
 
 std::unique_ptr<MappedMemory> MappedMemory::Open(const std::filesystem::path& path, Mode mode,
                                                  size_t offset, size_t length) {
-  const std::string path = path.string();
-  FILE* f = fopen(path.c_str(), mode == Mode::kRead ? "rb" : "r+b");
+  const std::string path_value = path.string();
+  FILE* f = fopen(path_value.c_str(), mode == Mode::kRead ? "rb" : "r+b");
   if (!f) {
     return nullptr;
   }
@@ -131,27 +131,27 @@ std::unique_ptr<MappedMemory> MappedMemory::Open(const std::filesystem::path& pa
   if (len > kMaxInMemoryFile) {
     REXLOG_ERROR("MappedMemory: '{}' asks for {} MB and the Switch has no file mmap, so it would have to be read "
                  "whole into RAM. If it is the game's ISO, use the EXTRACTED files (game_root folder) instead.",
-                 path, len >> 20);
+                 path_value, len >> 20);
     fclose(f);
     return nullptr;
   }
 
   const size_t reserved = (len + kPage - 1) & ~(kPage - 1);
-  uint8_t* data = static_cast<uint8_t*>(memalign(kPage, reserved));
-  if (!data) {
-    REXLOG_ERROR("MappedMemory: no memory to read '{}' ({} MB)", path, len >> 20);
+  uint8_t* data_value = static_cast<uint8_t*>(memalign(kPage, reserved));
+  if (!data_value) {
+    REXLOG_ERROR("MappedMemory: no memory to read '{}' ({} MB)", path_value, len >> 20);
     fclose(f);
     return nullptr;
   }
 
   size_t read = 0;
   if (fseeko(f, static_cast<off_t>(offset), SEEK_SET) == 0) {
-    read = fread(data, 1, len, f);
+    read = fread(data_value, 1, len, f);
   }
   // Reading past the end with mmap gives zeros up to the end of the page; here
   // the tail is zero-filled the same way instead of being left as garbage.
   if (read < reserved) {
-    std::memset(data + read, 0, reserved - read);
+    std::memset(data_value + read, 0, reserved - read);
   }
 
   // For reading the file is no longer needed; for writing it is kept for the flush.
@@ -160,7 +160,7 @@ std::unique_ptr<MappedMemory> MappedMemory::Open(const std::filesystem::path& pa
     f = nullptr;
   }
 
-  return std::make_unique<SwitchMappedMemory>(data, len, f, mode, offset);
+  return std::make_unique<SwitchMappedMemory>(data_value, len, f, mode, offset);
 }
 
 std::unique_ptr<ChunkedMappedMemoryWriter> ChunkedMappedMemoryWriter::Open(
