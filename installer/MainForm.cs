@@ -2,6 +2,7 @@
 // one button, a progress bar): the same idea as a Windows program.
 using System;
 using System.Drawing;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -13,6 +14,11 @@ public sealed class MainForm : Form {
   readonly Label isoStatus_ = new Label();
   readonly Label folderStatus_ = new Label();
   readonly Button installButton_ = new Button();
+  readonly Button isoButton_ = new Button();
+  readonly Button folderButton_ = new Button();
+  Thread worker_;
+  volatile bool cancel_;
+  bool closeWhenStopped_;
   readonly ProgressBar progress_ = new ProgressBar();
   readonly Label stage_ = new Label();
   bool isoOk_;
@@ -54,23 +60,23 @@ public sealed class MainForm : Form {
                        "comes with this program, and nothing leaves your computer."));
 
     AddRow(table, Heading("1. Your disc image (.iso)"));
-    Button isoButton = new Button();
-    isoButton.Text = "Choose ISO...";
-    isoButton.Click += delegate { ChooseIso(); };
-    AddRow(table, ReadOnly(isoBox_), Sized(isoButton));
+    isoButton_.Text = "Choose ISO...";
+    isoButton_.Click += delegate { ChooseIso(); };
+    AddRow(table, ReadOnly(isoBox_), Sized(isoButton_));
     AddRow(table, Status(isoStatus_, "Choose the .iso of your own Forza Horizon disc."));
 
     AddRow(table, Heading("2. Where to install"));
-    Button folderButton = new Button();
-    folderButton.Text = "Choose folder...";
-    folderButton.Click += delegate { ChooseFolder(); };
-    AddRow(table, ReadOnly(folderBox_), Sized(folderButton));
+    folderButton_.Text = "Choose folder...";
+    folderButton_.Click += delegate { ChooseFolder(); };
+    AddRow(table, ReadOnly(folderBox_), Sized(folderButton_));
     AddRow(table, Status(folderStatus_, "Choose an empty folder (about 9 GB are needed)."));
 
     AddRow(table, Heading("3. Install"));
     installButton_.Text = "Install";
     installButton_.Enabled = false;
-    installButton_.Click += delegate { Install(); };
+    installButton_.Click += delegate { if (worker_ != null) Cancel(); else Install(); };
+    progress_.Maximum = 1000;
+    FormClosing += OnClosing;
     progress_.Dock = DockStyle.Fill;
     progress_.Margin = new Padding(S(3), S(6), S(12), S(6));
     AddRow(table, progress_, Sized(installButton_));
@@ -188,10 +194,83 @@ public sealed class MainForm : Form {
   }
 
   void Install() {
-    MessageBox.Show(this,
-                    "This first test version only checks the disc image and the folder. Nothing was downloaded, " +
-                    "copied or changed.",
-                    "Forza Horizon recomp - installer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    string iso = isoBox_.Text;
+    string folder = folderBox_.Text;
+    cancel_ = false;
+    isoButton_.Enabled = false;
+    folderButton_.Enabled = false;
+    installButton_.Text = "Cancel";
+    stage_.ForeColor = SystemColors.ControlText;
+    stage_.Text = "Copying the game's files from your disc image...";
+    worker_ = new Thread(delegate() { Work(iso, folder); });
+    worker_.IsBackground = true;
+    worker_.Start();
+  }
+
+  void Cancel() {
+    cancel_ = true;
+    installButton_.Enabled = false;
+    stage_.Text = "Stopping...";
+  }
+
+  // Closing the window while it works: stop the work first, then close.
+  void OnClosing(object sender, FormClosingEventArgs e) {
+    if (worker_ == null) return;
+    e.Cancel = true;
+    closeWhenStopped_ = true;
+    Cancel();
+  }
+
+  // On the worker thread.
+  void Work(string iso, string folder) {
+    string error = null;
+    bool finished = false;
+    try {
+      Installation.WriteMarker(folder);
+      using (XDisc disc = new XDisc(iso)) {
+        long total = Math.Max(1, disc.TotalBytes);
+        DateTime shown = DateTime.MinValue;
+        finished = disc.Extract(Path.Combine(folder, Checks.GameFolder), delegate(long done, string name) {
+          // Ten times a second is enough for the eye, and the window stays responsive.
+          DateTime now = DateTime.UtcNow;
+          if (done < total && (now - shown).TotalMilliseconds < 100) return;
+          shown = now;
+          BeginInvoke((MethodInvoker)delegate {
+            progress_.Value = (int)Math.Min(1000, done * 1000 / total);
+            if (!cancel_) {
+              stage_.Text = "Copying the game's files: " + Checks.Size(done) + " of " + Checks.Size(total) +
+                            (name.Length > 0 ? "  (" + name + ")" : "");
+            }
+          });
+        }, delegate { return cancel_; });
+      }
+    } catch (Exception e) {
+      error = e.Message;
+    }
+    BeginInvoke((MethodInvoker)delegate { Stopped(finished, error); });
+  }
+
+  void Stopped(bool finished, string error) {
+    worker_ = null;
+    if (closeWhenStopped_) {
+      Close();
+      return;
+    }
+    isoButton_.Enabled = true;
+    folderButton_.Enabled = true;
+    installButton_.Text = "Install";
+    installButton_.Enabled = true;
+    if (error != null) {
+      stage_.ForeColor = Bad;
+      stage_.Text = "Stopped: " + error;
+    } else if (!finished) {
+      stage_.ForeColor = SystemColors.GrayText;
+      stage_.Text = "Cancelled. What was copied stays in the folder: Install goes on from there.";
+    } else {
+      stage_.ForeColor = Good;
+      stage_.Text = "The game's files are copied (this test version stops here: no download and no shaders yet).";
+    }
+    CheckFolder();
   }
 }
 

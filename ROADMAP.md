@@ -322,7 +322,10 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
     - [x] The installer, step 1: the window, the ISO check (title ID and version from the disc's default.xex) and
           the folder check (`installer/`, built by `installer\build_installer.ps1`, 19 KB) - 2026-10-06; the
           user checks it by hand
-    - [ ] The installer: ISO extraction, download, library build, update button
+    - [x] The installer, step 2: Install copies the disc's files into `<folder>\game` with a progress bar and
+          Cancel (a cancelled copy goes on where it stopped; `fh1_install.txt` marks the folder). The user's ISO:
+          2432 files, 7.32 GB in 11 s, every file identical to game_root (SHA-1) - 2026-10-06
+    - [ ] The installer: download, library build, update button
     - [ ] Launchers (user, 2026-10-06): the main FH1.exe runs the emulated Direct3D 12 and gets a desktop
           shortcut; two .bat files in the game folder, one for the emulated Vulkan (`--gpu_backend=vulkan`) and
           one for the native renderer (`--fh1_renderer=native`). For that fh1.exe must find the game's files in

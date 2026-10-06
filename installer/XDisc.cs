@@ -129,6 +129,52 @@ public sealed class XDisc : IDisposable {
   public byte[] ReadStart(DiscFile file, int bytes) {
     return ReadAt(file.Offset, (int)Math.Min(bytes, file.Size));
   }
+
+  // Copies every file of the disc into `root`. A file that is already there with its full size is kept (an
+  // installation that was cancelled goes on where it stopped); a file being written has the name *.part until it
+  // is complete. `progress` gets the bytes done so far and the file in hand; `cancelled` is asked between blocks.
+  // Returns false when cancelled.
+  public bool Extract(string root, Action<long, string> progress, Func<bool> cancelled) {
+    Directory.CreateDirectory(root);
+    foreach (string folder in Folders) {
+      Directory.CreateDirectory(System.IO.Path.Combine(root, folder));
+    }
+    byte[] buffer = new byte[4 * 1024 * 1024];
+    long done = 0;
+    foreach (DiscFile file in Files) {
+      if (cancelled()) return false;
+      string target = System.IO.Path.Combine(root, file.Path);
+      Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target));
+      progress(done, file.Path);
+      FileInfo present = new FileInfo(target);
+      if (present.Exists && present.Length == file.Size) {
+        done += file.Size;
+        continue;
+      }
+      string part = target + ".part";
+      using (FileStream output = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None)) {
+        stream_.Position = file.Offset;
+        long left = file.Size;
+        while (left > 0) {
+          if (cancelled()) {
+            output.Close();
+            File.Delete(part);
+            return false;
+          }
+          int n = stream_.Read(buffer, 0, (int)Math.Min(buffer.Length, left));
+          if (n <= 0) throw new EndOfStreamException("Could not read '" + file.Path + "' from the disc image.");
+          output.Write(buffer, 0, n);
+          left -= n;
+          done += n;
+          progress(done, file.Path);
+        }
+      }
+      if (File.Exists(target)) File.Delete(target);
+      File.Move(part, target);
+    }
+    progress(done, "");
+    return true;
+  }
 }
 
 // What a .xex says about itself in its (unencrypted) header.

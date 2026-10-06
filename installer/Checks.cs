@@ -30,6 +30,8 @@ public static class Checks {
   public const long ExtraBytes = 750L * 1024 * 1024;
   // The file an installation leaves in its folder: a folder that has it may be installed into again.
   public const string MarkerName = "fh1_install.txt";
+  // The game's files inside the installation folder.
+  public const string GameFolder = "game";
 
   public static string Size(long bytes) {
     if (bytes >= 1024L * 1024 * 1024) return (bytes / (1024.0 * 1024 * 1024)).ToString("0.0") + " GB";
