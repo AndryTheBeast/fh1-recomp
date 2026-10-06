@@ -81,7 +81,7 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
 5. Run `run_fh1.bat` once (extracts the disc into game_root), then `build_fh1.bat`.
 6. Bring the user's saves: `%USERPROFILE%\OneDrive\Documentos\fh1\` (OneDrive syncs it on the same
    account; otherwise copy it over by hand). Copy `FH1-recomp\claude_memory\*` to
-   `%USERPROFILE%\.claude\projects\C--Users-andre-Desktop-FH1-recomp\memory\`.
+   `%USERPROFILE%\.claude\projects\C--Users-<user>-Desktop-FH1-recomp\memory\`.
 
 ## Layout
 
@@ -451,3 +451,14 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   `FH1Installer.exe --install` over the same folder updates it in a second.
 - Tests cannot use the user's saves (the safety system refused the scripted controller there, and the user moved
   the save out of Documents on 2026-10-06): `--user_data_root=<empty folder>` and the new-game route.
+- **2026-10-06, twelfth session: shaders made several at once, the list at 1067** (status document, "Twelfth
+  session"; not in a release yet). The developer's build needs the shader tools too (`run_fh1.bat` passes
+  `--fh1_native_shader_tools`): without them it drops every draw of the vertex shaders its library lacks, at
+  every start, and it looks like a texture fault (read `without VS=` in the log's last `C5a: loads=` line before
+  anything else). A black test window is not "the start": look at a shot before telling the user a run is fine
+  (on 2026-10-06 a run was called healthy from its `[fps]` lines while the presenter had stopped painting,
+  `paint mode -> none`). Two runs with the same options can differ in that way, so one comparison of two runs
+  says little about a fault that comes and goes. The first-run test of an installed copy is one script that
+  patches a copy of `tools\auto_test.ps1` (its `$Exe`, no `--game_data_root`), sets `%LOCALAPPDATA%\AMD\VkCache`
+  aside and empties the copy's `cache` and `shaders_extra`; with the driver cache aside the boot keys go from
+  40 s (Start every 4 s to 64 s, A every 4 s to 150 s) and the accelerator from 156 s.

@@ -5378,6 +5378,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     const auto now = std::chrono::steady_clock::now();
     ReportChangesPipeline(now);  // reads its cvar every frame and writes every 20 s
     TryPrewarm();       // starts the thread as soon as the library is loaded
+    HandListToBackground();  // one comparison unless a shader made on this PC was just taken in
     ReportPrewarm(now);  // every 10 s, if there is anything new, and its guard
     if (now - pipelines_direct_report_ < std::chrono::seconds(10)) {
       return;
@@ -13075,7 +13076,7 @@ class DrawsVulkanImpl final : public DrawsVulkan {
    * longer in the library, or from another dynamic state mode, are skipped.
    */
   enum : uint8_t { kListPending = 0, kListPrewarm = 1, kListWithoutShader = 2, kListFailed = 3,
-                   kListOtherMode = 4 };
+                   kListOtherMode = 4, kListHanded = 5 /* HandListToBackground */ };
   static constexpr uint64_t kNsCompiled = 5000000;  // more than this: really compiled (a cache hit is 0-2 ms)
   static constexpr uint64_t kNsSlow = 20000000;     // the ring creating one already prewarmed: mismatch
 
@@ -13515,6 +13516,19 @@ class DrawsVulkanImpl final : public DrawsVulkan {
     if (!library || !library->loaded() || layout_pipeline_ == VK_NULL_HANDLE || !RecordOf(key, entry, p, job->r)) {
       return false;
     }
+    if (!QueueBackground(job, true)) {
+      return false;
+    }
+    background_.emplace(fingerprint, std::move(job));
+    ++background_started_;
+    ++background_left_out_;
+    return true;
+  }
+
+  // Ring only: gives a job to the helper threads (started with the first one). first = ahead of the others: a
+  // pipeline a draw is waiting for goes before the list's records handed over by HandListToBackground. False
+  // when no thread could be started.
+  bool QueueBackground(const std::shared_ptr<JobBackground>& job, bool first) {
     {
       std::lock_guard<std::mutex> lock(background_mutex_);
       if (background_threads_.empty()) {
@@ -13530,13 +13544,74 @@ class DrawsVulkanImpl final : public DrawsVulkan {
           return false;
         }
       }
-      background_queue_.push_back(job);
+      if (first) {
+        background_queue_.push_front(job);
+      } else {
+        background_queue_.push_back(job);
+      }
     }
     background_wake_.notify_one();
-    background_.emplace(fingerprint, std::move(job));
-    ++background_started_;
-    ++background_left_out_;
     return true;
+  }
+
+  /*
+   * FH1, ring only, every frame: the list's records that waited for a shader made on this PC. On a first run the
+   * prewarm walk leaves out every record whose shader the library built from the disc lacks (kListWithoutShader).
+   * When the session takes such a shader in, its pipelines used to be met one by one by the ring, each compiled
+   * by a helper thread only then, with its draw left out meanwhile: the object showed late twice, once for the
+   * shader and once for each pipeline. Here those records go to the helper threads the moment the shader is taken
+   * in, under the shader's number of this session, so most are in the driver's cache before the ring asks.
+   * Nothing waits: a pipeline asked for before its turn is left out as before (and goes ahead in the queue).
+   */
+  void HandListToBackground() {
+    const ShadersNative* library = LibraryActive();
+    if (!library || !library->loaded()) {
+      return;
+    }
+    const uint32_t taken_in = library->TakenIn();
+    if (taken_in == list_taken_in_ || !prewarm_finished_.load(std::memory_order_acquire)) {
+      return;  // the walk still writes state_list_: looked at again when it is done
+    }
+    list_taken_in_ = taken_in;
+    if (cache_pipelines_ == VK_NULL_HANDLE || layout_pipeline_ == VK_NULL_HANDLE ||
+        !REXCVAR_GET(fh1_native_pipelines_background)) {
+      return;
+    }
+    uint32_t handed = 0;
+    for (size_t i = 0; i < list_file_.size(); ++i) {
+      if (state_list_[i] != kListWithoutShader) {
+        continue;
+      }
+      RegisterPipeline& r = list_file_[i];
+      const EntryShader* vs = library->ByContainerFingerprint(r.fingerprint_vs, true);
+      const EntryShader* ps = r.key.ps ? library->ByContainerFingerprint(r.fingerprint_ps, false) : nullptr;
+      if (!vs || (r.key.ps && !ps) || r.key.fill2 != prewarm_eds_) {
+        continue;
+      }
+      r.key.vs = vs->number + 1;
+      if (r.key.ps) {
+        r.key.ps = ps->number + 1;
+      }
+      const uint64_t fingerprint = XXH3_64bits(&r.key, sizeof(r.key));
+      auto job = std::make_shared<JobBackground>();
+      job->r = r;
+      if (background_.count(fingerprint) || !QueueBackground(job, false)) {
+        continue;
+      }
+      // The record now names this session's numbers: the ring finds it under its new key (not a new pipeline for
+      // the list), and it is saved with the others.
+      state_list_[i] = kListHanded;
+      index_list_.emplace(fingerprint, i);
+      background_.emplace(fingerprint, std::move(job));
+      ++handed;
+    }
+    if (handed) {
+      background_handed_ += handed;
+      list_without_save_ += 1;
+      REXLOG_INFO("[native] C6 list: {} records waited for a shader made on this PC and went to the helper threads "
+                  "when it was taken in ({} so far, {} shaders taken in)",
+                  handed, background_handed_, taken_in);
+    }
   }
 
   void LoopBackground() {
@@ -14847,6 +14922,8 @@ class DrawsVulkanImpl final : public DrawsVulkan {
   uint64_t ring_window_start_ns_ = 0, ring_window_spent_ns_ = 0, ring_at_once_ = 0, ring_at_once_reported_ = 0;
   bool ring_window_pending_ = false;
   uint64_t background_reported_ = 0;
+  uint32_t list_taken_in_ = 0;      // ShadersNative::TakenIn() when HandListToBackground last looked
+  uint64_t background_handed_ = 0;  // list records it gave to the helper threads
   std::thread prewarm_thread_;
   const ShadersNative* library_prewarm_ = nullptr;
   uint32_t prewarm_eds_ = 0;

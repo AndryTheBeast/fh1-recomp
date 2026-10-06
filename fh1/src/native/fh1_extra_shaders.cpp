@@ -43,6 +43,11 @@ REXCVAR_DEFINE_INT32(fh1_native_extra_shaders_wait_ms, 0, "FH1",
                      "pipelines compiled in the same seconds made a frame of more than 3.2 s, which stops the game "
                      "for good; 2026-10-06, twice, with 20000 and with 1000)");
 
+REXCVAR_DEFINE_INT32(fh1_native_extra_shaders_threads, -1, "FH1",
+                     "Native renderer: how many shaders are made on this PC at once (each is two tools run below "
+                     "normal priority; a big one takes up to four seconds, and a first drive asks for dozens). "
+                     "-1 = a quarter of the processor's threads, at least 1 and at most 4");
+
 namespace fh1::native {
 namespace {
 
@@ -458,9 +463,19 @@ void Request(bool vertices, uint64_t fingerprint, std::span<const uint32_t> micr
     std::lock_guard<std::mutex> lock(w.mutex);
     if (!w.asked.insert(fingerprint ^ (vertices ? 0x8000000000000000ull : 0)).second) return;
     w.jobs.push_back(Job{vertices, fingerprint, std::vector<uint32_t>(microcode.begin(), microcode.end())});
+    REXLOG_INFO("[native] C5c: {}_{:016X} ({} words) asked for; {} waiting", vertices ? 'v' : 'p', fingerprint,
+                microcode.size(), w.jobs.size());
     if (!w.started) {
       w.started = true;
-      std::thread([&w] { w.Loop(); }).detach();
+      // Several at once: one after the other, the shaders of a first drive were ready up to a minute after the
+      // game first asked for them (each has its own work folder; the tools are separate processes).
+      const int32_t requested = REXCVAR_GET(fh1_native_extra_shaders_threads);
+      const uint32_t threads = requested > 0 ? std::min<uint32_t>(uint32_t(requested), 8)
+                                             : std::clamp<uint32_t>(std::thread::hardware_concurrency() / 4, 1, 4);
+      REXLOG_INFO("[native] C5c: shaders made on this PC: {} at once", threads);
+      for (uint32_t t = 0; t < threads; ++t) {
+        std::thread([&w] { w.Loop(); }).detach();
+      }
     }
   }
   w.wake.notify_one();

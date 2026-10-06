@@ -12,6 +12,66 @@ plan changed that night: the other fixes of this list wait; next is the offline 
 per Swap 21.0-21.2 ms). The user saw the body fix and the first tyre fix in screenshots ("the tyre seems a little
 too upwards, even going inside the rim": fixed after that); nobody has driven this build yet.
 
+## Twelfth session (2026-10-06): several shaders at once, the list at 1067, a black window
+
+Not in a release yet (the files of `v0.1.0-pre1` are those of the eleventh session). The user's answers at the
+start: the people at the diner and the festival are solid and whole, the game never stood still, the crowd was
+not looked at. No issue on GitHub.
+
+1. **Shaders made on the PC, several at once** (`fh1_native_extra_shaders_threads`, -1 = a quarter of the
+   processor's threads, 1 to 4; `fh1_extra_shaders.cpp`). Each job has its own work folder and the tools are
+   separate processes, so the worker loop simply runs on several threads. New log line `C5c: <name> asked for;
+   N waiting`, so the time from "asked" to "made" can be read.
+2. **The list's records that waited for such a shader go to the helper threads when it is taken in**
+   (`HandListToBackground` in `fh1_native_draws.cpp`, every frame, one comparison unless
+   `ShadersNative::TakenIn()` changed). The prewarm walk leaves those records out (`kListWithoutShader`, 198 of
+   1067 on an installed copy); they get this session's shader numbers, a new state `kListHanded`, their place in
+   `index_list_` under the new key, and a job at the back of the queue (a pipeline a draw waits for goes to the
+   front, `QueueBackground(job, true)`). Nothing waits on the ring.
+3. **Measured on an installed test copy, driver cache set aside, new game, 330 s** (the accelerator held from
+   156 s, nothing steers; `build_logs\test-step4one-*` = one shader at a time, `test-step4four-*` = four):
+
+   | | one at a time | four at once |
+   | --- | --- | --- |
+   | shaders made / failed | 25 / 0 | 30 / 0 |
+   | asked -> made, mean / longest | 1.5 s / 6.6 s | 0.8 s / 3.6 s |
+   | draws without a vertex shader | 14,302 | 8,985 |
+   | longest frame | 382 ms (at 28 s) | 325 ms (at 30 s) |
+   | list records handed over | 99 | 116 |
+   | pipelines the ring took from handed records | 30, 5.9 ms each | 42, 3.6 ms each |
+   | pipelines no list knew | 13 | 14 |
+
+   The two runs do not drive the same metres (a different number of shaders is met), so the rows compare
+   roughly, not exactly. Against the eleventh session's run (`test-installed5`, the 887 list, no hand-over):
+   113 pipelines no list knew and 10,924 draws left out while they were built, now 13-14 and 2,308-6,354. The
+   picture of the drive is right (`test-step4four-20261006-151814-210s.png`); nothing in how a frame is drawn
+   changed, so no emulated shot was taken.
+4. **The shipped list has 1067 pipelines** (887 + 180 from the user's 38 minutes on the developer's build: the
+   first drive, garage, three paints, upgrades, autoshow; commit 274164e). 869 of them are prepared on an
+   installed copy in 20-24 s with no driver cache.
+5. **The developer's build had no shader tools**, so it never made the vertex shaders its library lacks: flat
+   ground by the lake 0.6 mi before the festival, at every start (the user's two screenshots,
+   `build_logs\reference\user-devbuild-ground-flat-*`; logs: `vertex shader not identified` twice,
+   `draws ... without VS=181891` and `209578`). An installed copy was never affected. `run_fh1.bat` now passes
+   `--fh1_native_shader_tools=<repo>\installer\out\package\tools` when that folder exists (21 shaders made in
+   the user's session, none failed, the ground right). **A "without VS" count in the tens of thousands in a
+   log's last `C5a: loads=` line means missing shaders, whatever else the picture suggests.**
+6. **A black window for a whole run, once** (test window 1, and the user saw it): the SDK's presenter went to
+   `Presenter: paint mode -> none` 2.5 s after the start, 50 ms after the "Preparing shaders" screen added its
+   UI drawer, and never painted again, while the game ran and drew at 30 fps. Before any shader was asked for,
+   so not from this session's change; three fresh starts after it and the long window 2 were fine. The line is
+   in 2 of the 319 logs of 2026-10-05 and 06 (`test-s7bN-20261005-225914.log` is the other). Where it comes
+   from: `Presenter::PaintFromUIThread` (sdk/src/ui/presenter.cpp, about line 620) sets the mode to none when
+   the surface connection is not paintable after a UI-thread paint; who brings it back when no window event
+   follows has not been read yet. Open (ROADMAP). **Before reading the numbers of an unattended run, look at
+   one shot** (`tools/fh1_pic_stats.py`: all zeros = this fault; search the log for `paint mode -> none`).
+7. **What the user saw in the session** (pictures in `build_logs\reference\user-*-20261006.webp`): the
+   Volkswagen's dashboard is dark with dim dials (`user-dashboard-vw-dark`), the Mustang's works but is dark at
+   dusk, the Subaru's is lit; a car's thumbnail is sometimes a grey card and right after the third paint
+   (`user-thumbnail-grey`, `-right`); pink triangles on the tyre icons of the upgrade menu
+   (`user-upgrade-tyres-pink`: not checked against the emulated picture, they may be the game's own); the
+   autoshow is right.
+
 ## After pre-release 1: flat ground and missing characters (eleventh session, 2026-10-06)
 
 Two faults fixed, both found from the logs before any capture. The user asked the same day for the files of

@@ -276,6 +276,19 @@ what the Switch needs. State, open problems, how to test: **`docs/native-rendere
   - [ ] After the first pre-release (user, 2026-10-06): with a shader the game makes on the PC for the first time,
         the object's texture takes a long time to show (the release texts warn that the first run is rough);
         and the "Preparing shaders" text does not show on the two emulated launchers (the user's impression)
+  - [x] Shaders the library lacks are made several at once (up to four), and the list's records that waited
+        for one go to the helper threads when it is taken in (2026-10-06, twelfth session; status document,
+        "Twelfth session": mean wait 1.5 s -> 0.8 s, longest 6.6 s -> 3.6 s, no frame above 0.4 s). Not in a
+        release yet
+  - [x] The shipped pipeline list: 1067 (the user's 38-minute session of 2026-10-06 added 180)
+  - [x] The developer's build makes the shaders its library lacks (`run_fh1.bat` passes the installer's tools
+        folder): flat ground by the lake on the first drive, never on an installed copy
+  - [ ] **A black window for a whole run, rarely** (2 of 319 starts on 2026-10-05 / 06): the SDK's presenter goes
+        to "paint mode -> none" in the first seconds and never paints again while the game runs (status
+        document, "Twelfth session", item 6). Not looked at beyond the log line
+  - [ ] User, 2026-10-06 (developer's build, second drive): the Volkswagen's dashboard is dark with dim dials
+        while the Subaru's is lit (so not every dashboard: add to the dashboard item above); the pink triangles
+        on the tyre icons of the upgrade menu (check against the emulated picture first)
   - [x] The native renderer is the default (user, 2026-10-06, for the first pre-release, with its known faults
         listed in docs/install.md); the emulated GPU is `--fh1_renderer=xenos`
 

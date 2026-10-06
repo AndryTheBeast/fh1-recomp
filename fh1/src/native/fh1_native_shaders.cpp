@@ -692,6 +692,10 @@ uint32_t ShadersNative::TakeInMade() {
   return d.taken_in;
 }
 
+uint32_t ShadersNative::TakenIn() const {
+  return data_->taken_in;
+}
+
 const EntryShader* ShadersNative::IdentifyContainer(
     std::span<const uint8_t> container) const {
   const Data& d = *data_;

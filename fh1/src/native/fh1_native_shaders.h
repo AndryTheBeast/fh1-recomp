@@ -114,6 +114,8 @@ class ShadersNative {
   // kept for the whole session, that answer left the ground of the first drive one flat color until a restart.
   // Only the ring thread uses it; one atomic read when nothing is new.
   uint32_t TakeInMade();
+  // That number as of the last TakeInMade, without taking anything in. Only the ring thread uses it.
+  uint32_t TakenIn() const;
 
   StatisticsShaders Statistics() const;
 
