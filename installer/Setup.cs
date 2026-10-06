@@ -117,10 +117,21 @@ public static class Source {
           string zip = Path.Combine(download, zips[i]);
           string address = Base.EndsWith("/") || Base.EndsWith("\\") ? Base + zips[i] : Base + "/" + zips[i];
           int index = i;
-          Web.Download(new Uri(address).AbsoluteUri, zip, delegate(long done, long total) {
-            progress(total > 0 ? (index + (double)done / total) / 2 : index / 2.0,
-                     "Downloading " + zips[index] + ": " + Checks.Size(done) + (total > 0 ? " of " + Checks.Size(total) : ""));
-          }, cancelled);
+          try {
+            Web.Download(new Uri(address).AbsoluteUri, zip, delegate(long done, long total) {
+              progress(total > 0 ? (index + (double)done / total) / 2 : index / 2.0,
+                       "Downloading " + zips[index] + ": " + Checks.Size(done) + (total > 0 ? " of " + Checks.Size(total) : ""));
+            }, cancelled);
+          } catch (WebException e) {
+            // Plain words instead of "The remote server returned an error: (404) Not Found."
+            HttpWebResponse response = e.Response as HttpWebResponse;
+            if (response != null && response.StatusCode == HttpStatusCode.NotFound) {
+              throw new InvalidOperationException("could not find " + zips[i] + " of version " + Program.Version +
+                                                  " on GitHub. Get the newest FH1Installer.exe from the release page.");
+            }
+            throw new InvalidOperationException("could not download " + zips[i] + " (" + e.Message +
+                                                "). Check the internet connection and click Install again.");
+          }
           ZipFile.ExtractToDirectory(zip, Path.Combine(download, parts[i]));
         }
         package = download;
