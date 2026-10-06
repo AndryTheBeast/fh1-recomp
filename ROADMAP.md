@@ -367,7 +367,7 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           a folder next to itself when `--game_data_root` is not given (today: an error box)
     - [x] Install guide and known issues (`docs/install.md`), release text
           (`docs/release-notes-v0.1.0-pre1.md`), README section, issue form asking for the log
-          (`.github/ISSUE_TEMPLATE/bug_report.md`), `Read me.txt` written into the game's folder - 2026-10-06
+          (`.github/ISSUE_TEMPLATE/bug_report.yml`, a form with required fields since the repository went public), `Read me.txt` written into the game's folder - 2026-10-06
     - [x] Logging in the pre-releases (user, 2026-10-06): on by default (`logs\fh1_NNN.log` next to FH1.exe,
           info level, the newest 20); the crash report now goes to `logs\fh1.crash.txt` too - 2026-10-06
     - [x] Icons for FH1.exe and the installer (`tools/fh1_make_icon.py`): the repository holds a drawn one

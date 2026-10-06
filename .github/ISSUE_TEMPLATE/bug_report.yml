@@ -1,0 +1,113 @@
+name: Problem with the game or the installer
+description: Something crashed, looks wrong, runs badly or did not install
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for trying the pre-release. Before you write:
+
+        - Look at the [known issues](https://github.com/AndryTheBeast/fh1-recomp/blob/main/docs/install.md#known-issues): what is listed there does not need a new report.
+        - **The first run is rough**: objects and textures that appear late the first time you see a place are expected. Report it if the same place is still wrong the second time.
+        - One problem per report, please. **Never attach files of the game itself.**
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem is it?
+      options:
+        - The picture looks wrong
+        - The game crashed or closed by itself
+        - The game froze or does not go on
+        - It runs slowly or stutters
+        - Sound
+        - Controller or keyboard
+        - Saving or loading
+        - The installer
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: launcher
+    attributes:
+      label: How did you start the game?
+      description: If you can, try the other launchers too and tick every one that shows the problem.
+      multiple: true
+      options:
+        - The desktop shortcut or FH1.exe (native Vulkan renderer, the default)
+        - FH1 (emulated Direct3D 12).bat
+        - FH1 (emulated Vulkan).bat
+        - It did not get that far (the installer)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected to see instead.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where in the game, and how to get there?
+      description: >
+        The place on the map, the race or the menu, the car, day or night. If it happens every time, the steps
+        that lead to it.
+      placeholder: "Example: Montano Plains outpost, at night, standing in front of the stage. Every time."
+    validations:
+      required: true
+  - type: dropdown
+    id: often
+    attributes:
+      label: How often does it happen?
+      options:
+        - Every time
+        - Sometimes
+        - It happened once
+        - I did not try again
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: Graphics card
+      description: "Task Manager > Performance > GPU shows its name in the top right corner."
+      placeholder: "Example: AMD Radeon RX 6600, NVIDIA GeForce RTX 3060, Intel Iris Xe"
+    validations:
+      required: true
+  - type: input
+    id: pc
+    attributes:
+      label: Processor and Windows
+      placeholder: "Example: Ryzen 5 5600, Windows 11"
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version of the port
+      description: The title bar of the installer shows it.
+      placeholder: "0.1.0-pre1"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The log (please attach it)
+      description: |
+        Open the folder you installed the game into, then **logs**. Drag the newest `fh1_NNN.log` into this box, or the one from the run that went wrong. After a crash, add `logs\fh1.crash.txt` too.
+
+        A log can contain your Windows user name inside file paths: open it in Notepad first if that matters to you.
+      placeholder: Drag the file here. Without a log most problems cannot be found.
+    validations:
+      required: true
+  - type: textarea
+    id: pictures
+    attributes:
+      label: Screenshots or a short video
+      description: >
+        They help a lot for picture faults. Best of all: the same spot with FH1.exe and with one of the
+        emulated launchers.
+    validations:
+      required: false
