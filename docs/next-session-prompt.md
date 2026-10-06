@@ -28,7 +28,7 @@ Done already (check it in the code before you trust it):
 
 Do it in this order:
 1. Ask me what my checks gave, and fix what they found before anything is published:
-   - the installer window on my installed copy (C:\Users\andre\Downloads\FH1: the button should read Update;
+   - the installer window on my installed copy (%USERPROFILE%\Downloads\FH1: the button should read Update;
      afterwards FH1.exe, the two .bat files, Read me.txt, the desktop shortcut, the new icons);
    - FH1.exe of that copy (native renderer): first-person view and the paint booth (its shader library has none
      of the run-time shaders: the game makes them); the two .bat files; the mouse pointer hiding; F3 on all three;

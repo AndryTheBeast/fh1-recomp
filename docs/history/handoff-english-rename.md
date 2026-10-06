@@ -17,7 +17,7 @@ The rename below was done on 2026-10-04. What changed for daily use:
 ## The task as it was written (user request, 2026-10-04): everything in English
 The user wants the Spanish code translated to English: Stevens' (nfsmw-nx) code in this repo and our own.
 GoatHonks already did it for nfsc-recomp (his ROADMAP: "Housekeeping: English names, DONE 2026-10-03").
-His updated repo is at `C:\Users\andre\Desktop\FH1-recomp\repos\nfsc-recomp-main\` (one folder up from before;
+His updated repo is at `%USERPROFILE%\Desktop\FH1-recomp\repos\nfsc-recomp-main\` (one folder up from before;
 no inner `nfsc-recomp-main` folder any more). His renamed native renderer is `carbon/src/native/nfsc_native_*.{cpp,h}`.
 
 Suggested way (cheapest and safest):

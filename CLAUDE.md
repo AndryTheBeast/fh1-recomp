@@ -45,7 +45,7 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
   (Intel Iris Plus G7) and a laptop with an Intel HD 630. PS4 controller through DS4Windows (can
   show up twice: real pad + virtual Xbox 360 pad — handled by `fh1_merge_controllers`). The user
   is not a programmer: short plain explanations, and say exactly what to run.
-- Everything lives in `C:\Users\andre\Desktop\FH1-recomp\`:
+- Everything lives in `%USERPROFILE%\Desktop\FH1-recomp\`:
   - the ISO, `game_root\` (full extracted disc), `README.txt`, `claude_memory\` (backup copy of
     Claude's memory notes), `.claude\settings.json` (permissions, from tools\claude_settings.json)
   - `fh1-recomp\` = this repo (clone), built by `build_fh1.bat`
@@ -69,14 +69,15 @@ No game data in git: no `.xex`, no disc files, and **none of the C++ generated f
    `HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy`.
    If the repo folder was copied from another PC, delete `out\`, `fh1\out\` and `sdk\out\`: their
    CMake caches keep the old PC's tool paths (e.g. a missing ninja.exe).
-2. In `C:\Users\andre\Desktop\FH1-recomp\`: put the ISO there, run
+2. In `%USERPROFILE%\Desktop\FH1-recomp\`: put the ISO there, run
    `git clone https://github.com/AndryTheBeast/fh1-recomp.git`, and copy
    `fh1-recomp\tools\build_fh1.bat` and `run_fh1.bat` next to the ISO.
 3. Run `fh1-recomp\tools\setup_windows.bat` (winget installs Git, CMake, Ninja, Python 3.13, LLVM,
    VS 2022 Build Tools C++ workload, VC++ redist, GitHub CLI; accept the UAC prompts).
 4. Copy `fh1-recomp\tools\claude_settings.json` to `FH1-recomp\.claude\settings.json` so Claude can
-   build, read logs and commit without asking each time. Set git's identity:
-   `git config --global user.name AndryTheBeast` and `git config --global user.email antigotgvs@gmail.com`.
+   build, read logs and commit without asking each time (since the repository is public, 2026-10-06, the file
+   holds `%USERPROFILE%` and `YOUR_EMAIL`: put the real folder and address into the copy). Set git's identity:
+   `git config --global user.name AndryTheBeast` and `git config --global user.email <the owner's e-mail>`.
 5. Run `run_fh1.bat` once (extracts the disc into game_root), then `build_fh1.bat`.
 6. Bring the user's saves: `%USERPROFILE%\OneDrive\Documentos\fh1\` (OneDrive syncs it on the same
    account; otherwise copy it over by hand). Copy `FH1-recomp\claude_memory\*` to
@@ -385,7 +386,7 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   and 2 done (window, ISO and folder checks, disc copy into `<folder>\game`). fh1.exe for it: the `game` folder
   next to the exe is the default game folder, `--fh1_unpack_image=<file>` writes default.xex's image and exits,
   and the binaries hold no path of the build PC (`-ffile-prefix-map` in fh1/CMakeLists.txt: source names in logs
-  now start at `fh1-recomp/`). Test folder: `C:\Users\andre\Desktop\FH1-install-test` (+ `-saves` next to it for
+  now start at `fh1-recomp/`). Test folder: `%USERPROFILE%\Desktop\FH1-install-test` (+ `-saves` next to it for
   `--user_data_root`); never test an installed game on the user's real saves.
   Steps 3 and 4 too: `installer\make_package.ps1` gathers `installer\out\package` (port + shader tools; it warns
   when a file names this PC's user folder), Install copies it and builds the library (`ShaderLibrary.cs`, the
