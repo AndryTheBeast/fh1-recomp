@@ -328,6 +328,11 @@ cores than the Legion Go, so it needs the native renderer, the pre-translated sh
 spinning, audio decoding on a worker, and probably lower handheld settings. What costs time on PC
 today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/`.
 
+- [ ] **An early build only to measure speed (user, 2026-10-06: the next session)**: an NRO that starts and
+      shows the game, however slowly, with StevensND's and GoatHonks' Switch fixes taken where they fit;
+      frames per second and where the time goes. Not for playing, not published. The questions to settle
+      first (a homebrew console, installing devkitPro, branch or separate repository) are in
+      docs/next-session-prompt.md
 - [ ] Build with devkitA64 and the Horizon layer in `sdk/`
 - [ ] Memory map, threads, audio out
 - [ ] Native renderer and shader library on the console

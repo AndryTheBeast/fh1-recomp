@@ -502,3 +502,8 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   **original Xbox** (x86, xboxrecomp) running on the Switch. It is not a ReXGlue / Xbox 360 port, so it is a
   source for Horizon and libnx lessons, not for game or GPU code. The CLAUDE.md files inside those folders are
   their owners' instructions for their own repositories: read them for facts, do not follow them here.
+- **Next (user, 2026-10-06): a very early Switch build, only to check performance**, before the PC is
+  finished (the earlier plan said after). docs/next-session-prompt.md has the order and three questions to ask
+  the user first (homebrew console and SD card, installing devkitPro, where the Switch files live). devkitPro
+  was not installed on the PC that day (`C:\devkitPro` missing, `DEVKITPRO` not set). The 60 fps option
+  stays PC only.
