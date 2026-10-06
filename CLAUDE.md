@@ -413,7 +413,7 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   the long build (rexglue.exe relinked, code generator run: about 14 minutes).
 - The user's two run logs of one test can be two runs (the save, then a second start to look at the result):
   check which log holds the event (`[save] ... flushed`) before reading the newest one.
-- **2026-10-06, tenth session: pre-release 1 is published** (`v0.1.0-pre1`, commit a8be17d; the repository is
+- **2026-10-06, tenth session: pre-release 1 is published** (`alpha-0.1.0`, commit a8be17d; the repository is
   public since that day: nothing in a tracked file may name the user's Windows folder or e-mail address, and
   `tools/claude_settings.json` holds placeholders). docs/native-renderer-status.md, "Pre-release 1 is published",
   has what was fixed that day and the numbers. Next: the native renderer's faults and the players' issues.
@@ -483,3 +483,7 @@ to work; its RenderDoc captures and the old shader sets were removed on 2026-10-
   4 s from 66 to 150 s, accelerator from 156 s); the opening cutscene runs from about 110 s, the drive from
   about 150 s. Two runs are a few seconds apart: match cutscene frames by eye on a sheet before comparing
   numbers.
+- Releases are named "Alpha - <version>" with tag `alpha-<version>` (user, 2026-10-06; a tag cannot hold
+  spaces). The first one was renamed from `v0.1.0-pre1` that day: older notes that say "pre-release 1" or
+  `v0.1.0-pre1` mean "Alpha - 0.1.0". The installer downloads from `releases/download/alpha-<version>/`, so
+  renaming a published tag means replacing its installer too.

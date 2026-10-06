@@ -354,7 +354,7 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
 ## Maybe later
 
 - [x] **First pre-release as a Windows installer app (user, 2026-10-06; replaces "source-only")** - **published
-      on 2026-10-06 as `v0.1.0-pre1`** (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1;
+      on 2026-10-06 as `alpha-0.1.0`** (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/alpha-0.1.0;
       the repository went public that day): a simple GUI
       like StevensND's installer page for nfsmw-nx: downloads the pre-built fh1.exe (the user's decision), the
       user chooses their ISO and a folder, it extracts the disc and builds the shader library there. To solve:
@@ -365,7 +365,7 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
       the pipeline list: 133 MB, 38 MB zipped) and `fh1-shader-tools.zip` (translator, unpacker, packer, DXC:
       11 MB zipped), extracts the ISO, builds the shader library (about 10 minutes); the emulated GPU is the
       default and the native renderer a second launcher; unsigned (the guide says Smart App Control must be
-      off); tag `v0.1.0-pre1`
+      off); tag `alpha-0.1.0`
       **Changed by the user later that day: the native renderer is the default** (`fh1_renderer` defaults to
       `native`; FH1.exe without its shader library falls back to the emulated GPU), and the two .bat files
       start the emulated Direct3D 12 (`--fh1_renderer=xenos`) and the emulated Vulkan
@@ -411,7 +411,7 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           one for the native renderer (`--fh1_renderer=native`). For that fh1.exe must find the game's files in
           a folder next to itself when `--game_data_root` is not given (today: an error box)
     - [x] Install guide and known issues (`docs/install.md`), release text
-          (`docs/release-notes-v0.1.0-pre1.md`), README section, issue form asking for the log
+          (`docs/release-notes-alpha-0.1.0.md`), README section, issue form asking for the log
           (`.github/ISSUE_TEMPLATE/bug_report.yml`, a form with required fields since the repository went public), `Read me.txt` written into the game's folder - 2026-10-06
     - [x] Logging in the pre-releases (user, 2026-10-06): on by default (`logs\fh1_NNN.log` next to FH1.exe,
           info level, the newest 20); the crash report now goes to `logs\fh1.crash.txt` too - 2026-10-06
@@ -432,7 +432,7 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           (`--image`, written as `*_local.ico`, ignored by git; the user's decision) - 2026-10-06
     - [ ] The user's checks: the new installer window (Update on `Downloads\FH1`), first-person view and the
           paint booth on the native launcher of that installed copy (its library has no run-time shaders)
-    - [ ] The release itself (tag `v0.1.0-pre1`, the four files of `installer\out\release`): only with the
+    - [ ] The release itself (tag `alpha-0.1.0`, the four files of `installer\out\release`): only with the
           user's yes at that moment. After it: one real download test with the installer alone
 - [ ] (old wording) Source-only pre-release (tag + install guide + known issues; users build from their own disc). **User,
       2026-10-06: this is the focus now**, after the offline shader library for the PC; the other native renderer
@@ -449,8 +449,8 @@ today: `docs/performance-review.md`. The Switch platform itself: `docs/nfsmw-nx/
           double-size scene) first, then the processor side (40-50 fps with `--fh1_native_ssaa=false`, which
           the user finds too rough to use)
     - [ ] **Release "Alpha - 0.1.1" (tag `alpha-0.1.1`) with the option in the installer (user, 2026-10-06; the
-          first release is named "Alpha - 0.1.0" since that day; its tag is to become `alpha-0.1.0`, prepared in
-          `build_logs\release-alpha-0.1.0`, not done: docs/next-session-prompt.md): started, not built or
+          first release is named "Alpha - 0.1.0" with tag `alpha-0.1.0` since that day, its installer replaced:
+          `build_logs\release-alpha-0.1.0`): started, not built or
           published.** The installer has the checkbox (it writes `fh1_fps60 = true` into `fh1.toml`) and
           version `0.1.1`; left: package, test on the installed test copy, release texts, the upload
           with the user's yes (docs/next-session-prompt.md has the list)

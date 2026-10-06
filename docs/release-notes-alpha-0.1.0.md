@@ -1,9 +1,11 @@
-# Forza Horizon recomp - Alpha - 0.1.0 (tag v0.1.0-pre1)
+# Forza Horizon recomp - Alpha - 0.1.0 (tag alpha-0.1.0)
 
-Named "Alpha - 0.1.0" on GitHub since 2026-10-06 (the owner's naming); it was "pre-release 1". The tag is
-unchanged: the installer of this release downloads from it.
+Named "Alpha - 0.1.0", tag `alpha-0.1.0`, since 2026-10-06 (the owner's naming; it was "pre-release 1", tag
+`v0.1.0-pre1`, now deleted). The installer was rebuilt that day to download from the new address; the page's
+text is the part below the line, with "Alpha - 0.1.0" in its first sentence and a note for people who hold
+the earlier installer (`build_logs\release-alpha-0.1.0\body.md`).
 
-The text of the GitHub release. Tag `v0.1.0-pre1`, marked as a pre-release. Files: `FH1Installer.exe`,
+The text of the GitHub release. Tag `alpha-0.1.0`, marked as a pre-release. Files: `FH1Installer.exe`,
 `fh1-win64.zip`, `fh1-shader-tools.zip`, `SHA256SUMS.txt` (all made by `installer\make_package.ps1` in
 `installer\out\release`). **Nothing is published without the owner's yes at that moment.** The two zips and the
 checksums were replaced on 2026-10-06 at the owner's request; the first upload's files are

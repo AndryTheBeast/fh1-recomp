@@ -71,7 +71,7 @@ too upwards, even going inside the rim": fixed after that); nobody has driven th
 
 ## Twelfth session (2026-10-06): several shaders at once, the list at 1067, a black window
 
-**Published the same day with the user's yes: the files of `v0.1.0-pre1` were replaced a third time** (same tag
+**Published the same day with the user's yes: the files of `alpha-0.1.0` were replaced a third time** (same tag
 and version; items 1, 2 and 4 below; release text and docs/install.md updated). The user's answers: the people
 at the diner and the festival are solid and whole, the game never stood still, and at the end of the session
 the festival's crowd, the Montano Plains ground and the upside-down scenery of the mountain race are fine (no
@@ -134,7 +134,7 @@ capture was made of the last two, so which fix did it is not known). No issue on
 ## After pre-release 1: flat ground and missing characters (eleventh session, 2026-10-06)
 
 Two faults fixed, both found from the logs before any capture. The user asked the same day for the files of
-`v0.1.0-pre1` to be replaced with the fixed ones (same tag and version, release text updated; the first upload
+`alpha-0.1.0` to be replaced with the fixed ones (same tag and version, release text updated; the first upload
 is kept in `build_logs\release-v0.1.0-pre1-first-upload`).
 
 1. **Flat brown ground on the new game's first drive: only on a first run of an installed copy.** The developer's
@@ -211,7 +211,7 @@ is still there at a second start). No issue was open on GitHub on 2026-10-06.
 
 ## Pre-release 1 is published (tenth session, 2026-10-06)
 
-**`v0.1.0-pre1` is on GitHub** (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/v0.1.0-pre1, commit
+**`alpha-0.1.0` is on GitHub** (https://github.com/AndryTheBeast/fh1-recomp/releases/tag/alpha-0.1.0, commit
 a8be17d, marked as a pre-release; the repository is public since that day). Four files: `FH1Installer.exe`,
 `fh1-win64.zip`, `fh1-shader-tools.zip`, `SHA256SUMS.txt`. **Next: the native renderer's faults** (ROADMAP,
 Stage 3, the items marked "After the first pre-release") and whatever players report in the issues.
@@ -373,7 +373,7 @@ Control.
   2432 files, 6.8 GB) and the folder check (empty or a previous installation, free space). Install only shows a
   message. `FH1Installer.exe --check ISO FOLDER` prints both checks without a window. It is written for the
   C# 5 compiler of Windows (no newer language features) and sizes its window by the screen's scaling itself.
-- Tag `v0.1.0-pre1`. Nothing is published without the user's yes at that moment.
+- Tag `alpha-0.1.0`. Nothing is published without the user's yes at that moment.
 - Tests of the installer go into a new empty folder with `--user_data_root=<another empty folder>`, so the
   user's saves are never touched.
 

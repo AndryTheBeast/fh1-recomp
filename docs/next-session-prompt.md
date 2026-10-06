@@ -8,21 +8,13 @@ in the opening cutscene and 32-40 while driving, because the graphics chip needs
 60 needs 16.7. Without the smooth edges it reaches 40-50, and I said that picture looks bad: smooth edges
 stay on. My decision of 2026-10-06: the PC version will have the 60 fps patch, the Switch port will not.
 
-**Unfinished, before anything else: the first release's tag.** I asked on 2026-10-06 to change everything to
-the new name. Its name on GitHub is already "Alpha - 0.1.0", but its tag is still `v0.1.0-pre1` and its page
-still starts with an internal header ("The text of the GitHub release ..."). Claude was not allowed to change
-the tag itself (the permission system refused it), so it is prepared for me to run or to allow:
-`build_logs\release-alpha-0.1.0` holds the installer of 0.1.0 rebuilt from the released source (commit a8be17d)
-with only the name and the download address changed (`releases/download/alpha-0.1.0/`), the two unchanged zips,
-new checksums and the page text `body.md`. The steps: make tag `alpha-0.1.0` at a8be17d and push it; move the
-release to it (`gh release edit v0.1.0-pre1 --tag alpha-0.1.0 --title "Alpha - 0.1.0" --notes-file body.md
---prerelease`); upload `FH1Installer.exe` and `SHA256SUMS.txt` with `--clobber`; check both zips answer at the
-new address; delete the old tag; then replace `v0.1.0-pre1` by `alpha-0.1.0` in the repository's documents
-(README, docs/install.md, ROADMAP.md, CLAUDE.md, the status document, the issue form) and rename
-`docs/release-notes-v0.1.0-pre1.md`. Until then the old installer and the old address keep working. Ask me
-first whether I ran it or want you to.
+The first release is named "Alpha - 0.1.0" and its tag is `alpha-0.1.0` since 2026-10-06 (my naming; the old
+tag `v0.1.0-pre1` is deleted). Its installer was replaced by one that downloads from the new address (rebuilt
+from the released source, only the name and the address changed; the files are in
+`build_logs\release-alpha-0.1.0`, the earlier ones in `build_logs\release-v0.1.0-pre1-third-upload`). Not
+tried: a whole installation with that installer from GitHub (the addresses answer and the checksums match).
 
-**Then: the release "Alpha - 0.1.1" with 60 fps as an option of the installer** (I asked for it on
+**Unfinished, do this first: the release "Alpha - 0.1.1" with 60 fps as an option of the installer** (I asked for it on
 2026-10-06, then had to shut the PC down). Done and on main: the installer's sources (`Program.Version` =
 `0.1.1`, shown as "Alpha - 0.1.1", a checkbox "60 frames per second (experimental)" that writes `fh1_fps60 = true` into `fh1.toml`
 next to FH1.exe, `FH1Installer.exe --install ISO FOLDER --fps60` for tests). `installer\out\FH1Installer.exe`
